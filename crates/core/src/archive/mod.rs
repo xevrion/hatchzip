@@ -2,6 +2,7 @@
 //! units, byte ranges that can be truncated away once every file in them is
 //! safely on disk, and a way to decode one unit.
 
+mod rar;
 pub mod resumable;
 mod sevenz;
 pub mod storage;
@@ -169,6 +170,7 @@ pub fn open(
         "zip" => zip::open(storage, tail, password),
         "7z" => sevenz::open(storage, tail, password),
         "tar" => tar::open(storage, tail),
+        rar::NAME => rar::open(storage, tail.is_some(), password),
         targz::NAME => targz::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
@@ -200,6 +202,9 @@ pub fn rebuild_index(
         "7z" => {
             let (header, start) = sevenz::rebuild_header(storage, tail, keep)?;
             (header, vec![(0, start)])
+        }
+        rar::NAME => {
+            bail!("RAR archives cannot be restored yet. Run extract to complete the extraction")
         }
         other => bail!("unknown archive format '{other}' in the journal"),
     };
@@ -256,7 +261,7 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         );
     }
     if starts(b"Rar!\x1A\x07") {
-        bail!("RAR archives are not supported");
+        return Ok(rar::NAME);
     }
     if ext.ends_with(".tar") || ext.contains(".tar.") {
         return Ok("tar");

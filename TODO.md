@@ -28,7 +28,8 @@ Ticked when it is merged and tested, not when it is started.
 
 - [x] `.tar.gz`, for datasets
 - [ ] `.tar.zst` and `.tar.xz` (see Formats)
-- [ ] Multi-part RAR (`.part1.rar`, ...) and native split ZIP (`.z01`, ...) (see Formats)
+- [x] Multi-part RAR (`.part1.rar`, `.rar` with `.r00`, ...), freeing a volume at a time; not solid, no links, no encrypted file names (see Formats)
+- [ ] Native split ZIP (`.z01`, ...) (see Formats)
 - [ ] Check the volumes against an `.sfv` file next to the archive before starting, and stop if one doesn't match
 - [ ] Extract several archives one after another from one command or one right-click, checking the space for each
 - [ ] Android app (the engine is a library; Android's storage access rules are the open question)
@@ -91,7 +92,8 @@ Ticked when it is merged and tested, not when it is started.
 - [x] `.tar.gz` and `.tgz`, freeing the compressed bytes behind the decoder, with resume points at deflate block and gzip member boundaries; space really freed on ext4, APFS and NTFS (CI)
 - [ ] `.tar.xz`: every xz block start is a free resume point (xz 5.8 writes 24 MiB blocks by default); a single-block file needs the LZMA state saved. See `docs/formats.md`
 - [ ] `.tar.zst`: easy for multi-frame files (`pzstd`), but the usual single frame needs a decoder that can save its window. See `docs/formats.md`
-- [ ] RAR, starting with deleting finished volumes of `.partN.rar` sets
+- [x] RAR, starting with deleting finished volumes of `.partN.rar` sets
+- [ ] RAR: run the tests on Linux and macOS, check the static musl release build, `restore`, symbolic links, encrypted file names, RAR 4 volumes made by a real RAR 4 writer
 - [ ] Native split ZIP (`.z01`, `.z02`, ..., `.zip`)
 - [x] Password-protected ZIP (ZipCrypto, AES) and 7z (AES, encrypted headers too), proven before anything is deleted, never saved (CLI; tested including a real `zip -P` archive through a terminal prompt)
 - [x] Codec tests with archives from 7-Zip 25.01: Deflate64, bzip2, LZMA, PPMd in ZIP; LZMA, BCJ+LZMA2, bzip2, Deflate, PPMd in 7z

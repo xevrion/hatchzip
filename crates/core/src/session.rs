@@ -172,7 +172,8 @@ fn check_collisions(job: &Job, out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `game.zip`, `game.7z.001` and `game.tar.gz` all extract into `game`, next
+/// `game.zip`, `game.7z.001`, `game.tar.gz` and `game.part1.rar` all extract
+/// into `game`, next
 /// to them.
 pub fn default_output(primary: &Path) -> PathBuf {
     let file_name = primary
@@ -188,7 +189,16 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name = stem.to_string();
     }
     let lower = name.to_ascii_lowercase();
-    for ext in [".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".exe"] {
+    // `game.part2.rar` and `game.part02.rar` are volumes of `game`.
+    if let Some(stem) = lower.strip_suffix(".rar")
+        && let Some((_, digits)) = stem.rsplit_once(".part")
+        && !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        name.truncate(stem.len() - digits.len() - ".part".len());
+        return primary.with_file_name(name);
+    }
+    for ext in [".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".rar", ".exe"] {
         if lower.ends_with(ext) && name.len() > ext.len() {
             name.truncate(name.len() - ext.len());
             break;
@@ -285,4 +295,21 @@ pub fn clear_uncommitted(job: &Job, out: &Path) -> Result<()> {
         fs::remove_file(&p).with_context(|| format!("removing stale {}", p.display()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_folder_drops_the_volume_and_format_suffixes() {
+        let name = |n: &str| default_output(Path::new(n));
+        assert_eq!(name("game.zip"), Path::new("game"));
+        assert_eq!(name("game.7z.001"), Path::new("game"));
+        assert_eq!(name("game.part1.rar"), Path::new("game"));
+        assert_eq!(name("game.PART02.RAR"), Path::new("game"));
+        assert_eq!(name("game.rar"), Path::new("game"));
+        assert_eq!(name("game.part.rar"), Path::new("game.part"));
+        assert_eq!(name("notes.txt"), Path::new("notes.txt-extracted"));
+    }
 }

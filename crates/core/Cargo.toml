@@ -23,6 +23,10 @@ serde.workspace = true
 serde_json.workspace = true
 sevenz-rust2.workspace = true
 tar.workspace = true
+# The UnRAR decoder, bound without the safe wrapper: it needs the data
+# callback, which the unrar crate doesn't expose. Licensed separately, see
+# docs/formats.md.
+unrar_sys = "0.5.8"
 zip.workspace = true
 
 [target."cfg(unix)".dependencies]

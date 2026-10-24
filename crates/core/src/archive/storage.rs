@@ -309,6 +309,9 @@ impl Storage {
 
 /// The path of the first volume, if `path` names any volume of a split set.
 pub fn first_volume(path: &Path) -> PathBuf {
+    if let Some(rar) = rar_volume(path) {
+        return rar.volume(0);
+    }
     match split_suffix(path) {
         Some((base, width, _)) => numbered(&base, width, 1),
         None => path.to_path_buf(),
@@ -316,6 +319,20 @@ pub fn first_volume(path: &Path) -> PathBuf {
 }
 
 fn volume_set(path: &Path) -> Result<Vec<PathBuf>> {
+    if let Some(rar) = rar_volume(path) {
+        if rar.index != 0 {
+            bail!(
+                "{} is not the first volume. Open {} instead",
+                path.display(),
+                rar.volume(0).display()
+            );
+        }
+        let mut volumes = vec![path.to_path_buf()];
+        while rar.volume(volumes.len()).exists() {
+            volumes.push(rar.volume(volumes.len()));
+        }
+        return Ok(volumes);
+    }
     let Some((base, width, n)) = split_suffix(path) else {
         return Ok(vec![path.to_path_buf()]);
     };
@@ -421,4 +438,91 @@ impl Seek for Reader {
         self.pos = pos.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad seek"))?;
         Ok(self.pos)
     }
+}
+
+/// How the volumes of a RAR set are named, and which one a path is.
+struct RarSet {
+    /// The path without the part of the name that changes.
+    stem: PathBuf,
+    style: RarStyle,
+    /// 0 for the first volume.
+    index: usize,
+    /// Upper case extensions stay upper case.
+    upper: bool,
+}
+
+enum RarStyle {
+    /// `name.part1.rar`, `name.part01.rar`: the number's width is kept.
+    Part { width: usize },
+    /// `name.rar`, `name.r00`, `name.r01`, ..., `name.r99`, `name.s00`, ...
+    Old,
+}
+
+impl RarSet {
+    fn volume(&self, index: usize) -> PathBuf {
+        let mut name = self.stem.as_os_str().to_owned();
+        let case = |s: String| if self.upper { s.to_uppercase() } else { s };
+        match self.style {
+            RarStyle::Part { width } => {
+                name.push(case(format!(".part{:0width$}.rar", index + 1)));
+            }
+            RarStyle::Old if index == 0 => name.push(case(".rar".into())),
+            RarStyle::Old => {
+                let n = index - 1;
+                let letter = (b'r' + (n / 100) as u8) as char;
+                name.push(case(format!(".{letter}{:02}", n % 100)));
+            }
+        }
+        PathBuf::from(name)
+    }
+}
+
+/// Recognises a volume of a RAR set by its name. A bare `name.rar` counts
+/// only if `name.r00` sits next to it, so a single RAR file is not a set.
+fn rar_volume(path: &Path) -> Option<RarSet> {
+    let name = path.file_name()?.to_str()?;
+    let lower = name.to_ascii_lowercase();
+    let upper = name.chars().rev().take(3).all(|c| !c.is_ascii_lowercase());
+    let (stem_len, ext) = lower.rsplit_once('.').map(|(s, e)| (s.len(), e))?;
+    let stem = &name[..stem_len];
+    if ext == "rar" {
+        if let Some((before, digits)) = stem.to_ascii_lowercase().rsplit_once(".part")
+            && !digits.is_empty()
+            && digits.bytes().all(|b| b.is_ascii_digit())
+        {
+            let n: usize = digits.parse().ok()?;
+            return Some(RarSet {
+                stem: path.with_file_name(&name[..before.len()]),
+                style: RarStyle::Part {
+                    width: digits.len(),
+                },
+                index: n.checked_sub(1)?,
+                upper,
+            });
+        }
+        let set = RarSet {
+            stem: path.with_file_name(stem),
+            style: RarStyle::Old,
+            index: 0,
+            upper,
+        };
+        return set.volume(1).exists().then_some(set);
+    }
+    let bytes = ext.as_bytes();
+    if bytes.len() == 3
+        && (b'r'..=b'z').contains(&bytes[0])
+        && bytes[1].is_ascii_digit()
+        && bytes[2].is_ascii_digit()
+    {
+        let n = usize::from(bytes[0] - b'r') * 100
+            + usize::from(bytes[1] - b'0') * 10
+            + usize::from(bytes[2] - b'0');
+        return Some(RarSet {
+            stem: path.with_file_name(stem),
+            style: RarStyle::Old,
+            index: n + 1,
+            upper,
+        });
+    }
+    None
 }

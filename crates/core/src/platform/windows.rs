@@ -178,3 +178,27 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     }
     Ok((u64::from(high) << 32) | u64::from(low))
 }
+
+/// An archive path as UnRAR's C interface takes it: a wide string here.
+pub struct RarName(Vec<unrar_sys::WCHAR>);
+
+impl RarName {
+    pub fn new(path: &Path) -> io::Result<Self> {
+        use std::os::windows::ffi::OsStrExt;
+        let mut wide: Vec<unrar_sys::WCHAR> = path.as_os_str().encode_wide().collect();
+        if wide.contains(&0) {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        wide.push(0);
+        Ok(Self(wide))
+    }
+
+    pub fn open_data(&self, mode: std::ffi::c_uint) -> unrar_sys::OpenArchiveDataEx {
+        unrar_sys::OpenArchiveDataEx::new(self.0.as_ptr(), mode)
+    }
+}
+
+// UnRAR reads a registry key for its data path, and nothing else in the tree
+// links the library that holds the registry calls.
+#[link(name = "advapi32")]
+unsafe extern "C" {}

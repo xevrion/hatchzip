@@ -1,4 +1,4 @@
-//! The engine behind HatchZip: extracts ZIP, 7z, tar and `.tar.gz` archives,
+//! The engine behind HatchZip: extracts ZIP, 7z, tar, `.tar.gz` and RAR archives,
 //! split or not, while truncating the archive behind itself (or, for a
 //! `.tar.gz`, punching out what it has decoded), so the disk only ever has to
 //! hold about the output.

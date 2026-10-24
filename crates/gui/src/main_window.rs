@@ -453,7 +453,10 @@ impl App {
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
             .set_title("Open archive")
-            .add_filter("Archives", &["zip", "7z", "tar", "gz", "tgz", "exe", "001"])
+            .add_filter(
+                "Archives",
+                &["zip", "7z", "tar", "gz", "tgz", "rar", "exe", "001"],
+            )
             .add_filter("All files", &["*"])
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {

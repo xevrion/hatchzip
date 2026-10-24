@@ -25,7 +25,7 @@
 
 A 180 GB game download that unpacks to 200 GB needs 380 GB of disk with WinRAR, 7-Zip or `unzip`, because the archive and everything extracted from it have to exist at the same time. HatchZip needs a little over 200 GB. It extracts the archive from the end and cuts each finished part off the archive file as it goes, so the space the archive gives back is reused for the next files.
 
-It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz` and split archives.
+It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz`, RAR volume sets and split archives.
 
 ### Get it
 
@@ -222,11 +222,12 @@ What it cannot protect against: if the download itself is damaged, the files bef
 | Password-protected ZIP (ZipCrypto and AES) and 7z (AES, including encrypted file lists) | Supported. HatchZip asks for the password, or takes `--password` or `HATCHZIP_PASSWORD`, and proves it on one file before anything is deleted. It is never saved, so a resumed run asks again. | Same as unencrypted |
 | `.tar.zst`, `.tar.xz` | Refused before extraction, planned; see [the format notes](docs/formats.md#tarzst-and-tarxz). | |
 | One huge solid 7z block | Works, but needs free space for the whole block, as the table above shows. Freeing space inside a block is the same planned technique. | |
-| RAR, native split ZIP (`.z01`) | Planned | |
+| RAR volume sets (`.part1.rar`, `.part2.rar`, ... or `.rar`, `.r00`, ...), RAR 5 and RAR 4, not solid | Supported, decoded by UnRAR. Password-protected files work, with the password asked for as for ZIP. Refused before anything is touched: solid archives, encrypted file names, links, and sets with a volume missing. Tested on Windows with sets made by WinRAR 7.23 (RAR 5) and, for RAR 4, volumes written by the test suite (WinRAR 7 can no longer write RAR 4). `restore` does not support RAR yet. | One volume, once every file that reaches into it is out |
+| Native split ZIP (`.z01`) | Planned | |
 
 ## How it works
 
-ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. A `.tar.gz` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
+ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. A RAR set is freed a whole volume at a time, since each volume is a complete RAR file. A `.tar.gz` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
 
 ## Star history
 
@@ -241,6 +242,8 @@ ZIP, 7z and tar all store their contents as a sequence of independent pieces: fi
 ## License
 
 HatchZip is licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
+
+RAR archives are decoded by the UnRAR source code, which is freeware under its own [license](LICENSE-UNRAR): free to use for extracting RAR archives, but not to build a RAR compatible archiver.
 
 ## Contributing
 

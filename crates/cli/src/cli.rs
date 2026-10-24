@@ -24,8 +24,9 @@ space plan is checked before the archive is modified, and an interrupted \
 extraction resumes where it stopped when the same command is run again.
 
 Supported: ZIP (including ZIP64 and self-extracting .exe), 7z, uncompressed tar, \
-gzip-compressed tar (.tar.gz, .tgz), and split archives (.001, .002, ...) of any \
-of those.";
+gzip-compressed tar (.tar.gz, .tgz), split archives (.001, .002, ...) of any of \
+those, and RAR volume sets (.part1.rar, .part2.rar, ... or .rar, .r00, ...) that \
+are not solid.";
 
 const AFTER_LONG_HELP: &str = "\
 Examples:

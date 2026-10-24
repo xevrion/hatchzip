@@ -129,6 +129,20 @@ pax global headers, which `git archive` writes at the start of every tarball, ar
 
 `crates/cli/tests/targz.rs` kills the process at each of the three steps of a point at several points, repeatedly within one run, around the final commit, in multi-member and split archives and in archives from GNU tar, gzip and pigz, and checks after each crash that nothing past the journaled point was touched and, where `HATCHZIP_EXPECT_PUNCH` is set, that the space before it was given back. Unit tests in `resumable.rs` resume a multi-member gzip stream from every point it reports and decode it with input buffers down to one byte.
 
+## RAR volumes
+
+A RAR set (`game.part1.rar`, `game.part2.rar`, ... or `game.rar`, `game.r00`, ...) is not one archive cut into byte ranges, as a `.7z.001` set is. Each volume is a complete RAR file with its own headers, and a file that doesn't fit is split over consecutive volumes, its header repeated in each. So nothing is ever cut out of the middle of a volume: the archive is freed a whole volume at a time, and what is left is always a set UnRAR can open.
+
+`archive/rar.rs` reads the headers of every volume (RAR 5 and RAR 4, with their checksums) to learn, for each file, the volume its header is in and the last volume its data reaches. UnRAR does the decoding only. A file belongs to the volume it starts in. After the files of every volume from `v` up are extracted, the volumes past the last one an earlier file still reaches into can go, so that is where the archive is truncated. Volumes whose files free the same bytes form one unit, and so does the top volume if it would free nothing, since the engine takes a unit that starts at the archive's end for one that is already done. A file that spans many volumes therefore keeps all of them until it is out, and with it the files that start after it.
+
+Nothing needs to be saved before the first volume goes: there is no central index and every volume carries its own headers, so the saved tail is empty. A resumed run plans the units against the set as it began, from the volumes still there, so it finds the same units the first run did. A file that began in the last volume left and has lost its continuation was already extracted.
+
+UnRAR is driven through its C interface. A helper thread walks the headers, skips the continuation of files that began in earlier volumes, and pushes the data of each file through a bounded channel to the reader the engine's sinks take. Only one archive is decoded at a time, since UnRAR is not documented as safe to run on several threads.
+
+Refused before anything is touched: solid archives (a file can't be decoded without those before it, so no volume is free until all of it is out), encrypted file names, symbolic links and other redirections, a set with a volume missing or out of order, and any header that fails its checksum. `restore` is not supported yet.
+
+`crates/cli/tests/rar.rs` extracts sets made by WinRAR 7.23 and volumes written by the test itself (WinRAR 7 can't write RAR 4), kills the process at both crash points after several commits and resumes, checks that volumes are deleted while the run is still going, and that solid sets, incomplete sets and a missing or wrong password are refused with every volume intact.
+
 ## Crash safety
 
 Each step can be interrupted. The order above makes every interruption recoverable:
@@ -190,7 +204,8 @@ These are refused while the archive is still untouched:
 - tar entry types HatchZip can't create safely: device files, FIFOs, sparse files.
 - 7z anti-items (deletions recorded by archive updates).
 - In a `.tar.gz`: damage anywhere in the stream, a gzip member whose CRC-32 or length doesn't match, data after the end of the tar or after the gzip stream other than zeros (it would be lost with the archive), and header records over 1 MiB.
-- Gzip files that don't hold a tar, compressed tar other than gzip (`.tar.zst`, `.tar.xz`, `.tar.bz2`), and RAR.
+- Gzip files that don't hold a tar and compressed tar other than gzip (`.tar.zst`, `.tar.xz`, `.tar.bz2`).
+- In RAR: solid archives, encrypted file names, links, a volume missing, and headers that fail their checksum (see [RAR volumes](#rar-volumes)).
 - A non-empty output folder, so that a resume can safely delete anything it finds for uncommitted units.
 
 ## Operating systems
