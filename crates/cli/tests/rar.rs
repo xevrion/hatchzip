@@ -190,7 +190,9 @@ enum Naming {
 }
 
 struct Entry {
-    /// The name as stored in the header.
+    /// The name as stored in the header. In RAR 4, a UTF-8 name that is not
+    /// ASCII gets its Unicode form as well, as RAR writes it; other bytes
+    /// are a legacy name in the OEM code page, with no Unicode form.
     name: Vec<u8>,
     data: Vec<u8>,
     dir: bool,
@@ -254,6 +256,51 @@ fn block5(body: &[u8]) -> Vec<u8> {
     b
 }
 
+/// The Unicode form of a RAR 4 name, which follows the plain form and a NUL,
+/// encoded as RAR does: a high byte, then two-bit opcodes, four to a flags
+/// byte from the top bits down, each followed by its operands. 0 is a
+/// character below 256, 1 a character in the high byte's page, 2 any UTF-16
+/// unit, 3 a run of `n + 2` characters copied from the plain form at the
+/// same positions.
+fn unicode_name4(plain: &[u8], name: &str) -> Vec<u8> {
+    let wide: Vec<u16> = name.encode_utf16().collect();
+    let high = wide.iter().map(|&c| c >> 8).find(|&h| h != 0).unwrap_or(0) as u8;
+    let mut ops: Vec<(u8, Vec<u8>)> = Vec::new();
+    let mut i = 0;
+    while i < wide.len() {
+        let run = wide[i..]
+            .iter()
+            .zip(plain.get(i..).unwrap_or_default())
+            .take_while(|&(&c, &b)| b.is_ascii() && c == u16::from(b))
+            .count()
+            .min(0x7F + 2);
+        if run >= 3 {
+            ops.push((3, vec![(run - 2) as u8]));
+            i += run;
+            continue;
+        }
+        let c = wide[i];
+        ops.push(match c >> 8 {
+            0 => (0, vec![c as u8]),
+            h if h == u16::from(high) => (1, vec![c as u8]),
+            _ => (2, c.to_le_bytes().to_vec()),
+        });
+        i += 1;
+    }
+    let mut out = vec![high];
+    for group in ops.chunks(4) {
+        let flags = group
+            .iter()
+            .enumerate()
+            .fold(0u8, |f, (k, (op, _))| f | op << (6 - 2 * k));
+        out.push(flags);
+        for (_, operands) in group {
+            out.extend(operands);
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Version {
     Four,
@@ -268,11 +315,21 @@ fn file_piece(v: Version, e: &Entry, chunk: &[u8], before: bool, after: bool) ->
             if e.dir {
                 flags |= 0xE0;
             }
-            let name: Vec<u8> = e
+            let mut name: Vec<u8> = e
                 .name
                 .iter()
                 .map(|&b| if b == b'/' { b'\\' } else { b })
                 .collect();
+            // Without its Unicode form, UnRAR reads a name in the OEM code
+            // page on Windows and as UTF-8 elsewhere.
+            if let Ok(text) = std::str::from_utf8(&name).map(str::to_string)
+                && !text.is_ascii()
+            {
+                flags |= 0x200;
+                let unicode = unicode_name4(&name, &text);
+                name.push(0);
+                name.extend(unicode);
+            }
             let mut body = Vec::new();
             body.extend((chunk.len() as u32).to_le_bytes());
             body.extend((e.data.len() as u32).to_le_bytes());

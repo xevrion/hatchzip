@@ -857,8 +857,9 @@ fn file4(v: usize, flags: u16, b: &[u8]) -> Result<Header> {
     })
 }
 
-/// RAR4 stores a name as an ASCII form, a NUL, and a compact encoding of the
-/// Unicode one.
+/// RAR4 stores a name as a plain form (OEM on Windows, UTF-8 elsewhere), a
+/// NUL, and a compact encoding of the Unicode one, as UnRAR's
+/// `EncodeFileName::Decode` reads it.
 fn decode_name(raw: &[u8]) -> String {
     let Some(nul) = raw.iter().position(|&b| b == 0) else {
         return String::from_utf8_lossy(raw).into_owned();
@@ -869,7 +870,7 @@ fn decode_name(raw: &[u8]) -> String {
     };
     let high = u16::from(high) << 8;
     let mut out: Vec<u16> = Vec::new();
-    let (mut i, mut flags, mut bits, mut pos) = (0, 0u8, 0u8, 0usize);
+    let (mut i, mut flags, mut bits) = (0, 0u8, 0u8);
     while i < enc.len() {
         if bits == 0 {
             flags = enc[i];
@@ -894,25 +895,31 @@ fn decode_name(raw: &[u8]) -> String {
                 out.push(u16::from_le_bytes([pair[0], pair[1]]));
                 i += 2;
             }
+            // A run copied from the plain form at the same position as the
+            // character it gives, which is not where the previous run ended
+            // once another opcode has given a character.
             _ => {
                 let len = enc[i];
                 i += 1;
-                if len & 0x80 != 0 {
+                let fix = if len & 0x80 != 0 {
                     let Some(&fix) = enc.get(i) else { break };
                     i += 1;
-                    for _ in 0..(len & 0x7F) + 2 {
-                        let b = plain.get(pos).copied().unwrap_or(0);
-                        out.push(u16::from(b.wrapping_add(fix)) | high);
-                        pos += 1;
-                    }
+                    Some(fix)
                 } else {
-                    for _ in 0..len + 2 {
-                        out.push(u16::from(plain.get(pos).copied().unwrap_or(0)));
-                        pos += 1;
-                    }
+                    None
+                };
+                for _ in 0..(len & 0x7F) + 2 {
+                    let Some(&b) = raw.get(out.len()) else { break };
+                    out.push(match fix {
+                        Some(fix) => u16::from(b.wrapping_add(fix)) | high,
+                        None => u16::from(b),
+                    });
                 }
             }
         }
+    }
+    if out.is_empty() {
+        return String::from_utf8_lossy(plain).into_owned();
     }
     String::from_utf16_lossy(&out)
 }
@@ -1523,6 +1530,19 @@ mod tests {
             "game/back_slash.txt"
         );
         assert_eq!(clean_name("game\\file.txt", false), "game\\file.txt");
+    }
+
+    #[test]
+    fn rar4_unicode_names_decode_as_unrar_reads_them() {
+        // Written by RAR 6.24 for Linux: the plain form is UTF-8.
+        let mut raw = "game\\naïve résumé\\日本語.txt".as_bytes().to_vec();
+        raw.extend([0, 0x65, 0xC0, 0x05, 0xEF, b'v', b'e', 0, b' ', b'r', 0xE9]);
+        raw.extend([b's', 0, b'u', b'm', 0xE9, b'\\', 0x68, 0xE5, 0x2C, 0x67]);
+        raw.extend([0x9E, 0x8A, b'.', 0, b't', b'x', b't']);
+        assert_eq!(decode_name(&raw), "game\\naïve résumé\\日本語.txt");
+        // One character given by itself, then a run copied from the plain
+        // form at the run's own position, not from where it starts.
+        assert_eq!(decode_name(b"?abcd\0\x00\x30\xE9\x02"), "éabcd");
     }
 
     #[test]
