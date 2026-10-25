@@ -95,8 +95,12 @@ pub fn restore(archive: &Path) -> Result<Restored> {
     }
     recover(&mut journal, &paths)?;
     // Restoring rewrites the index only and never decrypts file data, so no
-    // password is needed, except for a 7z whose header itself is encrypted.
-    let job = Job::resume(&journal, tail.clone(), true, None, Default::default())?;
+    // password is needed. An archive whose file names are encrypted (a 7z
+    // with an encrypted header, a RAR made with "Encrypt file names") can't
+    // even be listed without one, and a new index for it would have to be
+    // encrypted too, so it is refused.
+    let job = Job::resume(&journal, tail.clone(), true, None, Default::default())
+        .map_err(|e| names_encrypted(e, &primary, "restored"))?;
     if job.units.is_empty() {
         if !journal.links.is_empty() {
             bail!(
@@ -230,13 +234,29 @@ fn discard(journal: &Journal, tail: Arc<Tail>, paths: &Paths) -> Result<Restored
     // Moved away by the person: nothing says which files are half written,
     // and nothing else is left to do.
     if primary.exists() {
-        let job = Job::resume(journal, tail, true, None, Default::default())?;
+        let job = Job::resume(journal, tail, true, None, Default::default())
+            .map_err(|e| names_encrypted(e, &primary, "discarded"))?;
         session::clear_uncommitted(&job, &journal.output)?;
         restored.format = job.format_name;
         restored.entries = job.item_count();
     }
     paths.remove()?;
     Ok(restored)
+}
+
+/// Restore takes no password, so an archive that can't be read without one
+/// is refused with what to do instead, rather than asked for a password the
+/// command has no way to take.
+fn names_encrypted(e: anyhow::Error, primary: &Path, what: &str) -> anyhow::Error {
+    if !e.is::<archive::PasswordNeeded>() {
+        return e;
+    }
+    anyhow::anyhow!(
+        "{} has encrypted file names, so this extraction cannot be {what}: that needs the \
+         password, which restore does not take. Run extract with the password to complete \
+         the extraction instead",
+        primary.display()
+    )
 }
 
 /// Opens the archive as a fresh one, the way a later extraction would, and

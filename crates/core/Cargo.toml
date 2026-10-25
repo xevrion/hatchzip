@@ -29,7 +29,11 @@ tar.workspace = true
 # LICENSE-UNRAR and docs/formats.md. Pinned, since a new version brings new
 # vendored C++.
 unrar-ng-sys = { version = "=0.7.7", optional = true }
-# The RAR 5 password check value, PBKDF2-HMAC-SHA256; already in the tree.
+# The RAR 5 password check value and header key, PBKDF2-HMAC-SHA256, and
+# AES-CBC for encrypted RAR headers; all already in the tree through zip and
+# sevenz-rust2.
+aes = { version = "0.9.3", optional = true }
+cbc = { version = "0.2.1", optional = true }
 pbkdf2 = { version = "0.13.0", optional = true }
 sha2 = { version = "0.11.1", optional = true }
 zip.workspace = true
@@ -38,7 +42,7 @@ zip.workspace = true
 # RAR archives, decoded by UnRAR. Off by default: without it the build is
 # open source throughout and needs no C++ compiler, and a RAR archive is
 # refused before anything is touched. The release builds turn it on.
-rar = ["dep:unrar-ng-sys", "dep:pbkdf2", "dep:sha2"]
+rar = ["dep:unrar-ng-sys", "dep:aes", "dep:cbc", "dep:pbkdf2", "dep:sha2"]
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.191"

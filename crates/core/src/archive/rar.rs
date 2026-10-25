@@ -23,8 +23,16 @@
 //! decodes only front to back, and UnRAR can't save its decoder's state, so
 //! a crash could never resume. It is one unit, extracted only while the
 //! archive is kept.
+//!
+//! An archive made with "Encrypt file names" (`rar -hp`) encrypts its
+//! headers too. They are decrypted here with the password (see `crypt`), so
+//! the same parser reads them, and every offset is the real one on disk:
+//! a file starts at the IV or salt in front of its header, which is where a
+//! truncation cuts.
 
-use std::collections::HashSet;
+mod crypt;
+
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_int, c_uint};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -37,7 +45,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use unrar_ng_sys as native;
 
-use super::storage::{Reader, Storage};
+use super::storage::{Part, Reader, Storage};
 use super::{
     Codec, Damaged, Format, Item, Kind, Opened, PasswordCheck, PasswordNeeded, Sink, Stream, Unit,
     Worker, WrongPassword, is_symlink_mode, safe_path,
@@ -153,6 +161,38 @@ struct Parsed {
     more: bool,
     /// Some volume is RAR 4, whose encrypted files have no check value.
     rar4: bool,
+    /// Whether the first volume's headers are encrypted. UnRAR refuses a
+    /// set whose volumes differ, and so does HatchZip.
+    encrypted_headers: Option<bool>,
+    /// The password is known to be right: it matched the check value of
+    /// the archive encryption header, or a header decrypted with it passed
+    /// its checksum. Until then, a header that fails is a wrong password;
+    /// from then on, it is damage.
+    proven: bool,
+    /// Header keys derived so far, by salt (and iteration count). The
+    /// derivation is slow on purpose, and the volumes of a set, or every
+    /// header of a RAR 4 archive, name the same salt.
+    keys5: HashMap<([u8; 16], u8), [u8; 32]>,
+    keys4: Keys4,
+}
+
+/// RAR 4 header keys and IVs, by salt.
+type Keys4 = HashMap<[u8; 8], ([u8; 16], [u8; 16])>;
+
+impl Parsed {
+    fn agree(&mut self, v: usize, encrypted: bool) -> Result<()> {
+        match self.encrypted_headers {
+            None => self.encrypted_headers = Some(encrypted),
+            Some(first) if first != encrypted => bail!(
+                "volume {} {} encrypted file names, and the first volume {}",
+                v + 1,
+                if encrypted { "has" } else { "does not have" },
+                if first { "does" } else { "does not" }
+            ),
+            Some(_) => {}
+        }
+        Ok(())
+    }
 }
 
 /// One file, joined from its pieces in every volume it spans.
@@ -272,15 +312,18 @@ pub fn open(storage: &Arc<Storage>, resuming: bool, password: Option<&str>) -> R
             );
         }
         let live = (end - part.start).min(part.len);
-        parse_volume(&mut reader, v, part.start, part.len, live, &mut parsed)
-            .map_err(|e| {
-                if e.is::<Unsupported>() {
-                    e
-                } else {
-                    anyhow::Error::new(Damaged(e))
-                }
-            })
-            .with_context(|| format!("reading {}", part.path.display()))?;
+        if let Err(e) = parse_volume(&mut reader, v, part, live, password, &mut parsed) {
+            // Front ends ask for a password on these, so they stay as they are.
+            if e.is::<PasswordNeeded>() || e.is::<WrongPassword>() {
+                return Err(e);
+            }
+            let e = if e.is::<Unsupported>() {
+                e
+            } else {
+                anyhow::Error::new(Damaged(e))
+            };
+            return Err(e.context(format!("reading {}", part.path.display())));
+        }
     }
     if parsed.more && !resuming {
         bail!(
@@ -297,7 +340,7 @@ pub fn open(storage: &Arc<Storage>, resuming: bool, password: Option<&str>) -> R
     // Extraction finds each file by the name UnRAR reports. A name UnRAR
     // reads differently, such as a legacy name in a code page, would only
     // be noticed halfway through, after volumes are gone.
-    let listed = unrar_names(&volumes[0].path, files.len())?;
+    let listed = unrar_names(&volumes[0].path, files.len(), password)?;
     for (i, f) in files.iter().enumerate() {
         let theirs = listed.get(i);
         if !theirs.is_some_and(|n| f.same_name(n)) {
@@ -472,26 +515,52 @@ impl Volume<'_> {
 fn parse_volume(
     reader: &mut Reader,
     v: usize,
-    start: u64,
-    len: u64,
+    part: &Part,
     live: u64,
+    password: Option<&str>,
     out: &mut Parsed,
 ) -> Result<()> {
     let mut vol = Volume {
         r: reader,
-        start,
-        len,
+        start: part.start,
+        len: part.len,
         live,
     };
     let sig = vol.read(0, 8.min(live))?;
     if sig.starts_with(SIG5) {
-        parse5(&mut vol, v, out)
+        parse5(&mut vol, v, password, out)
     } else if sig.starts_with(SIG4) {
         out.rar4 = true;
-        parse4(&mut vol, v, out)
+        parse4(&mut vol, v, password, out)
     } else {
         bail!("not a RAR volume (no signature at its start)")
     }
+}
+
+/// What reading the header at `pos` gave. While the password is not proven,
+/// a header that fails to decrypt into a valid one means a wrong password;
+/// a read that failed is still an error of its own.
+fn decrypted<T>(read: Result<T>, encrypted: bool, out: &mut Parsed) -> Result<T> {
+    match read {
+        Ok(r) => {
+            out.proven |= encrypted;
+            Ok(r)
+        }
+        Err(e) if encrypted && !out.proven && !e.is::<io::Error>() => Err(WrongPassword.into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// The password as RAR 4 derives its keys from it: UnRAR's wide characters,
+/// cut to their low 16 bits, little-endian.
+fn utf16_raw(password: &str) -> Vec<u8> {
+    wide(&rar_password(password))
+        .iter()
+        .flat_map(|&c| {
+            let c = c as u32;
+            [c as u8, (c >> 8) as u8]
+        })
+        .collect()
 }
 
 /// Reads a RAR5 variable length integer: seven bits a byte, low first.
@@ -522,33 +591,65 @@ fn u16le(b: &[u8], at: usize) -> Result<u16> {
         .ok_or_else(|| anyhow!("a header is cut short"))
 }
 
-fn encrypted_names() -> anyhow::Error {
-    unsupported(
-        "this RAR archive has encrypted file names (created with 'Encrypt file names'). \
-         Archives with encrypted file names are not supported yet",
-    )
+fn unknown_encryption() -> anyhow::Error {
+    unsupported("this RAR archive uses an encryption method this build of HatchZip cannot decode")
 }
 
-fn parse5(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
+/// One RAR 5 header as stored at `pos`, checked against its checksum: the
+/// size field and the header after it, which the checksum covers, where the
+/// header proper starts in those bytes, and where its data begins. With
+/// `key`, the header is encrypted, behind its IV and padded to whole AES
+/// blocks, as UnRAR's `ReadHeader50` reads it.
+fn read5(vol: &mut Volume, pos: u64, key: Option<&[u8; 32]>) -> Result<(Vec<u8>, usize, u64)> {
+    let size_of = |head: &[u8]| -> Result<(u32, usize, u64)> {
+        let crc = u32le(head, 0)?;
+        let mut at = 4;
+        let size = vint(head, &mut at)?;
+        if size == 0 || size > MAX_HEADER {
+            bail!("a header has an impossible size");
+        }
+        Ok((crc, at, size))
+    };
+    let (crc, block, at, data_at) = match key {
+        None => {
+            let peek = vol.read(pos, 16.min(vol.live - pos))?;
+            let (crc, at, size) = size_of(&peek)?;
+            let block = vol.read(pos + 4, (at - 4) as u64 + size)?;
+            (crc, block, at - 4, pos + at as u64 + size)
+        }
+        Some(key) => {
+            let iv = vol.read(pos, crypt::BLOCK)?;
+            let mut first = vol.read(pos + crypt::BLOCK, crypt::BLOCK)?;
+            crypt::decrypt5(key, &iv, &mut first);
+            let (crc, at, size) = size_of(&first)?;
+            let len = at as u64 + size;
+            let padded = len.next_multiple_of(crypt::BLOCK);
+            let mut plain = vol.read(pos + crypt::BLOCK, padded)?;
+            crypt::decrypt5(key, &iv, &mut plain);
+            plain.truncate(len as usize);
+            plain.drain(..4);
+            (crc, plain, at - 4, pos + crypt::BLOCK + padded)
+        }
+    };
+    if crc32fast::hash(&block) != crc {
+        bail!("a header fails its checksum");
+    }
+    Ok((block, at, data_at))
+}
+
+fn parse5(vol: &mut Volume, v: usize, password: Option<&str>, out: &mut Parsed) -> Result<()> {
     let mut pos = 8u64;
     let mut saw_main = false;
+    // Set by the archive encryption header: every header after it is
+    // encrypted with this key.
+    let mut key: Option<[u8; 32]> = None;
     loop {
         if vol.ended(pos)? {
             return Ok(());
         }
-        let peek = vol.read(pos, 16.min(vol.live - pos))?;
-        let crc = u32le(&peek, 0)?;
-        let mut at = 4;
-        let size = vint(&peek, &mut at)?;
-        if size == 0 || size > MAX_HEADER {
-            bail!("a header has an impossible size");
-        }
-        // The checksum covers the size field and the header after it.
-        let block = vol.read(pos + 4, (at - 4) as u64 + size)?;
-        if crc32fast::hash(&block) != crc {
-            bail!("a header fails its checksum");
-        }
-        let body = &block[at - 4..];
+        let read = read5(vol, pos, key.as_ref());
+        let (block, at, data_at) = decrypted(read, key.is_some(), out)?;
+        let body = &block[at..];
         let mut p = 0;
         let kind = vint(body, &mut p)?;
         let flags = vint(body, &mut p)?;
@@ -562,7 +663,6 @@ fn parse5(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
         } else {
             0
         };
-        let data_at = pos + at as u64 + size;
         let next = data_at
             .checked_add(data)
             .filter(|&n| n <= vol.len)
@@ -572,6 +672,11 @@ fn parse5(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
             .and_then(|e| body.len().checked_sub(e))
             .filter(|&e| e >= p)
             .ok_or_else(|| anyhow!("a header's extra area is larger than the header"))?;
+        // The archive encryption header comes first, right after the
+        // signature, or not at all.
+        if pos == 8 {
+            out.agree(v, kind == 4)?;
+        }
         match kind {
             1 => {
                 let archive = vint(body, &mut p)?;
@@ -595,7 +700,26 @@ fn parse5(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
                 h.packed = data;
                 out.headers.push(h);
             }
-            4 => return Err(encrypted_names()),
+            4 => {
+                if pos != 8 {
+                    bail!("an archive encryption header is out of place");
+                }
+                let (salt, count, check) = archive_crypt5(&body[p..extra_at])?;
+                let Some(password) = password else {
+                    return Err(PasswordNeeded.into());
+                };
+                if let Some(check) = check {
+                    if !check.matches(password) {
+                        return Err(WrongPassword.into());
+                    }
+                    out.proven = true;
+                }
+                let k = *out
+                    .keys5
+                    .entry((salt, count))
+                    .or_insert_with(|| crypt::key5(&rar_password(password), &salt, count));
+                key = Some(k);
+            }
             5 => {
                 let end = vint(body, &mut p)?;
                 if !saw_main {
@@ -702,6 +826,24 @@ fn file5(v: usize, hflags: u64, b: &[u8], extra: &[u8]) -> Result<Header> {
 /// The encryption record of a RAR 5 file: its password check value, if it
 /// has a valid one.
 fn crypt5(r: &[u8]) -> Result<Option<Check>> {
+    let (flags, count, salt, p) = crypt_start5(r)?;
+    // Then the 16 bytes of the AES initialization vector.
+    check_value5(r, p + 16, flags, count, salt)
+}
+
+/// The archive encryption header of RAR 5, which comes before every
+/// encrypted header: the salt and iteration count of their key, and the
+/// password check value, if it has a valid one. It has no IV of its own;
+/// every header after it carries one.
+fn archive_crypt5(r: &[u8]) -> Result<([u8; 16], u8, Option<Check>)> {
+    let (flags, count, salt, p) = crypt_start5(r)?;
+    Ok((salt, count, check_value5(r, p, flags, count, salt)?))
+}
+
+/// What a file's encryption record and the archive encryption header begin
+/// with: their flags, the log2 of the PBKDF2 iteration count, and the salt,
+/// then where the rest begins.
+fn crypt_start5(r: &[u8]) -> Result<(u64, u8, [u8; 16], usize)> {
     let mut p = 0;
     let version = vint(r, &mut p)?;
     let flags = vint(r, &mut p)?;
@@ -709,18 +851,25 @@ fn crypt5(r: &[u8]) -> Result<Option<Check>> {
     p += 1;
     // UnRAR's limits: encryption version 0, at most 2^24 iterations.
     if version > 0 || count > 24 {
-        return Err(unsupported(
-            "this RAR archive uses an encryption method this build of HatchZip cannot decode",
-        ));
+        return Err(unknown_encryption());
     }
-    let cut = || anyhow!("a header is cut short");
     let salt: [u8; 16] = r
         .get(p..p + 16)
-        .ok_or_else(cut)?
+        .ok_or_else(|| anyhow!("a header is cut short"))?
         .try_into()
         .expect("16 bytes");
-    // Then the 16 bytes of the AES initialization vector.
-    p += 32;
+    Ok((flags, count, salt, p + 16))
+}
+
+/// The password check value at `p`, present when bit 0 of `flags` is set.
+fn check_value5(
+    r: &[u8],
+    p: usize,
+    flags: u64,
+    count: u8,
+    salt: [u8; 16],
+) -> Result<Option<Check>> {
+    let cut = || anyhow!("a header is cut short");
     if flags & 1 == 0 {
         return Ok(None);
     }
@@ -738,24 +887,63 @@ fn crypt5(r: &[u8]) -> Result<Option<Check>> {
     Ok(Some(Check { count, salt, value }))
 }
 
-fn parse4(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
+/// One RAR 4 header as stored at `pos`, checked against its checksum, and
+/// where it ends. With `crypt`, the password in 16-bit units and the keys
+/// derived so far, the header is encrypted, behind its salt and padded to
+/// whole AES blocks, as UnRAR's `ReadHeader15` reads it.
+fn read4(vol: &mut Volume, pos: u64, crypt: Option<(&[u8], &mut Keys4)>) -> Result<(Vec<u8>, u64)> {
+    let size_of = |head: &[u8]| -> Result<u64> {
+        let size = u64::from(u16le(head, 5)?);
+        if size < 7 {
+            bail!("a header has an impossible size");
+        }
+        Ok(size)
+    };
+    let (block, end) = match crypt {
+        None => {
+            let size = size_of(&vol.read(pos, 7)?)?;
+            (vol.read(pos, size)?, pos + size)
+        }
+        Some((password, keys)) => {
+            let salt: [u8; 8] = vol.read(pos, 8)?.try_into().expect("eight bytes");
+            let (key, iv) = *keys
+                .entry(salt)
+                .or_insert_with(|| crypt::key4(password, &salt));
+            let at = pos + 8;
+            let mut first = vol.read(at, crypt::BLOCK)?;
+            crypt::decrypt4(&key, &iv, &mut first);
+            let size = size_of(&first)?;
+            let padded = size.next_multiple_of(crypt::BLOCK);
+            let mut plain = vol.read(at, padded)?;
+            crypt::decrypt4(&key, &iv, &mut plain);
+            plain.truncate(size as usize);
+            (plain, at + padded)
+        }
+    };
+    if u32::from(u16le(&block, 0)?) != crc32fast::hash(&block[2..]) & 0xFFFF {
+        bail!("a header fails its checksum");
+    }
+    Ok((block, end))
+}
+
+fn parse4(vol: &mut Volume, v: usize, password: Option<&str>, out: &mut Parsed) -> Result<()> {
     let mut pos = 7u64;
     let mut saw_main = false;
+    // Set by a main header that says the headers are encrypted: the password
+    // as RAR 4 derives keys from it.
+    let mut encrypted: Option<Vec<u8>> = None;
     loop {
         if vol.ended(pos)? {
             return Ok(());
         }
-        let head = vol.read(pos, 7)?;
-        let kind = head[2];
-        let flags = u16le(&head, 3)?;
-        let size = u64::from(u16le(&head, 5)?);
-        if size < 7 {
-            bail!("a header has an impossible size");
-        }
-        let block = vol.read(pos, size)?;
-        if u32::from(u16le(&block, 0)?) != crc32fast::hash(&block[2..]) & 0xFFFF {
-            bail!("a header fails its checksum");
-        }
+        let read = read4(
+            vol,
+            pos,
+            encrypted.as_deref().map(|pw| (pw, &mut out.keys4)),
+        );
+        let (block, end) = decrypted(read, encrypted.is_some(), out)?;
+        let kind = block[2];
+        let flags = u16le(&block, 3)?;
         let data = match kind {
             // File and service headers: the packed size, and its high half
             // for large files.
@@ -770,14 +958,22 @@ fn parse4(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
             _ if flags & 0x8000 != 0 => u64::from(u32le(&block, 7)?),
             _ => 0,
         };
-        let next = (pos + size)
+        let next = end
             .checked_add(data)
             .filter(|&n| n <= vol.len)
             .ok_or_else(|| anyhow!("a header's data runs past the end of the volume"))?;
         match kind {
             0x73 => {
-                if flags & 0x80 != 0 {
-                    return Err(encrypted_names());
+                if saw_main {
+                    bail!("the volume has a second main header");
+                }
+                let hp = flags & 0x80 != 0;
+                out.agree(v, hp)?;
+                if hp {
+                    let Some(password) = password else {
+                        return Err(PasswordNeeded.into());
+                    };
+                    encrypted = Some(utf16_raw(password));
                 }
                 saw_main = true;
                 out.solid |= flags & 0x08 != 0;
@@ -785,7 +981,7 @@ fn parse4(vol: &mut Volume, v: usize, out: &mut Parsed) -> Result<()> {
             0x74 => {
                 let mut h = file4(v, flags, &block)?;
                 h.start = vol.start + pos;
-                h.data = vol.start + pos + size;
+                h.data = vol.start + end;
                 h.packed = data;
                 out.headers.push(h);
             }
@@ -934,10 +1130,29 @@ pub fn closing(storage: &Storage, keep: u64) -> Result<Vec<u8>> {
         .rev()
         .find(|p| p.start < keep)
         .ok_or_else(|| anyhow!("nothing of the archive is left to restore"))?;
-    let mut sig = [0u8; 8];
+    // The signature and the first header's type and flags; every volume
+    // left holds at least its main header.
+    let mut head = [0u8; 16];
     let mut r = storage.reader(None);
     r.seek(SeekFrom::Start(part.start))?;
-    r.read_exact(&mut sig)?;
+    r.read_exact(&mut head)?;
+    let sig = &head[..8];
+    // The end header would have to be encrypted with a key derived from the
+    // password, which restore does not take, and the restored set could not
+    // be checked without it either.
+    let encrypted = if sig.starts_with(SIG5) {
+        let mut at = 12;
+        vint(&head, &mut at).and_then(|_| vint(&head, &mut at))? == 4
+    } else {
+        sig.starts_with(SIG4) && u16le(&head, 10)? & 0x80 != 0
+    };
+    if encrypted {
+        bail!(
+            "{} has encrypted file names, and restore cannot rebuild such an archive. Run \
+             extract with the password to complete the extraction instead",
+            part.path.display()
+        );
+    }
     if sig.starts_with(SIG5) {
         // Size 3: type 5, no header flags, no end flags.
         let body = [3u8, 5, 0, 0];
@@ -1446,8 +1661,9 @@ fn failure(code: c_int, encrypted: bool) -> anyhow::Error {
 
 /// The names of the first `want` files of the set as UnRAR reports them, in
 /// order, continuations skipped.
-fn unrar_names(first: &Path, want: usize) -> Result<Vec<String>> {
-    let mut session = Session::open(first, native::RAR_OM_LIST, None, 0)?;
+fn unrar_names(first: &Path, want: usize, password: Option<&str>) -> Result<Vec<String>> {
+    // Only encrypted file names need the password here.
+    let mut session = Session::open(first, native::RAR_OM_LIST, password, 0)?;
     let mut names = Vec::with_capacity(want);
     while names.len() < want {
         let status = session.read_header();

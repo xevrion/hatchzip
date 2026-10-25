@@ -150,7 +150,7 @@
 <h2 id="features">What it does</h2>
 <ul>
 <li>Extracts ZIP (including ZIP64 and self-extracting <code>.exe</code> files), 7z, plain tar, <code>.tar.gz</code> and <code>.tgz</code>, and split archives (<code>.001</code>, <code>.002</code>, ...) of ZIP or 7z.</li>
-<li>Extracts RAR 5 and RAR 4, single files and volume sets (<code>.part1.rar</code>, ... or <code>.rar</code>, <code>.r00</code>, ...), freeing the archive file by file and deleting each volume once it is empty. A solid RAR can only be extracted while keeping the archive. RAR support is in the downloads from this site and the releases page, not in <code>cargo install hatchzip</code>.</li>
+<li>Extracts RAR 5 and RAR 4, single files and volume sets (<code>.part1.rar</code>, ... or <code>.rar</code>, <code>.r00</code>, ...), freeing the archive file by file and deleting each volume once it is empty, including archives made with "Encrypt file names". A solid RAR can only be extracted while keeping the archive. RAR support is in the downloads from this site and the releases page, not in <code>cargo install hatchzip</code>.</li>
 <li>A <code>.tar.gz</code> is read once from start to end before anything changes, so a damaged one is refused untouched. It then gives its space back as it extracts on NTFS (Windows), APFS (macOS), ext4, XFS, btrfs and other filesystems that can free part of a file. On FAT32 and exFAT it still extracts and resumes, but needs room for the archive and the files at once.</li>
 <li>Checks that the extraction will fit before it changes anything.</li>
 <li>Can also extract normally and keep the archive, when there is room for both: <code>--keep-archive</code>, an option in the app, or Extract here (keep archive) in the right-click menu. If keeping it does not fit, it says how much extracting in place needs instead.</li>
@@ -188,7 +188,7 @@
 <ul>
 <li>A 7z made with 7-Zip's default settings can be one solid block. HatchZip can only free it once all of it is out, so it needs free space for the whole block. <code>hatchzip check</code> tells you before anything changes.</li>
 <li><code>.tar.zst</code> and <code>.tar.xz</code> are not supported yet. They are refused before extraction.</li>
-<li>A solid RAR decodes front to back in one pass, so it can't be freed as it goes; it is extracted only while keeping the archive. RAR archives with encrypted file names or links are refused before extraction.</li>
+<li>A solid RAR decodes front to back in one pass, so it can't be freed as it goes; it is extracted only while keeping the archive. RAR archives with links are refused before extraction, and one with encrypted file names cannot be restored after a partial extraction, only completed.</li>
 <li>The archive is used up as it extracts. If the download itself is damaged, the files before the damage come out and the archive is partly gone. Use <code>--verify-first</code> when you can't download it again.</li>
 </ul>
 </section>

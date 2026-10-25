@@ -36,9 +36,10 @@ How it works: it extracts from the end of the archive and cuts each finished par
 
 ## Limits
 
-- A 7z made with 7-Zip's default settings can be one solid block; it needs free space for that whole block, and `check` says so first.
-- A .tar.gz frees space while it extracts only on filesystems that can free part of a file (NTFS, APFS, ext4, XFS, btrfs). On FAT32 and exFAT it needs room for the archive and the files at once.
-- A solid RAR is extracted only with `--keep-archive`. RAR archives with encrypted file names or links are refused before anything changes.
+- A 7z made with 7-Zip's default settings is one solid block; it needs free space for that whole block, and `check` says so first.
+- A `.tar.gz` frees space while it extracts only on filesystems that can free part of a file (NTFS, APFS, ext4, XFS, btrfs). On FAT32 and exFAT it needs room for the archive and the files at once, and `check` says so.
+- `.tar.xz` and `.tar.zst` are not supported yet.
+- RAR (RAR 5 and RAR 4, single files and `.part1.rar` or `.rar`/`.r00` volume sets) is freed file by file, each volume deleted once empty. Archives with encrypted file names (`rar -hp`) work with the password. A solid RAR is extracted only with `--keep-archive`; RAR archives with links are refused before anything changes. `restore` refuses archives with encrypted file names, since it takes no password; such an extraction can only be completed.
 
 ## Common questions
 

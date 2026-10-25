@@ -28,7 +28,7 @@ Ticked when it is merged and tested, not when it is started.
 
 - [x] `.tar.gz`, for datasets
 - [ ] `.tar.zst` and `.tar.xz` (see Formats)
-- [ ] RAR, single files and volume sets (`.part1.rar`, `.rar` with `.r00`, ...) (implemented, awaiting merge: freed file by file, volumes deleted as they empty, a big stored file freed while it is written; solid RAR only with `--keep-archive`; behind the `rar` cargo feature, on in the release builds; no links, no encrypted file names; see Formats)
+- [ ] RAR, single files and volume sets (`.part1.rar`, `.rar` with `.r00`, ...) (implemented, awaiting merge: freed file by file, volumes deleted as they empty, a big stored file freed while it is written; solid RAR only with `--keep-archive`; behind the `rar` cargo feature, on in the release builds; encrypted file names (`-hp`) with the password, but no `restore` for them; no links; see Formats)
 - [ ] Native split ZIP (`.z01`, ...) (see Formats)
 - [ ] Check the volumes against an `.sfv` file next to the archive before starting, and stop if one doesn't match
 - [ ] Extract several archives one after another from one command or one right-click, checking the space for each (implemented, awaiting merge: `extract`, `check`, `test` and `list` take several archives, `extract` stops at the first that does not complete with a summary and its exit code; the right-click task window queues several on Linux, where Dolphin, GNOME Files and Nemo now hand over the whole selection. Explorer still starts one window per file, so queueing there needs a single-instance app)
@@ -94,7 +94,9 @@ Ticked when it is merged and tested, not when it is started.
 - [ ] `.tar.xz`: every xz block start is a free resume point (xz 5.8 writes 24 MiB blocks by default); a single-block file needs the LZMA state saved. See `docs/formats.md`
 - [ ] `.tar.zst`: easy for multi-frame files (`pzstd`), but the usual single frame needs a decoder that can save its window. See `docs/formats.md`
 - [ ] RAR (implemented, awaiting merge: per file, not per volume, with the crash tests at every commit for RAR 5 and RAR 4 sets and single files; RAR 5 passwords proven by the check value, RAR 4 by decoding the smallest encrypted file; `restore`; fixtures from RAR 6.24 including real RAR 4; tests pass on Linux, CI runs them on macOS and Windows; x86_64 musl release build linked and run locally, aarch64 linked locally but only run in CI)
-- [ ] RAR: symbolic links and hard links, encrypted file names (`-hp`), and solid archives in place, which needs a decoder whose state can be saved (UnRAR's can't)
+- [ ] RAR: symbolic links and hard links, and solid archives in place, which needs a decoder whose state can be saved (UnRAR's can't)
+- [ ] RAR encrypted file names (`-hp`) (implemented, awaiting merge: headers decrypted in Rust, RAR 5 with AES-256 and the check value of the archive encryption header, RAR 4 with AES-128 and RAR 3's SHA-1 key derivation; fixtures from RAR 6.24, single and multi-volume, crash tests at every commit; Windows and macOS only in CI)
+- [ ] RAR: `restore` for encrypted file names. It needs a password (`restore` takes none today) to list what is left and to encrypt the new end of archive header
 - [ ] RAR: run the aarch64 musl release build on Arm once (the `linux-arm` release job does it on every release)
 - [ ] RAR: with the first release that has it, the manifests that repackage release builds (AUR `hatchzip-bin`, the Homebrew formula and cask, Scoop, winget) should install `LICENSE-UNRAR` and name its license; `hatchzip-bin` also needs `libstdc++`, which the desktop app now links. The source packages (AUR `hatchzip`, Homebrew core) build without the `rar` feature, yet the `.desktop` file offers RAR to them too
 - [ ] Native split ZIP (`.z01`, `.z02`, ..., `.zip`)

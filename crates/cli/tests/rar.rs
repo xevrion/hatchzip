@@ -17,8 +17,12 @@
 //!   small:  rar a -r -idq -ma4 -m3 -s        <fixtures>/rar4-solid/set.rar game
 //!   small:  rar a -r -idq -ma5 -m3 -qo+ -rr5% -zREADME <fixtures>/rar5-extras/set.rar game
 //!   small:  rar a -r -idq -ma5 -m3 -hpsecret <fixtures>/rar5-hp/set.rar game
+//!   small:  rar a -r -idq -ma5 -m3 -v4k -hpsecret <fixtures>/rar5-hp-set/set.rar game
+//!   small:  rar a -r -idq -ma4 -m3 -v4k -hpsecret <fixtures>/rar4-hp-set/set.rar game
 //!
-//! `README` in the small tree is the archive comment, not part of it.
+//! `README` in the small tree is the archive comment, not part of it. The
+//! `-hp-long` fixtures hold one file, `hello.txt` ("hello\n"), made with
+//! `rar a -idq -ma4 -m3 "-hp$LONG_PW"` and the same with `-ma5`.
 
 #![cfg(feature = "rar")]
 
@@ -553,6 +557,12 @@ fn test_reads_every_file() {
 /// is left, and it shrinks with every commit, inside a volume as well as a
 /// volume at a time.
 fn frees_after_every_batch(build: impl Fn(&Path) -> PathBuf) {
+    frees_after_every_batch_with(build, &[]);
+}
+
+/// [`frees_after_every_batch`], with `env` for every run, such as the
+/// password.
+fn frees_after_every_batch_with(build: impl Fn(&Path) -> PathBuf, env: &[(&str, &str)]) {
     let mut last = u64::MAX;
     let mut commits = 0;
     for after in 1u32.. {
@@ -560,15 +570,13 @@ fn frees_after_every_batch(build: impl Fn(&Path) -> PathBuf) {
         let archive = build(tmp.path());
         let original = on_disk(tmp.path());
         let n = after.to_string();
-        let crashed = extract(
-            &archive,
-            &tmp.path().join("out"),
-            &[
-                ("HATCHZIP_BATCH_ENTRIES", "1"),
-                ("HATCHZIP_CRASH_AT", "after-extract"),
-                ("HATCHZIP_CRASH_AFTER", &n),
-            ],
-        );
+        let mut crash = env.to_vec();
+        crash.extend([
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-extract"),
+            ("HATCHZIP_CRASH_AFTER", &n),
+        ]);
+        let crashed = extract(&archive, &tmp.path().join("out"), &crash);
         if crashed.status.success() {
             break;
         }
@@ -649,26 +657,29 @@ fn a_split_file_keeps_its_volumes_until_it_is_out() {
 /// Kills the run at both crash points after every number of commits the run
 /// makes, the last one included, and checks that a resume finishes it.
 fn crash_everywhere(build: impl Fn(&Path) -> PathBuf, files: &Files) {
+    crash_everywhere_with(build, files, &[]);
+}
+
+/// [`crash_everywhere`], with `env` for every run, such as the password.
+fn crash_everywhere_with(build: impl Fn(&Path) -> PathBuf, files: &Files, env: &[(&str, &str)]) {
     for point in ["after-extract", "after-journal"] {
         for after in 0u32.. {
             let tmp = TempDir::new().unwrap();
             let archive = build(tmp.path());
             let out = tmp.path().join("out");
             let n = after.to_string();
-            let crashed = extract(
-                &archive,
-                &out,
-                &[
-                    ("HATCHZIP_BATCH_ENTRIES", "1"),
-                    ("HATCHZIP_CRASH_AT", point),
-                    ("HATCHZIP_CRASH_AFTER", &n),
-                ],
-            );
+            let mut crash = env.to_vec();
+            crash.extend([
+                ("HATCHZIP_BATCH_ENTRIES", "1"),
+                ("HATCHZIP_CRASH_AT", point),
+                ("HATCHZIP_CRASH_AFTER", &n),
+            ]);
+            let crashed = extract(&archive, &out, &crash);
             if crashed.status.success() {
                 assert!(after > 0, "{point} never crashed");
                 break;
             }
-            let resumed = extract(&archive, &out, &[]);
+            let resumed = extract(&archive, &out, env);
             assert!(
                 resumed.status.success(),
                 "{point}#{after}: the resume failed\n{}",
@@ -799,9 +810,13 @@ fn a_big_stored_file_frees_space_as_it_goes() {
 
 const PW: &str = "secret";
 
+/// Archives made with "Encrypt file names" (`-hp`): their headers are
+/// encrypted too.
+const HP_SETS: [&str; 3] = ["rar5-hp", "rar5-hp-set", "rar4-hp-set"];
+
 #[test]
 fn password_protected_sets_extract_with_the_password() {
-    for set in ["rar5-pw", "rar4-pw"] {
+    for set in ["rar5-pw", "rar4-pw"].into_iter().chain(HP_SETS) {
         let tmp = TempDir::new().unwrap();
         let archive = copy_set(set, tmp.path());
         let out = tmp.path().join("out");
@@ -812,10 +827,11 @@ fn password_protected_sets_extract_with_the_password() {
 }
 
 /// A wrong password is "incorrect password", exit 5, for RAR 5 (by its check
-/// value) and RAR 4 (by decoding a file), and nothing changes.
+/// value) and RAR 4 (by decoding a file, or the first encrypted header), and
+/// nothing changes.
 #[test]
 fn a_wrong_or_missing_password_changes_nothing() {
-    for set in ["rar5-pw", "rar4-pw"] {
+    for set in ["rar5-pw", "rar4-pw"].into_iter().chain(HP_SETS) {
         let tmp = TempDir::new().unwrap();
         let archive = copy_set(set, tmp.path());
         let before = snapshot_dir(tmp.path());
@@ -837,6 +853,230 @@ fn a_wrong_or_missing_password_changes_nothing() {
             assert_unchanged(&before);
             refused_untouched(tmp.path(), &out);
         }
+    }
+}
+
+// -- Encrypted file names ------------------------------------------------------------
+
+const WITH_PW: [(&str, &str); 1] = [("HATCHZIP_PASSWORD", PW)];
+
+/// Nothing of an archive with encrypted file names can be read without the
+/// password, not even its list, and a wrong one is caught before any file
+/// is decoded. `test` checks it with the password.
+#[test]
+fn encrypted_file_names_need_the_password_to_list_and_test() {
+    for set in HP_SETS {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let a = archive.to_str().unwrap();
+        let before = snapshot_dir(tmp.path());
+        for args in [vec!["list", a], vec!["test", a]] {
+            assert_eq!(hatchzip(&args, &[]).status.code(), Some(5), "{set}");
+            let wrong = hatchzip(&args, &[("HATCHZIP_PASSWORD", "Secret")]);
+            assert_eq!(wrong.status.code(), Some(5), "{set}");
+            assert!(stderr(&wrong).contains("incorrect password"), "{set}");
+            assert_ok(&hatchzip(&args, &WITH_PW));
+        }
+        let listed = hatchzip(&["list", a, "--password", PW], &[]);
+        assert!(String::from_utf8_lossy(&listed.stdout).contains("日本語.txt"));
+        assert_unchanged(&before);
+        assert_no_side_files(&archive);
+    }
+}
+
+#[test]
+fn space_is_freed_after_every_file_with_encrypted_names() {
+    for set in HP_SETS {
+        frees_after_every_batch_with(|d| copy_set(set, d), &WITH_PW);
+    }
+}
+
+#[test]
+fn crash_at_every_commit_rar5_encrypted_names() {
+    crash_everywhere_with(|d| copy_set("rar5-hp", d), &small(), &WITH_PW);
+}
+
+#[test]
+fn crash_at_every_commit_rar5_encrypted_names_set() {
+    crash_everywhere_with(|d| copy_set("rar5-hp-set", d), &small(), &WITH_PW);
+}
+
+#[test]
+fn crash_at_every_commit_rar4_encrypted_names_set() {
+    crash_everywhere_with(|d| copy_set("rar4-hp-set", d), &small(), &WITH_PW);
+}
+
+/// The password is never written down, so a resume asks for it again, and
+/// a wrong one changes nothing of what is left.
+#[test]
+fn a_resumed_run_with_encrypted_names_needs_the_password_again() {
+    for set in HP_SETS {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let out = tmp.path().join("out");
+        let crashed = extract(
+            &archive,
+            &out,
+            &[
+                ("HATCHZIP_PASSWORD", PW),
+                ("HATCHZIP_BATCH_ENTRIES", "1"),
+                // Not after the journal write: a resume finishes that
+                // truncation before it opens the archive.
+                ("HATCHZIP_CRASH_AT", "after-extract"),
+                ("HATCHZIP_CRASH_AFTER", "3"),
+            ],
+        );
+        assert!(!crashed.status.success());
+        let journal = fs::read_to_string(&side_files(&archive)[0]).unwrap();
+        assert!(!journal.contains(PW));
+        let before = snapshot_dir(tmp.path());
+        for password in [None, Some("wrong")] {
+            let r = extract_with(&archive, &out, password);
+            assert_eq!(r.status.code(), Some(5), "{set}: {}", stderr(&r));
+            assert_unchanged(&before);
+        }
+        assert_ok(&extract_with(&archive, &out, Some(PW)));
+        assert_tree(&out, &small());
+        assert_consumed(&archive);
+    }
+}
+
+/// Kept, the archive never changes, through a crash and its resume too.
+#[test]
+fn encrypted_file_names_extract_while_kept() {
+    for set in HP_SETS {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let before = snapshot_dir(tmp.path());
+        let out = tmp.path().join("out");
+        let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+        let args = ["extract", a, "-o", o, "--keep-free", "0", "--keep-archive"];
+        let crashed = hatchzip(
+            &args,
+            &[
+                ("HATCHZIP_PASSWORD", PW),
+                ("HATCHZIP_BATCH_ENTRIES", "1"),
+                ("HATCHZIP_CRASH_AT", "after-journal"),
+                ("HATCHZIP_CRASH_AFTER", "2"),
+            ],
+        );
+        assert!(!crashed.status.success());
+        assert_unchanged(&before);
+        assert_ok(&hatchzip(&args, &WITH_PW));
+        assert_tree(&out, &small());
+        assert_unchanged(&before);
+        assert_no_side_files(&archive);
+    }
+}
+
+/// A password long enough that RAR 4's key derivation hashes whole blocks
+/// of it, where RAR keeps a quirk of RAR 2.9's SHA-1, and with characters
+/// outside ASCII, which RAR 4 hashes as UTF-16 and RAR 5 as UTF-8.
+#[test]
+fn a_long_password_with_non_ascii_characters() {
+    const LONG_PW: &str = "correct horse battery staple, ünïcödé 日本語";
+    for set in ["rar4-hp-long", "rar5-hp-long"] {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let out = tmp.path().join("out");
+        let before = snapshot_dir(tmp.path());
+        let wrong = extract_with(&archive, &out, Some(&LONG_PW[..LONG_PW.len() - 3]));
+        assert_eq!(wrong.status.code(), Some(5), "{set}: {}", stderr(&wrong));
+        assert_unchanged(&before);
+        assert_ok(&extract_with(&archive, &out, Some(LONG_PW)));
+        assert_eq!(fs::read(out.join("hello.txt")).unwrap(), b"hello\n");
+        assert_eq!(fs::read_dir(&out).unwrap().count(), 1);
+        assert_consumed(&archive);
+    }
+}
+
+/// Once the password is proven, a header that fails its checksum is damage
+/// (exit 4), not a wrong password: in RAR 5 by the check value of the
+/// archive encryption header, in RAR 4 by the headers of the first volume.
+#[test]
+fn a_damaged_encrypted_header_is_refused_untouched_as_damage() {
+    // The second volume's main header, after the signature and the archive
+    // encryption header (38 bytes) and the main header's IV; in RAR 4 after
+    // the signature, the plain main header and the salt of the next one.
+    for (set, volume, at) in [
+        ("rar5-hp-set", "set.part2.rar", 8 + 38 + 16 + 2),
+        ("rar5-hp-set", "set.part1.rar", 8 + 38 + 16 + 2),
+        ("rar4-hp-set", "set.part2.rar", 7 + 13 + 8 + 2),
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let path = tmp.path().join(volume);
+        let mut bytes = fs::read(&path).unwrap();
+        bytes[at] ^= 0xFF;
+        fs::write(&path, bytes).unwrap();
+        let before = snapshot_dir(tmp.path());
+        let out = extract_with(&archive, &tmp.path().join("out"), Some(PW));
+        assert_eq!(
+            out.status.code(),
+            Some(4),
+            "{set} {volume}: {}",
+            stderr(&out)
+        );
+        assert_unchanged(&before);
+        refused_untouched(tmp.path(), &out);
+    }
+}
+
+/// UnRAR refuses a set whose volumes disagree on encrypted file names, so
+/// that no volume can be swapped for one with other files; so does HatchZip.
+#[test]
+fn volumes_that_disagree_on_encrypted_names_are_refused_untouched() {
+    let tmp = TempDir::new().unwrap();
+    let archive = copy_set("rar5-hp-set", tmp.path());
+    let other =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rar/rar5-pw/set.part2.rar");
+    fs::copy(other, tmp.path().join("set.part2.rar")).unwrap();
+    let before = snapshot_dir(tmp.path());
+    let out = extract_with(&archive, &tmp.path().join("out"), Some(PW));
+    assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("encrypted file names"),
+        "{}",
+        stderr(&out)
+    );
+    assert_unchanged(&before);
+    refused_untouched(tmp.path(), &out);
+}
+
+/// Restore takes no password, which an archive with encrypted file names
+/// needs to be listed and closed again, so it is refused and the
+/// extraction can still be completed.
+#[test]
+fn restore_refuses_encrypted_file_names_and_extract_completes() {
+    for set in ["rar5-hp-set", "rar4-hp-set"] {
+        let tmp = TempDir::new().unwrap();
+        let archive = copy_set(set, tmp.path());
+        let out = tmp.path().join("out");
+        let crashed = extract(
+            &archive,
+            &out,
+            &[
+                ("HATCHZIP_PASSWORD", PW),
+                ("HATCHZIP_BATCH_ENTRIES", "1"),
+                ("HATCHZIP_CRASH_AT", "after-extract"),
+                ("HATCHZIP_CRASH_AFTER", "3"),
+            ],
+        );
+        assert!(!crashed.status.success());
+        let before = snapshot_dir(tmp.path());
+        let r = hatchzip(&["restore", archive.to_str().unwrap()], &WITH_PW);
+        assert_eq!(r.status.code(), Some(1), "{set}: {}", stderr(&r));
+        assert!(
+            stderr(&r).contains("encrypted file names"),
+            "{}",
+            stderr(&r)
+        );
+        assert_unchanged(&before);
+        assert!(side_files(&archive)[0].exists(), "the progress was lost");
+
+        assert_ok(&extract_with(&archive, &out, Some(PW)));
+        assert_tree(&out, &small());
+        assert_consumed(&archive);
     }
 }
 
@@ -1058,15 +1298,6 @@ fn a_dictionary_over_4_gb_is_refused_untouched() {
     });
     let archive = write_rar(tmp.path(), Version::Five, &entries, None, Naming::Old);
     refused_as_unsupported(&archive, tmp.path(), "8 GB dictionary");
-}
-
-/// Archives with encrypted file names are not supported yet; that is not
-/// damage.
-#[test]
-fn encrypted_file_names_are_refused_as_unsupported() {
-    let tmp = TempDir::new().unwrap();
-    let archive = copy_set("rar5-hp", tmp.path());
-    refused_as_unsupported(&archive, tmp.path(), "encrypted file names");
 }
 
 /// Longer than the 1023 characters of UnRAR's `FileNameW`; read in full
