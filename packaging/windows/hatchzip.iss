@@ -1,5 +1,6 @@
 ; HatchZip-x64-setup.exe, built with Inno Setup 6 from a folder holding the
-; files of the CLI release zip plus hatchzip-gui.exe (see build-setup.ps1):
+; files of the CLI release zip plus hatchzip-gui.exe and
+; hatchzip_shell_ext.dll (see build-setup.ps1):
 ;
 ;   iscc /DPayload=C:\path\to\payload /DAppVersion=0.1.0 packaging\windows\hatchzip.iss
 ;
@@ -64,9 +65,18 @@ SolidCompression=yes
 ChangesEnvironment=yes
 ; Also lets Explorer pick up the "Open with" entries without a sign-out.
 ChangesAssociations=yes
+; Without *.dll, which is in the default. Explorer holds the Explorer menu
+; DLL, and Restart Manager would offer to close Explorer for it, or close
+; it unasked in a silent install. The [Code] section moves the DLL aside
+; instead.
+CloseApplicationsFilter=*.exe,*.chm
 
 [Files]
-Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Payload}\*"; DestDir: "{app}"; Excludes: "hatchzip_shell_ext.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The Explorer menu's command handler, which hatchzip-gui finds next to
+; itself when it registers the menu. A copy Explorer still has loaded was
+; renamed out of the way at ssInstall, so this never meets a locked file.
+Source: "{#Payload}\hatchzip_shell_ext.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; The short name for the CLI. A copy, since Windows has no symlinks without
 ; developer mode; it's a few MB.
 Source: "{#Payload}\hatchzip.exe"; DestDir: "{app}"; DestName: "hz.exe"; Flags: ignoreversion
@@ -106,6 +116,8 @@ const
   EnvKey = 'Environment';
   { The UpgradeCode in hatchzip.wxs. }
   MsiUpgradeCode = '{083ECD39-645A-4455-AC0F-1647AC24D57A}';
+  { The Explorer menu's command handler, from crates/shell-ext. }
+  HandlerDll = 'hatchzip_shell_ext.dll';
 
 { True if HatchZip-x64.msi is installed. It installs to the same folder, so
   the two must not be installed over each other; the MSI refuses the other
@@ -169,14 +181,90 @@ begin
   RegWriteExpandStringValue(HKCU, EnvKey, 'Path', Copy(Path, 2, Length(Path) - 2));
 end;
 
+{ Explorer keeps hatchzip_shell_ext.dll loaded once it has shown the menu,
+  often until the user signs out, and Windows refuses to overwrite or delete
+  a loaded DLL. It does allow renaming one. Replacing a file at the next
+  restart needs administrator rights, which this setup doesn't ask for, so a
+  loaded copy is renamed out of the way and deleted by a later run, once
+  nothing has it loaded. }
+
+{ A name in Dir for a renamed copy of the DLL that no file has yet. }
+function UnusedOldName(Dir: String): String;
+var
+  I: Integer;
+begin
+  I := 1;
+  repeat
+    Result := AddBackslash(Dir) + HandlerDll + '.' + IntToStr(I) + '.old';
+    I := I + 1;
+  until not FileExists(Result);
+end;
+
+{ The DLL and every copy of it renamed by an earlier run, in Dir. }
+function HandlerFiles(Dir: String): TStringList;
+var
+  FindRec: TFindRec;
+begin
+  Result := TStringList.Create;
+  if FindFirst(AddBackslash(Dir) + HandlerDll + '*', FindRec) then
+  try
+    repeat
+      Result.Add(AddBackslash(Dir) + FindRec.Name);
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+{ Before the files are copied: deletes what it can, and renames the DLL
+  itself if it is loaded, so the new one can take its name. }
+procedure MoveHandlerAside(Dir: String);
+var
+  Files: TStringList;
+  I: Integer;
+begin
+  Files := HandlerFiles(Dir);
+  try
+    for I := 0 to Files.Count - 1 do
+      if not DeleteFile(Files[I]) and (CompareText(ExtractFileName(Files[I]), HandlerDll) = 0) then
+        if not RenameFile(Files[I], UnusedOldName(Dir)) then
+          Log('Could not delete or rename ' + Files[I]);
+  finally
+    Files.Free;
+  end;
+end;
+
+{ Before uninstalling: anything still loaded goes to the user's temporary
+  folder, so the install folder can be removed. It is deleted from there
+  whenever Windows or the user clears that folder. }
+procedure MoveHandlerOut(Dir: String);
+var
+  Files: TStringList;
+  I: Integer;
+begin
+  Files := HandlerFiles(Dir);
+  try
+    for I := 0 to Files.Count - 1 do
+      if not DeleteFile(Files[I]) then
+        if not RenameFile(Files[I], UnusedOldName(GetTempDir)) then
+          Log('Could not delete or move ' + Files[I] + '; the install folder stays until it is free');
+  finally
+    Files.Free;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+    MoveHandlerAside(ExpandConstant('{app}'));
   if CurStep = ssPostInstall then
     AddToPath(ExpandConstant('{app}'));
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    MoveHandlerOut(ExpandConstant('{app}'));
   if CurUninstallStep = usPostUninstall then
     RemoveFromPath(ExpandConstant('{app}'));
 end;

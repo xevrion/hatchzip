@@ -167,6 +167,60 @@ fn explorer_menu_points_at_the_gui_and_goes_away_cleanly() {
             assert_eq!(line, format!("\"{}\" {} \"%1\"", gui.display(), a.flag));
         }
     }
+    // No DLL next to that exe, so no command handler either.
+    let clsid = format!(
+        r"Software\Classes\CLSID\{}",
+        hatchzip_shell::explorer::clsid_string()
+    );
+    assert!(hkcu.open_subkey(&clsid).is_err());
+    let extract_to = format!(r"{base}\.zip\shell\HatchZip\shell\04extract-to");
+    let item = hkcu.open_subkey(&extract_to).unwrap();
+    assert!(
+        item.get_value::<String, _>("ExplorerCommandHandler")
+            .is_err()
+    );
+
+    // With the DLL next to the exe, the "Extract to" entry, and only that
+    // one, names the handler. Both files are empty: nothing loads them here.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let installed = tmp.path().join("hatchzip-gui.exe");
+    std::fs::write(&installed, b"").unwrap();
+    let dll = tmp.path().join(hatchzip_shell::explorer::HANDLER_DLL);
+    std::fs::write(&dll, b"").unwrap();
+    register(&dirs, &installed).unwrap();
+    let server = hkcu
+        .open_subkey(format!(r"{clsid}\InprocServer32"))
+        .unwrap();
+    assert_eq!(
+        server.get_value::<String, _>("").unwrap(),
+        dll.to_string_lossy()
+    );
+    assert_eq!(
+        server.get_value::<String, _>("ThreadingModel").unwrap(),
+        "Apartment"
+    );
+    for ext in hatchzip_shell::EXTENSIONS {
+        for (i, a) in ACTIONS.iter().enumerate() {
+            let item = hkcu
+                .open_subkey(format!(
+                    r"{base}\.{ext}\shell\HatchZip\shell\{:02}{}",
+                    i + 1,
+                    a.id
+                ))
+                .unwrap();
+            let handler = item.get_value::<String, _>("ExplorerCommandHandler");
+            if a.id == "extract-to" {
+                assert_eq!(handler.unwrap(), hatchzip_shell::explorer::clsid_string());
+            } else {
+                assert!(handler.is_err(), "{}", a.id);
+            }
+        }
+    }
+
+    // Registering again from where there is no DLL drops the handler.
+    register(&dirs, gui).unwrap();
+    assert!(hkcu.open_subkey(&clsid).is_err());
+    register(&dirs, &installed).unwrap();
 
     unregister(&dirs).unwrap();
     unregister(&dirs).unwrap();
@@ -177,6 +231,7 @@ fn explorer_menu_points_at_the_gui_and_goes_away_cleanly() {
                 .is_err()
         );
     }
+    assert!(hkcu.open_subkey(&clsid).is_err());
 }
 
 #[cfg(target_os = "macos")]

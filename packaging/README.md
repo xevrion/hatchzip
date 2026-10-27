@@ -110,8 +110,9 @@ library. CI uses Ubuntu 22.04.
 ## Windows: setup
 
 ```powershell
-cargo build --release --locked --bin hatchzip-gui
-# dist\payload: the files of hatchzip-x86_64-windows.zip, plus hatchzip-gui.exe
+cargo build --release --locked -p hatchzip-gui -p hatchzip-shell-ext
+# dist\payload: the files of hatchzip-x86_64-windows.zip, plus
+# hatchzip-gui.exe and hatchzip_shell_ext.dll
 packaging\windows\build-setup.ps1 dist\payload 0.1.0
 packaging\windows\test-setup.ps1 dist\HatchZip-x64-setup.exe
 ```
@@ -124,6 +125,19 @@ PATH, and HatchZip under "Open with" for .zip, .7z, .tar, .tgz, .gz, .001,
 .rar and .r00 files. It runs `hatchzip-gui --register-shell` after
 installing and `hatchzip-gui --unregister-shell` before uninstalling.
 Uninstalling removes all of it, PATH entry included.
+
+`hatchzip_shell_ext.dll` (`crates/shell-ext`) is the Explorer command
+handler that names the folder in the "Extract to" entry, as in
+`Extract to "game\"`. Explorer keeps it loaded once it has shown the menu,
+and Windows won't overwrite or delete a loaded DLL. Replacing a file at the
+next restart needs administrator rights, which the setup doesn't ask for,
+so the setup renames a loaded copy out of the way before copying files
+(`hatchzip_shell_ext.dll.1.old`) and deletes it on a later run, once nothing
+has it loaded. Uninstalling moves a loaded copy to the user's temporary
+folder, so the install folder still goes. Restart Manager is told to ignore
+DLLs (`CloseApplicationsFilter`), or it would offer to close Explorer, and
+close it without asking in a silent install. `test-setup.ps1` loads the DLL
+into its own process and runs an update and the uninstall with it held.
 
 The setup carries a full version resource (company, description, product
 name, copyright, version), which Windows shows under Properties > Details
@@ -142,8 +156,8 @@ packaging\windows\test-msi.ps1 dist\HatchZip-x64.msi dist\HatchZip-x64-setup.exe
 
 `windows/hatchzip.wxs` installs the same files to the same folder as the
 setup, for the current user and without an admin prompt (`Scope="perUser"`):
-`hatchzip-gui.exe`, `hatchzip.exe`, `hz.exe`, the PowerShell completion
-script, the README and the three licenses. It adds the Start menu shortcut,
+`hatchzip-gui.exe`, `hatchzip_shell_ext.dll`, `hatchzip.exe`, `hz.exe`, the
+PowerShell completion script, the README and the three licenses. It adds the Start menu shortcut,
 the folder to the user PATH, the same "Open with" keys as the setup, and an
 entry in Settings > Apps with the icon and links to hatchzip.dev and the
 repository. A deferred custom action runs the installed
@@ -152,7 +166,11 @@ repository. A deferred custom action runs the installed
 that undoes it if the install fails later on. A new version replaces the
 installed one (`MajorUpgrade`, keyed by the `UpgradeCode`, which never
 changes); Windows Installer versions are three numbers, so a pre-release
-like 0.2.0-beta.1 is built as 0.2.0.
+like 0.2.0-beta.1 is built as 0.2.0. `MSIRESTARTMANAGERCONTROL` is
+`Disable`, so an update or uninstall never offers to close Explorer for the
+loaded `hatchzip_shell_ext.dll`; Windows Installer handles that file as any
+file in use, which may need a restart. `test-msi.ps1` doesn't cover that
+case.
 
 The setup and the MSI are separate products to Windows, so each refuses to
 install while the other is installed: the MSI with a launch condition on
@@ -170,9 +188,10 @@ zip has to be added there too.
 ## Windows: signing
 
 The release workflow can sign everything Windows runs with Authenticode:
-`hatchzip.exe` and `hatchzip-gui.exe` right after the build, so the zip,
-the setup and the MSI all carry signed copies (`hz.exe` is a copy of
-`hatchzip.exe`), then the setup and the MSI once they are built. Each signed
+`hatchzip.exe`, `hatchzip-gui.exe` and the Explorer menu's
+`hatchzip_shell_ext.dll` right after the build, so the zips, the setup and
+the MSI all carry signed copies (`hz.exe` is a copy of `hatchzip.exe`),
+then the setup and the MSI once they are built. Each signed
 file is checked for a valid, timestamped signature before it replaces the
 unsigned one, and the install tests run on the signed installers.
 
@@ -414,6 +433,11 @@ request.
   of the exe) and a version resource. `hatchzip.exe` carries a version
   resource too (`crates/cli/build.rs`), with the same product and company
   names.
+- On Windows, `--register-shell` adds the Explorer command handler only
+  when `hatchzip_shell_ext.dll` is in the same folder as the exe; without
+  it, "Extract to" keeps its static label. The DLL starts
+  `hatchzip-gui.exe --extract-to` from its own folder, so the two always
+  ship together.
 - On Linux, the window's Wayland app ID and X11 class are
   `io.github.xevrion.hatchzip`, so the desktop shows the menu entry's icon.
 - Inside an AppImage the program runs from a temporary mount, so

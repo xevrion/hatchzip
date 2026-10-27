@@ -149,16 +149,19 @@ jobs:
           persist-credentials: false
       # .cargo/config.toml links the C runtime in, so no redistributable is
       # needed; cc-rs sees crt-static and builds UnRAR with /MT to match.
+      # hatchzip_shell_ext.dll is the Explorer command handler that names the
+      # folder in the "Extract to" menu entry; it has no `rar` feature, and
+      # needs none.
       - name: build
-        run: cargo build --release --locked -p hatchzip -p hatchzip-gui --features rar
+        run: cargo build --release --locked -p hatchzip -p hatchzip-gui -p hatchzip-shell-ext --features rar
       - name: signing
         run: echo "signing with ${SIGNER:-nothing, signing is not set up for this run}"
 
-      # Sign the programs. hz.exe is a copy of hatchzip.exe, made when
-      # packaging.
+      # Sign the programs and the Explorer DLL. hz.exe is a copy of
+      # hatchzip.exe, made when packaging.
       - name: stage the programs for signing
         if: env.SIGNER != ''
-        run: mkdir signing-programs && cp target/release/hatchzip.exe target/release/hatchzip-gui.exe signing-programs/
+        run: mkdir signing-programs && cp target/release/hatchzip.exe target/release/hatchzip-gui.exe target/release/hatchzip_shell_ext.dll signing-programs/
       - id: unsigned-programs
         if: env.SIGNER == 'signpath'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -190,7 +193,7 @@ jobs:
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
           files-folder: ${{ github.workspace }}\signing-programs
-          files-folder-filter: exe
+          files-folder-filter: exe,dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -198,12 +201,12 @@ jobs:
         if: env.SIGNER != ''
         shell: pwsh
         # SignPath returns the signed files; Azure signs them where they are.
-        run: packaging/windows/check-signed.ps1 ${{ env.SIGNER == 'signpath' && 'signed-programs' || 'signing-programs' }} target/release hatchzip.exe hatchzip-gui.exe
+        run: packaging/windows/check-signed.ps1 ${{ env.SIGNER == 'signpath' && 'signed-programs' || 'signing-programs' }} target/release hatchzip.exe hatchzip-gui.exe hatchzip_shell_ext.dll
 
       - name: smoke test
         run: python .github/scripts/smoke.py target/release/hatchzip.exe
       - name: no networking
-        run: python .github/scripts/no-network.py target/release/hatchzip.exe target/release/hatchzip-gui.exe
+        run: python .github/scripts/no-network.py target/release/hatchzip.exe target/release/hatchzip-gui.exe target/release/hatchzip_shell_ext.dll
       - name: package
         run: |
           name="hatchzip-x86_64-windows"
@@ -216,16 +219,19 @@ jobs:
           target/release/hatchzip.exe completions powershell > "dist/$name/hatchzip-completion.ps1"
           (cd "dist/$name" && 7z a -tzip "../$name.zip" . > /dev/null)
           (cd dist && sha256sum "$name.zip" > "$name.zip.sha256")
-      # The setup and the MSI hold what the zip holds, plus the desktop app.
+      # The setup and the MSI hold what the zip holds, plus the desktop app
+      # and its Explorer DLL, which must sit next to it.
       - name: stage the installers
         run: |
           mkdir -p dist/payload
           cp -r dist/hatchzip-x86_64-windows/. dist/payload/
-          cp target/release/hatchzip-gui.exe dist/payload/
+          cp target/release/hatchzip-gui.exe target/release/hatchzip_shell_ext.dll dist/payload/
           echo "HATCHZIP_VERSION=$(target/release/hatchzip.exe --version | awk '{print $2}')" >> "$GITHUB_ENV"
       # The same files with nothing to install: unzip anywhere and run
       # hatchzip-gui.exe. Settings, "Show in the Explorer context menu" adds
       # the right-click entries for wherever it is, and removes them again.
+      # Explorer keeps hatchzip_shell_ext.dll loaded once it has shown the
+      # menu, so deleting the folder can need a sign-out first.
       - name: portable zip
         run: |
           (cd dist/payload && 7z a -tzip ../HatchZip-x64-portable.zip . > /dev/null)

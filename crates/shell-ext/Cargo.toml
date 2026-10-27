@@ -1,0 +1,32 @@
+[package]
+name = "hatchzip-shell-ext"
+description = "The Explorer command handler that names the folder in HatchZip's \"Extract to\" menu entry on Windows."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+# hatchzip_shell_ext.dll, which Explorer loads. On other systems the library
+# is empty; see src/platform.
+crate-type = ["cdylib"]
+
+[target."cfg(windows)".dependencies]
+# The label text and the class ID; registration is in there too.
+hatchzip-shell = { path = "../shell" }
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+] }
+# `#[implement]` expands to paths in windows-core, so it has to be a direct
+# dependency. Same version as `windows` uses.
+windows-core = "0.62.2"
+
+[build-dependencies]
+# Only used when the target is Windows; see build.rs.
+winresource = { version = "0.1.34", default-features = false }

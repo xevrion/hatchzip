@@ -84,6 +84,14 @@ jobs:
         env:
           HATCHZIP_EXPECT_PUNCH: '1'
           FEATURES: ${{ matrix.features }}
+      # The Explorer command handler is only compiled on Windows, so the
+      # Linux clippy job never sees it. This links the DLL itself, which the
+      # tests above don't, and lints it.
+      - if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo build --locked -p hatchzip-shell-ext
+          cargo clippy --locked -p hatchzip-shell-ext -p hatchzip-shell --all-targets -- -D warnings
 
   # deny.toml: known vulnerabilities (RustSec), licenses, crates.io as the only
   # source, and the network ban list, which fails if an HTTP, TLS or socket

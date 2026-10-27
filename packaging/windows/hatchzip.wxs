@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   HatchZip-x64.msi, built with WiX 5 from the same folder as the setup: the
-  files of the CLI release zip plus hatchzip-gui.exe (see build-msi.ps1).
+  files of the CLI release zip plus hatchzip-gui.exe and
+  hatchzip_shell_ext.dll (see build-msi.ps1).
 
     wix build -arch x64 -d Payload=C:\path\to\payload -d Version=0.1.0 -o dist\HatchZip-x64.msi packaging\windows\hatchzip.wxs
 
@@ -38,6 +39,12 @@
     <Property Id="ARPCOMMENTS" Value="Extract huge archives in place" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="ARPNOREPAIR" Value="1" />
+    <!-- Explorer holds hatchzip_shell_ext.dll once it has shown the menu.
+         With Restart Manager, an upgrade or uninstall would offer to close
+         and restart Explorer for it. Without it, Windows Installer treats
+         the DLL as it treats any file in use, which can mean a restart
+         before the old copy is gone. -->
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
 
     <!-- The setup's uninstall entry: its AppId plus "_is1". -->
     <Property Id="HATCHZIPSETUP">
@@ -58,6 +65,10 @@
          is. -->
     <Component Id="HatchZip" Directory="INSTALLFOLDER" Guid="CFD8DFE3-6B45-471E-AC29-05B26668E3B3">
       <File Id="HatchZipGui" Source="$(var.Payload)\hatchzip-gui.exe" KeyPath="no" />
+      <!-- The Explorer menu's command handler. hatchzip-gui registers it,
+           in the RegisterShell action below, when it finds it next to
+           itself. -->
+      <File Id="ShellExt" Source="$(var.Payload)\hatchzip_shell_ext.dll" KeyPath="no" />
       <File Id="HatchZipCli" Source="$(var.Payload)\hatchzip.exe" KeyPath="no" />
       <!-- The short name for the CLI. A copy, since Windows has no symlinks
            without developer mode. -->

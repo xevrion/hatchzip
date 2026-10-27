@@ -2004,8 +2004,19 @@ name = "hatchzip-shell"
 version = "0.1.6"
 dependencies = [
  "anyhow",
+ "hatchzip-core",
  "tempfile",
  "winreg",
+]
+
+[[package]]
+name = "hatchzip-shell-ext"
+version = "0.1.6"
+dependencies = [
+ "hatchzip-shell",
+ "windows",
+ "windows-core",
+ "winresource",
 ]
 
 [[package]]

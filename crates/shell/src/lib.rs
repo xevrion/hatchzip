@@ -5,6 +5,7 @@
 //! Registration only ever writes entries under names HatchZip owns, and
 //! [`unregister`] removes exactly those.
 
+pub mod explorer;
 mod platform;
 
 use std::path::{Path, PathBuf};

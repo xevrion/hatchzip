@@ -16,6 +16,9 @@ $dir = Join-Path $env:LOCALAPPDATA 'Programs\HatchZip'
 $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'HatchZip.lnk'
 # Written by `hatchzip-gui --register-shell` (crates/shell).
 $menuKey = 'HKCU:\Software\Classes\SystemFileAssociations\.zip\shell\HatchZip'
+# The Explorer command handler's class, crates/shell/src/explorer.rs.
+$clsid = '{CB3BCA83-08A0-4CC7-8219-C514FAC7D51C}'
+$clsidKey = "HKCU:\Software\Classes\CLSID\$clsid"
 $progId = 'HKCU:\Software\Classes\HatchZip.Archive'
 $appKey = 'HKCU:\Software\Classes\Applications\hatchzip-gui.exe'
 $extensions = 'zip', '7z', 'tar', 'tgz', 'gz', '001', 'rar', 'r00'
@@ -88,8 +91,8 @@ $kindBefore = PathKind
 
 Write-Host 'install'
 Msiexec '/i', "`"$Msi`""
-foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe', 'hatchzip-completion.ps1', 'README.md',
-        'LICENSE-MIT.txt', 'LICENSE-APACHE.txt', 'LICENSE-UNRAR.txt') {
+foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe', 'hatchzip_shell_ext.dll', 'hatchzip-completion.ps1',
+        'README.md', 'LICENSE-MIT.txt', 'LICENSE-APACHE.txt', 'LICENSE-UNRAR.txt') {
     Check (Test-Path (Join-Path $dir $f)) "$f is missing"
 }
 Check (Test-Path $link) 'the Start menu shortcut is missing'
@@ -119,6 +122,10 @@ if ($products.Count -eq 1) {
 Check ((UserPath) -contains $dir) "$dir is not on the user PATH: $([Environment]::GetEnvironmentVariable('Path', 'User'))"
 Check ((PathKind) -eq $kindBefore) "the user PATH changed from $kindBefore to $(PathKind)"
 Check (Test-Path $menuKey) 'the right-click menu was not registered'
+$server = if (Test-Path "$clsidKey\InprocServer32") { (Get-ItemProperty "$clsidKey\InprocServer32").'(default)' }
+Check ($server -eq (Join-Path $dir 'hatchzip_shell_ext.dll')) "the Explorer command handler points at $server"
+$handler = if (Test-Path "$menuKey\shell\03extract-to") { (Get-ItemProperty "$menuKey\shell\03extract-to").ExplorerCommandHandler }
+Check ($handler -eq $clsid) "Extract to names the handler $handler"
 foreach ($ext in $extensions) {
     Check (OpenWithHas $ext) "HatchZip is not in Open with for .$ext"
 }
@@ -159,6 +166,7 @@ Check (@(Products).Count -eq 0) 'it is still installed'
 Check ((UserPath) -notcontains $dir) "$dir is still on the user PATH"
 Check ((PathKind) -eq $kindBefore) "the user PATH changed from $kindBefore to $(PathKind)"
 Check (-not (Test-Path $menuKey)) 'the right-click menu is still there'
+Check (-not (Test-Path $clsidKey)) 'the Explorer command handler is still registered'
 foreach ($ext in $extensions) {
     Check (-not (OpenWithHas $ext)) "HatchZip is still in Open with for .$ext"
 }

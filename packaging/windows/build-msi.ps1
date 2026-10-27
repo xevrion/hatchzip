@@ -1,6 +1,7 @@
 # Builds dist\HatchZip-x64.msi with WiX 5 from the folder build-setup.ps1
-# uses: the files of the CLI release zip plus hatchzip-gui.exe. WiX is a
-# .NET tool; it's installed at a fixed version if it isn't there.
+# uses: the files of the CLI release zip plus hatchzip-gui.exe and
+# hatchzip_shell_ext.dll. WiX is a .NET tool; it's installed at a fixed
+# version if it isn't there.
 #
 #   packaging\windows\build-msi.ps1 dist\payload 0.1.0
 
@@ -14,8 +15,8 @@ $WixVersion = '5.0.2'
 
 # hatchzip.wxs lists each file by name, unlike the setup, which takes the
 # whole folder. A file added to the zip must be added there too.
-$expected = 'hatchzip.exe', 'hatchzip-gui.exe', 'hatchzip-completion.ps1', 'README.md',
-    'LICENSE-MIT.txt', 'LICENSE-APACHE.txt', 'LICENSE-UNRAR.txt'
+$expected = 'hatchzip.exe', 'hatchzip-gui.exe', 'hatchzip_shell_ext.dll', 'hatchzip-completion.ps1',
+    'README.md', 'LICENSE-MIT.txt', 'LICENSE-APACHE.txt', 'LICENSE-UNRAR.txt'
 $found = Get-ChildItem -Path $Payload -Recurse -File | ForEach-Object { $_.FullName.Substring((Resolve-Path $Payload).Path.Length + 1) }
 $missing = $expected | Where-Object { $found -notcontains $_ }
 $extra = $found | Where-Object { $expected -notcontains $_ }
