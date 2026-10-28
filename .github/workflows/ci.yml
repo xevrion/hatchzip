@@ -84,6 +84,14 @@ jobs:
         env:
           HATCHZIP_EXPECT_PUNCH: '1'
           FEATURES: ${{ matrix.features }}
+      # The quick check lints Linux only; code behind `cfg(windows)` and
+      # `cfg(target_os = "macos")`, and test helpers only Unix tests use,
+      # get linted here.
+      - if: runner.os != 'Linux'
+        run: cargo clippy --workspace --all-targets --locked --features "$FEATURES" -- -D warnings
+        shell: bash
+        env:
+          FEATURES: ${{ matrix.features }}
 
   # deny.toml: known vulnerabilities (RustSec), licenses, crates.io as the only
   # source, and the network ban list, which fails if an HTTP, TLS or socket

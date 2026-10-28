@@ -326,6 +326,7 @@ fn zip_duplicate_names_in_a_self_extractor_are_refused() {
 }
 
 /// The journal a run left next to `archive`.
+#[cfg(unix)]
 fn journal(archive: &Path) -> serde_json::Value {
     serde_json::from_slice(&fs::read(&side_files(archive)[0]).unwrap()).unwrap()
 }
