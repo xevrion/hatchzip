@@ -279,11 +279,12 @@ HatchZip destroys the archive as it extracts, so it is built around never losing
 - **Nothing changes until the plan fits.** The space check runs before the first byte is touched, and it replays the whole extraction to find the moment that needs the most free space, not just the total.
 - **A file is written, flushed to the physical disk and renamed into place before the part of the archive holding it is cut off.** A crash at any point leaves either the file or its bytes in the archive, never neither.
 - **Damage stops the run where it is.** Every file's CRC-32 is checked as it is extracted. A damaged file is not written, and it stays in the archive along with everything before it.
+- **An `.sfv` file is checked first.** When one named after the archive is next to it, as split downloads often have, every volume is checked against it before anything changes. A damaged or missing volume stops the extraction with nothing modified.
 - **Hostile archives are refused before anything is deleted:** paths that escape the output folder, entries that overlap each other, entries that appear twice, and links where other entries need a folder. Setuid and setgid bits are never restored, and symlinks are created only after every regular file is written, so nothing can be written through one. Progress files found next to an archive are checked the same way: they may only name that archive's own volumes and links inside the output folder.
 - **A kept archive stays as it was.** With `--keep-archive`, the code that shrinks, frees or deletes archive bytes refuses to run for the whole extraction, and its progress file has a format older versions refuse, so none of them can resume it in place.
 - **A replaced file is never deleted early.** With `--replace`, existing files are moved aside, and the moves flushed to disk, before the first file is extracted, and they are deleted only when the extraction completes. The progress file records the move in a format older versions refuse, since they would not put the files back.
 
-What it cannot protect against: if the download itself is damaged, the files before the damaged spot are extracted and the archive is partly gone. Use `--verify-first` when the archive can't be downloaded again. On btrfs or APFS, space held by a snapshot that includes the archive is not freed until the snapshot is deleted.
+What it cannot protect against: if the download itself is damaged, the files before the damaged spot are extracted and the archive is partly gone. Use `--verify-first` when the archive can't be downloaded again and has no `.sfv` file. On btrfs or APFS, space held by a snapshot that includes the archive is not freed until the snapshot is deleted.
 
 ### Antivirus warnings
 

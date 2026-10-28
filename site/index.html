@@ -157,6 +157,7 @@
 <li>Keeps 2 GB of free space by default, so the disk never fills to zero. Change it with <code>--keep-free</code>.</li>
 <li>Can be stopped with Ctrl+C, or crash, at any moment. Run the same command again and it picks up where it left off.</li>
 <li>Checks each file's CRC-32 as it extracts. A damaged file stops the run, and it stays in the archive.</li>
+<li>Checks every volume against an <code>.sfv</code> file named after the archive, when one is next to it, before anything changes.</li>
 <li>Never overwrites a file that is already there, so "extract here" is safe.</li>
 <li>Opens password-protected ZIP, 7z and RAR archives. It checks the password before anything is deleted, and never saves it.</li>
 <li>Works on any filesystem that can shrink a file: ext4, btrfs, XFS, NTFS, APFS, and exFAT and FAT32 USB drives.</li>
