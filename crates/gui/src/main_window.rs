@@ -33,6 +33,15 @@ const ARCHIVE_EXTENSIONS: &[&str] = if hatchzip_core::archive::RAR_SUPPORTED {
     &["zip", "7z", "tar", "gz", "tgz", "exe", "001"]
 };
 
+/// The Linux file choosers match a filter case-sensitively, so `GAME.RAR`
+/// would be hidden by `*.rar` alone.
+fn picker_extensions() -> Vec<String> {
+    ARCHIVE_EXTENSIONS
+        .iter()
+        .flat_map(|e| [e.to_string(), e.to_uppercase()])
+        .collect()
+}
+
 /// The formats line under the Open button.
 const FORMATS: &str = if hatchzip_core::archive::RAR_SUPPORTED {
     "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, RAR, and split \
@@ -543,7 +552,7 @@ impl App {
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
             .set_title("Open archive")
-            .add_filter("Archives", ARCHIVE_EXTENSIONS)
+            .add_filter("Archives", &picker_extensions())
             .add_filter("All files", &["*"])
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
