@@ -18,8 +18,10 @@ pub fn config_dir() -> Option<PathBuf> {
     Some(std::env::home_dir()?.join("Library/Application Support/HatchZip"))
 }
 
+type OnOpen = Box<dyn Fn(PathBuf)>;
+
 thread_local! {
-    static ON_OPEN: RefCell<Option<Box<dyn Fn(PathBuf)>>> = const { RefCell::new(None) };
+    static ON_OPEN: RefCell<Option<OnOpen>> = const { RefCell::new(None) };
 }
 
 /// Finder hands the files of "Open With" and double-click to the app as an
