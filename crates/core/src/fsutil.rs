@@ -215,9 +215,44 @@ pub fn zip_time(dt: zip::DateTime) -> Option<SystemTime> {
         .map(|s| UNIX_EPOCH + Duration::from_secs(s))
 }
 
+/// Seconds from 1970, negative before it.
+pub fn epoch_secs(t: SystemTime) -> Option<i64> {
+    match t.duration_since(UNIX_EPOCH) {
+        Ok(d) => i64::try_from(d.as_secs()).ok(),
+        // Whole seconds, rounding down, as a tar header stores them.
+        Err(e) => {
+            let d = e.duration();
+            let secs = d.as_secs() + u64::from(d.subsec_nanos() > 0);
+            i64::try_from(secs).ok().map(|s| -s)
+        }
+    }
+}
+
+/// The time `secs` seconds from 1970, or `None` when the system can't
+/// represent it.
+pub fn from_epoch_secs(secs: i64) -> Option<SystemTime> {
+    let d = Duration::from_secs(secs.unsigned_abs());
+    if secs < 0 {
+        UNIX_EPOCH.checked_sub(d)
+    } else {
+        UNIX_EPOCH.checked_add(d)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A resume point keeps a time before 1970, as a .tar.gz stores it.
+    #[test]
+    fn times_before_1970_round_trip_through_seconds() {
+        for secs in [-152_391_233, -1, 0, 1_700_000_000] {
+            let t = from_epoch_secs(secs).unwrap();
+            assert_eq!(epoch_secs(t), Some(secs));
+        }
+        let t = UNIX_EPOCH - Duration::from_millis(1500);
+        assert_eq!(epoch_secs(t), Some(-2));
+    }
 
     /// Each file has its own temporary file, so writing the journal leaves
     /// a file named like the old shared one alone, and one a crash left

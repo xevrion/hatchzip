@@ -8,13 +8,13 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
 
 use ::tar::EntryType;
 use anyhow::{Context, Result, anyhow, bail};
 
 use super::storage::{Reader, Storage, Tail};
 use super::{Codec, Format, Item, Kind, Opened, Sink, Stream, Unit, Worker, safe_path};
+use crate::fsutil;
 
 struct Entry {
     data_start: u64,
@@ -131,14 +131,10 @@ pub(super) fn describe<R: Read>(
     };
     // GNU tar writes times before 1970 as negative base-256 numbers, which
     // the tar crate hands back in two's complement.
-    let mtime = header.mtime().ok().and_then(|s| {
-        let secs = Duration::from_secs((s as i64).unsigned_abs());
-        if (s as i64) < 0 {
-            UNIX_EPOCH.checked_sub(secs)
-        } else {
-            UNIX_EPOCH.checked_add(secs)
-        }
-    });
+    let mtime = header
+        .mtime()
+        .ok()
+        .and_then(|s| fsutil::from_epoch_secs(s as i64));
     let mode = header.mode().ok();
     Ok(Some((
         Item {

@@ -340,6 +340,70 @@ fn crashing_again_and_again_inside_one_tar_gz_entry_is_harmless() {
     assert_consumed(&archive);
 }
 
+/// A resume point inside a file dated before 1970 keeps that date.
+#[test]
+fn a_time_before_1970_survives_a_resume_inside_its_file() {
+    let files = files();
+    let tmp = TempDir::new().unwrap();
+    let mut b = tar::Builder::new(Vec::new());
+    let mut dir = tar::Header::new_gnu();
+    dir.set_entry_type(tar::EntryType::Directory);
+    dir.set_mode(0o755);
+    dir.set_size(0);
+    b.append_data(&mut dir, EMPTY_DIR, std::io::empty())
+        .unwrap();
+    for (name, data) in &files {
+        let mut h = tar::Header::new_gnu();
+        h.set_size(data.len() as u64);
+        h.set_mode(0o644);
+        h.set_mtime(1_700_000_000);
+        if name == HUGE {
+            // GNU tar's base-256 form of a negative time.
+            let mtime = &mut h.as_old_mut().mtime;
+            mtime[..4].fill(0xff);
+            mtime[4..].copy_from_slice(&(-152_391_233_i64).to_be_bytes());
+        }
+        b.append_data(&mut h, name, data.as_slice()).unwrap();
+    }
+    let archive = tmp.path().join("old.tar.gz");
+    fs::write(&archive, gzip(&b.into_inner().unwrap(), &[], 6)).unwrap();
+    let out = tmp.path().join("out");
+
+    let inside = |a: &Path| {
+        let j = journal(a);
+        j["resume"]["written"].as_u64().unwrap_or(0) > 0
+            && j["resume"]["stream"]["at"]["file"]["path"]
+                .as_str()
+                .is_some_and(|s| s.replace('\\', "/") == HUGE)
+    };
+    let mut crashes = 0;
+    while crashes == 0 || !inside(&archive) {
+        crashes += 1;
+        assert!(crashes <= 10, "no resume point inside {HUGE}");
+        let crashed = extract(
+            &archive,
+            &out,
+            &stream_env(&[
+                ("HATCHZIP_CRASH_AT", "stream-after-journal"),
+                ("HATCHZIP_CRASH_AFTER", "1"),
+            ]),
+        );
+        assert!(!crashed.status.success());
+    }
+    assert_eq!(
+        journal(&archive)["resume"]["stream"]["at"]["file"]["mtime"],
+        -152_391_233
+    );
+
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_tree(&out, &files);
+    let modified = fs::metadata(out.join(HUGE)).unwrap().modified().unwrap();
+    assert_eq!(
+        modified,
+        std::time::UNIX_EPOCH - std::time::Duration::from_secs(152_391_233)
+    );
+}
+
 /// Several gzip members, as `bgzip`, `pigz --independent` and concatenated
 /// files make: member boundaries inside a file's data and inside a header,
 /// an empty member, mixed levels, and many small members, each a free

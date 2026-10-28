@@ -19,7 +19,6 @@
 use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
@@ -27,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use super::resumable::{GzPoint, Gzip};
 use super::storage::Storage;
 use super::{Format, Item, Kind, Opened, Sink, Unit, Worker, safe_path};
+use crate::fsutil;
 use crate::journal::Resume;
 
 pub const NAME: &str = "tar.gz";
@@ -72,7 +72,8 @@ pub enum TarAt {
         path: PathBuf,
         size: u64,
         mode: Option<u32>,
-        mtime: Option<u64>,
+        /// Seconds from 1970, negative before it.
+        mtime: Option<i64>,
         data_start: u64,
     },
     /// Inside bytes that extract to nothing: padding, or the data of an
@@ -305,10 +306,7 @@ impl Walker {
                     path: item.path.clone(),
                     size: item.size,
                     mode: item.mode,
-                    mtime: item
-                        .mtime
-                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs()),
+                    mtime: item.mtime.and_then(fsutil::epoch_secs),
                     data_start: *data_start,
                 },
             ),
@@ -466,7 +464,7 @@ fn resumed_state(s: &StreamPoint, written: u64) -> Result<(State, Option<(Item, 
                 size: *size,
                 kind: Kind::File,
                 mode: *mode,
-                mtime: mtime.map(|s| UNIX_EPOCH + Duration::from_secs(s)),
+                mtime: mtime.and_then(fsutil::from_epoch_secs),
             };
             let state = State::File {
                 item: item.clone(),
