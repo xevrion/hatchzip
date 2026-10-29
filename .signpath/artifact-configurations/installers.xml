@@ -3,15 +3,25 @@
   SignPath artifact configuration "installers": the setup and the MSI, built
   from the programs signed with "programs". The release workflow uploads
   them as the GitHub artifact signing-installers, a zip with both at its
-  root. This file is the copy to paste into the SignPath project. See
-  "Windows: signing" in packaging/README.md.
+  root.
+
+  SignPath signs the setup only if its product name is HatchZip and its
+  product version is the release's (the parameter "version"), and the MSI
+  only if its summary information names it the HatchZip installer by Yash
+  Bavadiya (hatchzip.wxs), as SignPath Foundation requires.
+
+  This file is the copy to paste into the SignPath project. See "Windows:
+  signing" in packaging/README.md.
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
   <zip-file>
-    <pe-file path="HatchZip-x64-setup.exe">
+    <pe-file path="HatchZip-x64-setup.exe" product-name="HatchZip" product-version="${version}">
       <authenticode-sign />
     </pe-file>
-    <msi-file path="HatchZip-x64.msi">
+    <msi-file path="HatchZip-x64.msi" subject="HatchZip installer" author="Yash Bavadiya">
       <authenticode-sign />
     </msi-file>
   </zip-file>

@@ -129,7 +129,8 @@ jobs:
   windows:
     name: windows x86_64
     runs-on: windows-2025
-    timeout-minutes: 45
+    # A release waits for a person to approve its two signing requests.
+    timeout-minutes: ${{ startsWith(github.ref, 'refs/tags/') && 150 || 45 }}
     permissions:
       contents: read
       # SignPath downloads the files to sign from this run's artifacts.
@@ -140,10 +141,14 @@ jobs:
       # only when the variable SIGN_DRY_RUNS is true, since a signing policy
       # may wait for a person to approve each request.
       SIGNER: ${{ (startsWith(github.ref, 'refs/tags/') || vars.SIGN_DRY_RUNS == 'true') && ((secrets.SIGNPATH_API_TOKEN != '' && 'signpath') || (secrets.AZURE_CLIENT_SECRET != '' && 'azure')) || '' }}
+      # SignPath signs a tag with the release certificate, after a person
+      # approves each request, and a dry run with the test certificate,
+      # straight away.
+      SIGNING_POLICY: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
       # SignPath's test certificate is self-signed, so Windows doesn't trust
       # it. A dry run signed with it is still checked; a tag never is, so a
       # release can't ship with it.
-      TEST_CERTIFICATE: ${{ !startsWith(github.ref, 'refs/tags/') && vars.SIGNPATH_SIGNING_POLICY_SLUG == 'test-signing' }}
+      TEST_CERTIFICATE: ${{ !startsWith(github.ref, 'refs/tags/') && secrets.SIGNPATH_API_TOKEN != '' }}
     defaults:
       run:
         shell: bash
@@ -194,10 +199,14 @@ jobs:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          signing-policy-slug: ${{ env.SIGNING_POLICY }}
           artifact-configuration-slug: programs
           github-artifact-id: ${{ steps.unsigned-programs.outputs.artifact-id }}
+          # Checked against each file's product version before signing.
+          parameters: |
+            version: "${{ env.HATCHZIP_VERSION }}"
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: ${{ startsWith(github.ref, 'refs/tags/') && 3600 || 600 }}
           output-artifact-directory: signed-programs
       - name: sign the programs (Azure Artifact Signing)
         if: env.SIGNER == 'azure'
@@ -282,10 +291,13 @@ jobs:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          signing-policy-slug: ${{ env.SIGNING_POLICY }}
           artifact-configuration-slug: installers
           github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.HATCHZIP_VERSION }}"
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: ${{ startsWith(github.ref, 'refs/tags/') && 3600 || 600 }}
           output-artifact-directory: signed-installers
       - name: sign the installers (Azure Artifact Signing)
         if: env.SIGNER == 'azure'

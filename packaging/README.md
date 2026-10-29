@@ -204,19 +204,31 @@ through the [SignPath Foundation](https://signpath.org)):
    `installers`, from `.signpath/artifact-configurations/programs.xml` and
    `installers.xml`. SignPath keeps artifact configurations in the project,
    so these files are the copies to paste in; change both together.
-3. Create a signing policy, and an API token for a user that can submit
-   signing requests with it.
+3. Create the signing policies `release-signing`, used for tags, with
+   approval by a person, and `test-signing`, used for dry runs, and an API
+   token for a user that can submit signing requests with both. A SignPath
+   Foundation project comes with both policies.
+4. Install the [SignPath GitHub App](https://github.com/apps/signpath) on
+   the repository, which SignPath uses to check where a request comes from
+   and to download the files.
 
 | Kind | Name | Value |
 |---|---|---|
 | Secret | `SIGNPATH_API_TOKEN` | The API token |
 | Variable | `SIGNPATH_ORGANIZATION_ID` | The organization ID |
 | Variable | `SIGNPATH_PROJECT_SLUG` | The project slug |
-| Variable | `SIGNPATH_SIGNING_POLICY_SLUG` | The signing policy slug, such as `release-signing` |
+
+Each request passes the release's version (`hatchzip.exe --version`) as
+the parameter `version`, and SignPath signs a file only if its product name
+is HatchZip and its product version matches, as SignPath Foundation
+requires. Until the release certificate is in place, `release-signing` is
+invalid and a tag fails at signing rather than shipping unsigned; to publish
+one anyway, remove the `SIGNPATH_API_TOKEN` secret first.
 
 The workflow uploads the files to sign as the artifacts `signing-programs`
 and `signing-installers`, which SignPath downloads (the Windows job has
-`actions: read` for that), and waits up to 10 minutes for each request. The
+`actions: read` for that), and waits up to 10 minutes for each request, or
+an hour for a tag, which waits for its approvals. The
 publish job leaves those two artifacts out, since they hold unsigned
 copies.
 
