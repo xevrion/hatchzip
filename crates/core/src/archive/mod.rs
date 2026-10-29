@@ -8,6 +8,7 @@ pub mod resumable;
 mod sevenz;
 pub mod storage;
 mod tar;
+mod tarbz2;
 pub mod targz;
 pub mod tarxz;
 mod xz;
@@ -280,6 +281,7 @@ pub fn open(
         #[cfg(not(feature = "rar"))]
         RAR => Err(no_rar()),
         targz::NAME => targz::open(storage, point),
+        tarbz2::NAME => tarbz2::open(storage, point),
         tarxz::NAME => tarxz::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
@@ -416,9 +418,41 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         // refused once the stream opens.
         return Ok(tarxz::NAME);
     }
-    if starts(b"\x28\xB5\x2F\xFD") || starts(b"BZh") {
+    let named_bzip2 = [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| ext.ends_with(e) || ext.contains(&format!("{e}.")));
+    if starts(b"BZh") || named_bzip2 {
+        let first = (|| -> Result<_> {
+            let mut bz = tarbz2::Bzip2::new(
+                storage.reader(None),
+                storage.original_len(),
+                &tarbz2::BzPoint::start(),
+            )?;
+            let mut first = [0; 512];
+            let mut n = 0;
+            while n < first.len() {
+                let k = bz.read(&mut first[n..])?;
+                if k == 0 {
+                    break;
+                }
+                n += k;
+            }
+            Ok((first, n))
+        })()
+        .map_err(|e| anyhow::Error::new(Damaged(e)))
+        .context(
+            "checking the bzip2 archive (nothing was changed); if it is damaged, download it again",
+        )?;
+        if is_tar(&first.0[..first.1]) || named_bzip2 {
+            return Ok(tarbz2::NAME);
+        }
         bail!(
-            "this is a compressed stream (.zst or .bz2). In-place extraction of these \
+            "this is a bzip2-compressed file that does not contain a tar archive; the file was not changed. Decompress it with bzip2, or use a .tar.bz2 archive"
+        );
+    }
+    if starts(b"\x28\xB5\x2F\xFD") {
+        bail!(
+            "this is a compressed stream (.zst). In-place extraction of these \
              compressed streams is not supported yet"
         );
     }

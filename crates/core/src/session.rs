@@ -502,7 +502,8 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name.truncate(stem.len() - digits.len() - ".part".len());
     } else {
         for ext in [
-            ".zip", ".7z", ".tar.xz", ".txz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
+            ".zip", ".7z", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz", ".tar", ".tar.gz",
+            ".tgz", ".rar", ".exe",
         ] {
             if lower.ends_with(ext) && name.len() > ext.len() {
                 name.truncate(name.len() - ext.len());
