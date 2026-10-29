@@ -418,9 +418,13 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         // refused once the stream opens.
         return Ok(tarxz::NAME);
     }
-    let named_bzip2 = [".tar.bz2", ".tbz2", ".tbz"]
-        .iter()
-        .any(|e| ext.ends_with(e) || ext.contains(&format!("{e}.")));
+    let named_bzip2 = named_bzip2(
+        &storage
+            .primary()
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+    );
     if starts(b"BZh") || named_bzip2 {
         let first = (|| -> Result<_> {
             let mut bz = tarbz2::Bzip2::new(
@@ -467,6 +471,19 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     Ok("zip")
 }
 
+/// The file's own name says `.tar.bz2`, alone or before a numeric split
+/// suffix such as `.001`. The folders it sits in don't count.
+fn named_bzip2(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let base = match name.rsplit_once('.') {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => &name,
+    };
+    [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| base.ends_with(e))
+}
+
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
     let mut n = 0;
     while n < buf.len() {
@@ -509,4 +526,25 @@ const S_IFLNK: u32 = 0o120000;
 
 fn is_symlink_mode(mode: Option<u32>) -> bool {
     mode.is_some_and(|m| m & S_IFMT == S_IFLNK)
+}
+
+#[cfg(test)]
+mod named_tests {
+    use super::named_bzip2;
+
+    #[test]
+    fn only_the_file_name_and_a_split_number_select_bzip2() {
+        for yes in ["a.tar.bz2", "A.TBZ2", "a.tbz", "a.tar.bz2.001", "a.tbz2.12"] {
+            assert!(named_bzip2(yes), "{yes}");
+        }
+        for no in [
+            "a.zip",
+            "a.tar.bz2.old",
+            "a.tar.bz2.",
+            "a.bz2",
+            "a.tar.gz.001",
+        ] {
+            assert!(!named_bzip2(no), "{no}");
+        }
+    }
 }
