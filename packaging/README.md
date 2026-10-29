@@ -172,9 +172,18 @@ zip has to be added there too.
 The release workflow can sign everything Windows runs with Authenticode:
 `hatchzip.exe` and `hatchzip-gui.exe` right after the build, so the zip,
 the setup and the MSI all carry signed copies (`hz.exe` is a copy of
-`hatchzip.exe`), then the setup and the MSI once they are built. Each signed
-file is checked for a valid, timestamped signature before it replaces the
-unsigned one, and the install tests run on the signed installers.
+`hatchzip.exe`), then the setup and the MSI once they are built. The setup's
+uninstaller is signed with the programs: Inno Setup writes it unsigned
+first, and the setup is built with the signed copy (see `build-setup.ps1`).
+Each signed file is checked for a valid, timestamped signature before it
+replaces the unsigned one, and the install tests run on the signed
+installers and check that every program they install is signed,
+`unins000.exe` included.
+
+A dry run on SignPath's `test-signing` policy is checked the same way,
+except that the test certificate is self-signed, so a chain ending in an
+untrusted root is accepted there (`TEST_CERTIFICATE` in the workflow). A
+tag never accepts it, so a release can't ship with the test certificate.
 
 Signing runs when one of the two services below is set up, and is skipped
 otherwise; the workflow log says which one it used. Builds of a tag are
