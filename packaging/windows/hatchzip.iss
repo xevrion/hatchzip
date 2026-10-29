@@ -57,6 +57,14 @@ SetupIconFile=..\..\assets\icon\hatchzip.ico
 WizardStyle=modern
 UninstallDisplayIcon={app}\hatchzip-gui.exe
 UninstallDisplayName=HatchZip
+#ifdef SignedUninstallerDir
+; The uninstaller, and the copies of itself Setup runs from TEMP, carry the
+; signature of the file of that name in this folder. Without one, the
+; compiler writes it there unsigned and stops; it is signed and the setup
+; compiled again (build-setup.ps1 -Prepare).
+SignedUninstaller=yes
+SignedUninstallerDir={#SignedUninstallerDir}
+#endif
 Compression=lzma2/max
 SolidCompression=yes
 ; Tells Explorer and new terminals that PATH changed, on install and on

@@ -7,6 +7,7 @@
 param([Parameter(Mandatory)] [string] $Setup)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'signature.ps1')
 $Setup = (Resolve-Path $Setup).Path
 $dir = Join-Path $env:LOCALAPPDATA 'Programs\HatchZip'
 $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'HatchZip.lnk'
@@ -37,6 +38,13 @@ Write-Host 'install'
 Run $Setup $quiet
 foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe', 'hatchzip-completion.ps1', 'unins000.exe') {
     if (-not (Test-Path (Join-Path $dir $f))) { throw "$f is missing" }
+}
+# A signed build installs only signed programs, the uninstaller included
+# (SignedUninstaller in hatchzip.iss).
+if ($env:SIGNER) {
+    foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe', 'unins000.exe') {
+        Assert-Signed (Join-Path $dir $f)
+    }
 }
 if (-not (Test-Path $link)) { throw 'the Start menu shortcut is missing' }
 $entry = Get-ItemProperty $uninstallKey

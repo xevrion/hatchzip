@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'signature.ps1')
 $Msi = (Resolve-Path $Msi).Path
 $dir = Join-Path $env:LOCALAPPDATA 'Programs\HatchZip'
 $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'HatchZip.lnk'
@@ -91,6 +92,12 @@ Msiexec '/i', "`"$Msi`""
 foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe', 'hatchzip-completion.ps1', 'README.md',
         'LICENSE-MIT.txt', 'LICENSE-APACHE.txt', 'LICENSE-UNRAR.txt') {
     Check (Test-Path (Join-Path $dir $f)) "$f is missing"
+}
+# A signed build installs only signed programs.
+if ($env:SIGNER) {
+    foreach ($f in 'hatchzip-gui.exe', 'hatchzip.exe', 'hz.exe') {
+        try { Assert-Signed (Join-Path $dir $f) } catch { Check $false "$_" }
+    }
 }
 Check (Test-Path $link) 'the Start menu shortcut is missing'
 if (Test-Path $link) {

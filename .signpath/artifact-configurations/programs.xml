@@ -2,8 +2,10 @@
 <!--
   SignPath artifact configuration "programs": the two programs, signed before
   they are packaged, so the zip, the setup and the MSI all carry signed
-  copies (hz.exe is a copy of hatchzip.exe). The release workflow uploads
-  them as the GitHub artifact signing-programs, a zip with both at its root.
+  copies (hz.exe is a copy of hatchzip.exe), and the setup's uninstaller,
+  which Inno Setup writes as uninst-*.e32 and the workflow renames to
+  uninstaller.exe. The release workflow uploads them as the GitHub artifact
+  signing-programs, a zip with all three at its root.
   SignPath reads artifact configurations from the project, not from this
   repository: this file is the copy to paste there. See "Windows: signing"
   in packaging/README.md.
@@ -14,6 +16,9 @@
       <authenticode-sign />
     </pe-file>
     <pe-file path="hatchzip-gui.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="uninstaller.exe">
       <authenticode-sign />
     </pe-file>
   </zip-file>

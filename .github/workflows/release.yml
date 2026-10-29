@@ -156,13 +156,29 @@ jobs:
       - name: build
         run: cargo build --release --locked -p hatchzip -p hatchzip-gui --features rar
       - name: signing
-        run: echo "signing with ${SIGNER:-nothing, signing is not set up for this run}"
+        run: |
+          echo "signing with ${SIGNER:-nothing, signing is not set up for this run}"
+          echo "HATCHZIP_VERSION=$(target/release/hatchzip.exe --version | awk '{print $2}')" >> "$GITHUB_ENV"
+      # The setup's uninstaller is signed with the programs: Inno Setup writes
+      # it unsigned here and embeds the signed copy when the setup is built
+      # (see build-setup.ps1).
+      - name: prepare the uninstaller
+        if: env.SIGNER != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist/prepare | Out-Null
+          Copy-Item target/release/hatchzip.exe, target/release/hatchzip-gui.exe dist/prepare/
+          packaging/windows/build-setup.ps1 dist/prepare $env:HATCHZIP_VERSION -SignedUninstallerDir dist/uninstaller -Prepare
 
-      # Sign the programs. hz.exe is a copy of hatchzip.exe, made when
-      # packaging.
+      # Sign the programs and the uninstaller, under a fixed name so the
+      # artifact configuration can list it. hz.exe is a copy of hatchzip.exe,
+      # made when packaging.
       - name: stage the programs for signing
         if: env.SIGNER != ''
-        run: mkdir signing-programs && cp target/release/hatchzip.exe target/release/hatchzip-gui.exe signing-programs/
+        run: |
+          mkdir signing-programs
+          cp target/release/hatchzip.exe target/release/hatchzip-gui.exe signing-programs/
+          cp dist/uninstaller/uninst-*.e32 signing-programs/uninstaller.exe
       - id: unsigned-programs
         if: env.SIGNER == 'signpath'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -202,7 +218,12 @@ jobs:
         if: env.SIGNER != ''
         shell: pwsh
         # SignPath returns the signed files; Azure signs them where they are.
-        run: packaging/windows/check-signed.ps1 ${{ env.SIGNER == 'signpath' && 'signed-programs' || 'signing-programs' }} target/release hatchzip.exe hatchzip-gui.exe
+        run: |
+          $signed = '${{ env.SIGNER == 'signpath' && 'signed-programs' || 'signing-programs' }}'
+          packaging/windows/check-signed.ps1 $signed target/release hatchzip.exe hatchzip-gui.exe
+          $uninstaller = (Get-ChildItem dist/uninstaller -Filter 'uninst-*.e32').FullName
+          packaging/windows/check-signed.ps1 $signed dist/uninstaller uninstaller.exe
+          Move-Item -Force dist/uninstaller/uninstaller.exe $uninstaller
 
       - name: smoke test
         run: python .github/scripts/smoke.py target/release/hatchzip.exe
@@ -226,7 +247,6 @@ jobs:
           mkdir -p dist/payload
           cp -r dist/hatchzip-x86_64-windows/. dist/payload/
           cp target/release/hatchzip-gui.exe dist/payload/
-          echo "HATCHZIP_VERSION=$(target/release/hatchzip.exe --version | awk '{print $2}')" >> "$GITHUB_ENV"
       # The same files with nothing to install: unzip anywhere and run
       # hatchzip-gui.exe. Settings, "Show in the Explorer context menu" adds
       # the right-click entries for wherever it is, and removes them again.
@@ -236,7 +256,9 @@ jobs:
           (cd dist && sha256sum HatchZip-x64-portable.zip > HatchZip-x64-portable.zip.sha256)
       - name: build the setup
         shell: pwsh
-        run: packaging/windows/build-setup.ps1 dist/payload $env:HATCHZIP_VERSION
+        run: |
+          $signed = if ($env:SIGNER) { @{ SignedUninstallerDir = 'dist/uninstaller' } } else { @{} }
+          packaging/windows/build-setup.ps1 dist/payload $env:HATCHZIP_VERSION @signed
       - name: build the MSI
         shell: pwsh
         run: packaging/windows/build-msi.ps1 dist/payload $env:HATCHZIP_VERSION
