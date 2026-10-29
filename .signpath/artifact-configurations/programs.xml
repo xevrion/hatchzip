@@ -9,7 +9,11 @@
 
   SignPath signs a file only if its product name is HatchZip and its product
   version is the release's, which the workflow passes as the parameter
-  "version" (as SignPath Foundation requires).
+  "version" (as SignPath Foundation requires). Inno Setup writes both over
+  fixed-length placeholders, so the uninstaller's end in spaces; the workflow
+  checks that, trimmed, they are HatchZip and the release's version, and
+  passes them exactly as "innoProductName" and "innoProductVersion"
+  (packaging/windows/inno-version-info.ps1).
 
   SignPath reads artifact configurations from the project, not from this
   repository: this file is the copy to paste there. See "Windows: signing"
@@ -18,6 +22,8 @@
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
     <parameter name="version" required="true" />
+    <parameter name="innoProductName" required="true" />
+    <parameter name="innoProductVersion" required="true" />
   </parameters>
   <zip-file>
     <pe-file path="hatchzip.exe" product-name="HatchZip" product-version="${version}">
@@ -26,7 +32,7 @@
     <pe-file path="hatchzip-gui.exe" product-name="HatchZip" product-version="${version}">
       <authenticode-sign />
     </pe-file>
-    <pe-file path="uninstaller.exe" product-name="HatchZip" product-version="${version}">
+    <pe-file path="uninstaller.exe" product-name="${innoProductName}" product-version="${innoProductVersion}">
       <authenticode-sign />
     </pe-file>
   </zip-file>

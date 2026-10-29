@@ -174,6 +174,7 @@ jobs:
           New-Item -ItemType Directory dist/prepare | Out-Null
           Copy-Item target/release/hatchzip.exe, target/release/hatchzip-gui.exe dist/prepare/
           packaging/windows/build-setup.ps1 dist/prepare $env:HATCHZIP_VERSION -SignedUninstallerDir dist/uninstaller -Prepare
+          packaging/windows/inno-version-info.ps1 (Get-ChildItem dist/uninstaller -Filter 'uninst-*.e32').FullName $env:HATCHZIP_VERSION
 
       # Sign the programs and the uninstaller, under a fixed name so the
       # artifact configuration can list it. hz.exe is a copy of hatchzip.exe,
@@ -202,9 +203,12 @@ jobs:
           signing-policy-slug: ${{ env.SIGNING_POLICY }}
           artifact-configuration-slug: programs
           github-artifact-id: ${{ steps.unsigned-programs.outputs.artifact-id }}
-          # Checked against each file's product version before signing.
+          # Checked against each file's product name and version before
+          # signing; Inno Setup's are padded (inno-version-info.ps1).
           parameters: |
             version: "${{ env.HATCHZIP_VERSION }}"
+            innoProductName: ${{ env.INNO_PRODUCT_NAME }}
+            innoProductVersion: ${{ env.INNO_PRODUCT_VERSION }}
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: ${{ startsWith(github.ref, 'refs/tags/') && 3600 || 600 }}
           output-artifact-directory: signed-programs
@@ -275,7 +279,9 @@ jobs:
       # Sign the installers, then test what was signed.
       - name: stage the installers for signing
         if: env.SIGNER != ''
-        run: mkdir signing-installers && cp dist/HatchZip-x64-setup.exe dist/HatchZip-x64.msi signing-installers/
+        run: |
+          mkdir signing-installers && cp dist/HatchZip-x64-setup.exe dist/HatchZip-x64.msi signing-installers/
+          pwsh packaging/windows/inno-version-info.ps1 dist/HatchZip-x64-setup.exe "$HATCHZIP_VERSION"
       - id: unsigned-installers
         if: env.SIGNER == 'signpath'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -295,7 +301,8 @@ jobs:
           artifact-configuration-slug: installers
           github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
           parameters: |
-            version: "${{ env.HATCHZIP_VERSION }}"
+            innoProductName: ${{ env.INNO_PRODUCT_NAME }}
+            innoProductVersion: ${{ env.INNO_PRODUCT_VERSION }}
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: ${{ startsWith(github.ref, 'refs/tags/') && 3600 || 600 }}
           output-artifact-directory: signed-installers
