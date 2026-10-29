@@ -382,9 +382,8 @@ fn any_volume_name_finds_the_whole_set() {
     assert_consumed(&first);
 }
 
-/// `.tar.gz` and `.tar.xz` have their own suites (`targz.rs`, `tarxz.rs`);
-/// the other compressed tars are refused, and so is a compressed stream
-/// that doesn't decode.
+/// Compressed tars have their own suites; damaged streams and unsupported
+/// formats are refused without changing the archive.
 #[test]
 fn compressed_tar_streams_are_refused_without_touching_them() {
     let tmp = TempDir::new().unwrap();
@@ -399,11 +398,7 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
             &b"\xFD7zXZ\x00pretend xz"[..],
             "xz stream's structure",
         ),
-        (
-            "game.tar.bz2",
-            &b"BZh9pretend bzip2"[..],
-            "compressed stream",
-        ),
+        ("game.tar.bz2", &b"BZh9pretend bzip2"[..], "damaged"),
         (
             "game.tar.gz",
             &b"\x1F\x8B\x08\x00pretend gzip"[..],
