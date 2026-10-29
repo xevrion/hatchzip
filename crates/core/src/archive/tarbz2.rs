@@ -36,6 +36,9 @@ const fn magic_pairs() -> [u64; 1024] {
     table
 }
 
+/// Trial decodes allowed per block before it is refused as damaged.
+const MAX_CANDIDATES: u32 = 64;
+
 fn find_magic(bytes: &[u8], base: u64, from_bit: u64) -> Option<(u64, u64)> {
     let mut next = from_bit.max(base * 8);
     if bytes.len() < 6 {
@@ -117,7 +120,7 @@ impl Walker {
                 }
                 if !matches!(s.at, TarAt::File { .. }) && r.written != 0 {
                     bail!(
-                        "the journal's resume point claims a file is open where none is;                          the archive will not be modified"
+                        "the journal's resume point claims a file is open where none is; the                          archive will not be modified"
                     );
                 }
                 Bzip2::new(
@@ -319,15 +322,15 @@ impl Feed for Bzip2 {
 }
 
 #[derive(Clone, Debug)]
-pub struct BzPoint {
-    pub bit: u64,
-    pub stream_start: bool,
-    pub level: u8,
-    pub crc: u32,
+pub(crate) struct BzPoint {
+    pub(crate) bit: u64,
+    pub(crate) stream_start: bool,
+    pub(crate) level: u8,
+    pub(crate) crc: u32,
 }
 
 impl BzPoint {
-    pub fn start() -> Self {
+    pub(crate) fn start() -> Self {
         Self {
             bit: 0,
             stream_start: true,
@@ -339,7 +342,7 @@ impl BzPoint {
 
 /// Each candidate boundary is tried as the end of a synthetic one-block
 /// stream. Only a successful decode, including its CRC, accepts it.
-pub struct Bzip2<R = Reader> {
+pub(crate) struct Bzip2<R = Reader> {
     input: Bits<R>,
     point: BzPoint,
     output: Vec<u8>,
@@ -348,7 +351,7 @@ pub struct Bzip2<R = Reader> {
 }
 
 impl<R: Read + Seek> Bzip2<R> {
-    pub fn new(reader: R, end: u64, at: &BzPoint) -> Result<Self> {
+    pub(crate) fn new(reader: R, end: u64, at: &BzPoint) -> Result<Self> {
         if at.bit / 8 > end
             || !(1..=9).contains(&at.level)
             || (at.stream_start && !at.bit.is_multiple_of(8))
@@ -367,7 +370,7 @@ impl<R: Read + Seek> Bzip2<R> {
         })
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
@@ -383,7 +386,7 @@ impl<R: Read + Seek> Bzip2<R> {
         Ok(n)
     }
 
-    pub fn restart_point(&self) -> Option<BzPoint> {
+    pub(crate) fn restart_point(&self) -> Option<BzPoint> {
         (!self.done && self.pos == self.output.len()).then(|| self.point.clone())
     }
 
@@ -476,6 +479,9 @@ impl<R: Read + Seek> Bzip2<R> {
         // cancel out), but without one a damaged archive would be buffered
         // whole while looking for a boundary.
         let limit = start / 8 + u64::from(self.point.level) * 400_000 + 65_536;
+        // A false signature turns up about once in 2^47 bits, so a block with
+        // many was planted to make every one of them a trial decode.
+        let mut tries = 0;
         loop {
             self.input.ensure(byte)?;
             let stop = self.input.base + self.input.bytes.len() as u64;
@@ -487,6 +493,12 @@ impl<R: Read + Seek> Bzip2<R> {
                 next,
             ) {
                 next = candidate + 1;
+                tries += 1;
+                if tries > MAX_CANDIDATES {
+                    bail!(
+                        "the bzip2 block at bit {start} holds more than {MAX_CANDIDATES} false block signatures; the archive is damaged and was not changed. Download it again"
+                    );
+                }
                 let offset = (start / 8 - self.input.base) as usize;
                 if let Some(out) = decode_block(
                     &self.input.bytes[offset..],
@@ -556,7 +568,8 @@ fn decode_block(bytes: &[u8], shift: usize, bits: usize, level: u8, crc: u32) ->
     }
     let mut decoder = bzip2::read::BzDecoder::new(data.as_slice());
     let mut out = Vec::new();
-    // The first RLE stage can expand five encoded bytes to 259 bytes.
+    // The level caps a block's size before its first RLE stage is undone,
+    // not its output: that stage expands five encoded bytes to 259 bytes.
     let limit = u64::from(level) * 100_000 * 52;
     (&mut decoder).take(limit + 1).read_to_end(&mut out).ok()?;
     (out.len() as u64 <= limit && decoder.total_in() == data.len() as u64).then_some(out)
@@ -826,6 +839,39 @@ mod tests {
         *padded.last_mut().unwrap() = 1;
         let err = decode(&mut decoder(&padded, &BzPoint::start()), 65536).unwrap_err();
         assert!(format!("{err:#}").contains("unexpected data follows"));
+    }
+
+    #[test]
+    fn a_block_decodes_to_far_more_than_its_level_size() {
+        let zeros = vec![0; 4_000_000];
+        let mut enc = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(1));
+        std::io::Write::write_all(&mut enc, &zeros).unwrap();
+        let bytes = enc.finish().unwrap();
+        let mut bz = decoder(&bytes, &BzPoint::start());
+        let mut buf = vec![0; 1 << 20];
+        bz.read(&mut buf).unwrap();
+        assert!(bz.output.len() > 100_000 * 30, "{}", bz.output.len());
+        assert_eq!(
+            decode(&mut decoder(&bytes, &BzPoint::start()), 65536).unwrap(),
+            zeros
+        );
+    }
+
+    #[test]
+    fn a_block_full_of_planted_signatures_is_refused() {
+        let mut bytes = b"BZh1".to_vec();
+        bytes.extend_from_slice(&BLOCK.to_be_bytes()[2..]);
+        bytes.extend_from_slice(&[0; 4]);
+        for _ in 0..=MAX_CANDIDATES {
+            bytes.extend_from_slice(&[0xff; 4]);
+            bytes.extend_from_slice(&BLOCK.to_be_bytes()[2..]);
+        }
+        bytes.resize(bytes.len() + 64, 0xff);
+        let err = decode(&mut decoder(&bytes, &BzPoint::start()), 65536).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("false block signatures"),
+            "{err:#}"
+        );
     }
 
     #[test]
