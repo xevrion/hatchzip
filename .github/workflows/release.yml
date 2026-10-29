@@ -140,6 +140,10 @@ jobs:
       # only when the variable SIGN_DRY_RUNS is true, since a signing policy
       # may wait for a person to approve each request.
       SIGNER: ${{ (startsWith(github.ref, 'refs/tags/') || vars.SIGN_DRY_RUNS == 'true') && ((secrets.SIGNPATH_API_TOKEN != '' && 'signpath') || (secrets.AZURE_CLIENT_SECRET != '' && 'azure')) || '' }}
+      # SignPath's test certificate is self-signed, so Windows doesn't trust
+      # it. A dry run signed with it is still checked; a tag never is, so a
+      # release can't ship with it.
+      TEST_CERTIFICATE: ${{ !startsWith(github.ref, 'refs/tags/') && vars.SIGNPATH_SIGNING_POLICY_SLUG == 'test-signing' }}
     defaults:
       run:
         shell: bash
