@@ -16,6 +16,63 @@ const BLOCK: u64 = 0x3141_5926_5359;
 const END: u64 = 0x1772_4538_5090;
 const MASK: u64 = (1 << 48) - 1;
 
+static MAGIC_PAIRS: [u64; 1024] = magic_pairs();
+
+const fn magic_pairs() -> [u64; 1024] {
+    let mut table = [0; 1024];
+    let magics = [BLOCK, END];
+    let mut i = 0;
+    while i < magics.len() {
+        // Across all eight alignments, a whole-byte pair can start at
+        // any of the first 33 bits of a magic.
+        let mut shift = 0;
+        while shift <= 32 {
+            let pair = ((magics[i] >> shift) & 0xffff) as usize;
+            table[pair / 64] |= 1 << (pair % 64);
+            shift += 1;
+        }
+        i += 1;
+    }
+    table
+}
+
+fn find_magic(bytes: &[u8], base: u64, from_bit: u64) -> Option<(u64, u64)> {
+    let mut next = from_bit.max(base * 8);
+    if bytes.len() < 6 {
+        return None;
+    }
+    let last = (base + bytes.len() as u64) * 8 - 48;
+    if next > last {
+        return None;
+    }
+    let mut pair = (next.div_ceil(16) * 2 - base) as usize;
+    while pair + 1 < bytes.len() {
+        let value = usize::from(u16::from_be_bytes([bytes[pair], bytes[pair + 1]]));
+        if MAGIC_PAIRS[value / 64] & (1 << (value % 64)) != 0 {
+            let bit = (base + pair as u64) * 8;
+            // Five whole bytes guarantee an even-offset pair in every magic.
+            // Its first such pair tests its start before any later match;
+            // the cursor prevents overlapping pairs from testing starts twice.
+            next = next.max(bit.saturating_sub(32));
+            let stop = bit.min(last);
+            while next <= stop {
+                let candidate = next;
+                next += 1;
+                let byte = (candidate / 8 - base) as usize;
+                let mut word = [0; 8];
+                word[1..7].copy_from_slice(&bytes[byte..byte + 6]);
+                word[7] = bytes.get(byte + 6).copied().unwrap_or(0);
+                let magic = (u64::from_be_bytes(word) >> (8 - candidate % 8)) & MASK;
+                if magic == BLOCK || magic == END {
+                    return Some((candidate, magic));
+                }
+            }
+        }
+        pair += 2;
+    }
+    None
+}
+
 pub struct Solid {
     storage: Arc<Storage>,
     /// The point the scan began at: a resumed run's, or the start.
@@ -407,47 +464,45 @@ impl<R: Read + Seek> Bzip2<R> {
         // when the decoder can prove that the preceding block ends there.
         self.input.discard_before(start / 8);
         let mut byte = self.input.bit / 8;
-        let mut rolling = 0u64;
+        let mut next = start + 80;
         loop {
             self.input.ensure(byte)?;
             let stop = self.input.base + self.input.bytes.len() as u64;
-            while byte < stop {
-                rolling =
-                    (rolling << 8) | u64::from(self.input.bytes[(byte - self.input.base) as usize]);
-                byte += 1;
-                if byte - start / 8 > u64::from(self.point.level) * 400_000 + 65_536 {
-                    bail!(
-                        "the bzip2 block is damaged (no CRC-checked boundary); the archive was not changed. Download it again"
-                    );
-                }
-                // Oldest first: a false signature immediately after a real
-                // boundary must not hide the real boundary from the decoder.
-                for after in (0..8).rev() {
-                    let magic = (rolling >> after) & MASK;
-                    if byte * 8 < start + 80 + 48 + after || (magic != BLOCK && magic != END) {
-                        continue;
+            // A candidate must finish before the byte that trips the limit.
+            let scan_stop = stop.min(start / 8 + u64::from(self.point.level) * 400_000 + 65_536);
+            while let Some((candidate, magic)) = find_magic(
+                &self.input.bytes[..(scan_stop - self.input.base) as usize],
+                self.input.base,
+                next,
+            ) {
+                next = candidate + 1;
+                let offset = (start / 8 - self.input.base) as usize;
+                if let Some(out) = decode_block(
+                    &self.input.bytes[offset..],
+                    (start % 8) as usize,
+                    (candidate - start) as usize,
+                    self.point.level,
+                    crc,
+                ) {
+                    self.output = out;
+                    self.point.crc = self.point.crc.rotate_left(1) ^ crc;
+                    self.input.bit = candidate;
+                    self.point.bit = candidate;
+                    if magic == END {
+                        self.input.take(48)?;
+                        self.trailer()?;
                     }
-                    let candidate = byte * 8 - 48 - after;
-                    let offset = (start / 8 - self.input.base) as usize;
-                    if let Some(out) = decode_block(
-                        &self.input.bytes[offset..],
-                        (start % 8) as usize,
-                        (candidate - start) as usize,
-                        self.point.level,
-                        crc,
-                    ) {
-                        self.output = out;
-                        self.point.crc = self.point.crc.rotate_left(1) ^ crc;
-                        self.input.bit = candidate;
-                        self.point.bit = candidate;
-                        if magic == END {
-                            self.input.take(48)?;
-                            self.trailer()?;
-                        }
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
             }
+            byte = stop;
+            if byte - start / 8 > u64::from(self.point.level) * 400_000 + 65_536 {
+                bail!(
+                    "the bzip2 block is damaged (no CRC-checked boundary); the archive was not changed. Download it again"
+                );
+            }
+            // A signature in the final 47 bits may finish in the next chunk.
+            next = next.max(stop * 8 - 47);
         }
     }
 }
@@ -573,6 +628,91 @@ impl<R: Read + Seek> Bits<R> {
 mod tests {
     use super::*;
     use std::io::{self, Cursor};
+
+    fn naive_magic(bytes: &[u8], base: u64, from_bit: u64) -> Option<(u64, u64)> {
+        let from = from_bit.max(base * 8);
+        let mut rolling = 0;
+        for bit in from..(base + bytes.len() as u64) * 8 {
+            let byte = bytes[(bit / 8 - base) as usize];
+            rolling = ((rolling << 1) | u64::from((byte >> (7 - bit % 8)) & 1)) & MASK;
+            if bit - from >= 47 && (rolling == BLOCK || rolling == END) {
+                return Some((bit + 1 - 48, rolling));
+            }
+        }
+        None
+    }
+
+    fn plant(bytes: &mut [u8], at: usize, magic: u64) {
+        for i in 0..48 {
+            let bit = at + i;
+            let mask = 1 << (7 - bit % 8);
+            bytes[bit / 8] =
+                (bytes[bit / 8] & !mask) | (((magic >> (47 - i)) as u8 & 1) << (7 - bit % 8));
+        }
+    }
+
+    fn compare_searches(bytes: &[u8]) {
+        for base in [0, 1, 4096, 4097] {
+            for from in base * 8..=(base + bytes.len() as u64) * 8 + 8 {
+                assert_eq!(
+                    find_magic(bytes, base, from),
+                    naive_magic(bytes, base, from),
+                    "base {base}, from {from}, bytes {bytes:02x?}"
+                );
+            }
+            let mut next = base * 8;
+            let mut expected_from = next;
+            for stop in 0..=bytes.len() {
+                while let Some(found) = find_magic(&bytes[..stop], base, next) {
+                    assert_eq!(Some(found), naive_magic(bytes, base, expected_from));
+                    next = found.0 + 1;
+                    expected_from = next;
+                }
+                next = next.max(((base + stop as u64) * 8).saturating_sub(47));
+            }
+            assert_eq!(naive_magic(bytes, base, expected_from), None);
+        }
+    }
+
+    #[test]
+    fn pair_search_matches_bit_by_bit_search() {
+        let mut seed = 0x7138_b549_2ef0_6acdu64;
+        let mut random = |len| -> Vec<u8> {
+            (0..len)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    seed as u8
+                })
+                .collect()
+        };
+        for len in 0..=64 {
+            compare_searches(&random(len));
+        }
+        for alignment in 0..8 {
+            for first in [BLOCK, END] {
+                for len in [6, 7, 16, 33] {
+                    if alignment > len * 8 - 48 {
+                        continue;
+                    }
+                    for at in [alignment, len * 8 - 48 - alignment] {
+                        let mut bytes = random(len);
+                        plant(&mut bytes, at, first);
+                        compare_searches(&bytes);
+                    }
+                }
+                for second in [BLOCK, END] {
+                    for distance in [1, 7, 15, 16, 31, 32, 47, 48, 49, 55] {
+                        let mut bytes = random(24);
+                        plant(&mut bytes, alignment, first);
+                        plant(&mut bytes, alignment + distance, second);
+                        compare_searches(&bytes);
+                    }
+                }
+            }
+        }
+    }
 
     struct Guard {
         data: Cursor<Vec<u8>>,
