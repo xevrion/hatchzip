@@ -20,16 +20,22 @@ fn main() {
 
     if target_os == "windows" {
         // Explorer, the Start menu, "Open with" and the right-click entries
-        // all show icon 0 of the exe; the installer reads ProductVersion.
+        // all show icon 0 of the exe; the installer reads ProductVersion,
+        // and SignPath checks ProductName and ProductVersion before it signs.
         let icon = "../../assets/icon/hatchzip.ico";
+        let manifest = "hatchzip-gui.manifest";
         println!("cargo:rerun-if-changed={icon}");
+        println!("cargo:rerun-if-changed={manifest}");
         let mut res = winresource::WindowsResource::new();
         res.set_icon(icon)
             .set("ProductName", "HatchZip")
             .set("FileDescription", "HatchZip")
             .set("CompanyName", "HatchZip")
-            .set("LegalCopyright", "MIT OR Apache-2.0");
+            .set("LegalCopyright", "Copyright (c) 2026 Yash Bavadiya")
+            .set("OriginalFilename", "hatchzip-gui.exe")
+            .set("InternalName", "hatchzip-gui")
+            .set_manifest_file(manifest);
         res.compile()
-            .expect("embedding the Windows icon and version");
+            .expect("embedding the Windows icon, version and manifest");
     }
 }
