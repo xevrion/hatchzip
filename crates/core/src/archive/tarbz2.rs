@@ -330,10 +330,19 @@ impl<R: Read + Seek> Bzip2<R> {
             return Ok(false);
         }
         let at = self.input.bit / 8;
+        // Nothing before a stream header is needed again, and concatenated
+        // empty streams would otherwise pile up in the buffer.
+        self.input.discard_before(at);
         let first = self.input.take(8)?;
         if first == 0 {
+            // Check zero padding a chunk at a time and drop each one, so a
+            // long padded tail costs no more memory than one chunk.
             while self.input.bit < self.input.end * 8 {
-                if self.input.take(8)? != 0 {
+                let byte = self.input.bit / 8;
+                self.input.ensure(byte)?;
+                self.input.discard_before(byte);
+                self.input.bit = (self.input.base + self.input.bytes.len() as u64) * 8;
+                if self.input.bytes.iter().any(|&b| b != 0) {
                     bail!(
                         "unexpected data follows the compressed data at byte {at}; the archive is damaged and was not changed. Download it again"
                     );
@@ -652,6 +661,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn zero_padding_longer_than_a_chunk_is_accepted_and_anything_else_refused() {
+        let bytes = fixture("level1.tar.bz2");
+        let out = decode(&mut decoder(&bytes, &BzPoint::start()), 65536).unwrap();
+        let mut padded = bytes.clone();
+        padded.resize(bytes.len() + 3 * (1 << 20) + 5, 0);
+        let mut bz = decoder(&padded, &BzPoint::start());
+        assert_eq!(decode(&mut bz, 65536).unwrap(), out);
+        assert!(bz.input.bytes.len() <= 1 << 20);
+        *padded.last_mut().unwrap() = 1;
+        let err = decode(&mut decoder(&padded, &BzPoint::start()), 65536).unwrap_err();
+        assert!(format!("{err:#}").contains("unexpected data follows"));
     }
 
     #[test]
