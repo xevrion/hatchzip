@@ -73,6 +73,15 @@ ChangesEnvironment=yes
 ; Also lets Explorer pick up the "Open with" entries without a sign-out.
 ChangesAssociations=yes
 
+; What the setup changes outside its own folder, each with a checkbox,
+; ticked by default. A silent install keeps the defaults (/TASKS= picks
+; others). Unticked on an update, the change an earlier install made is
+; undone.
+[Tasks]
+Name: "contextmenu"; Description: "Add HatchZip to the right-click menu of archives"
+Name: "openwith"; Description: "Add HatchZip to ""Open with"" for archives (the default app stays as it is)"
+Name: "path"; Description: "Add the hatchzip and hz commands to PATH"
+
 [Files]
 Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; The short name for the CLI. A copy, since Windows has no symlinks without
@@ -84,23 +93,34 @@ Name: "{userprograms}\HatchZip"; Filename: "{app}\hatchzip-gui.exe"; WorkingDir:
 
 [Registry]
 ; "Open with" for each archive type, without taking over the default app.
-Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive"; ValueType: string; ValueData: "Archive"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive\DefaultIcon"; ValueType: string; ValueData: """{app}\hatchzip-gui.exe"",0"
-Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive\shell\open\command"; ValueType: string; ValueData: """{app}\hatchzip-gui.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive"; ValueType: string; ValueData: "Archive"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive\DefaultIcon"; ValueType: string; ValueData: """{app}\hatchzip-gui.exe"",0"; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive\shell\open\command"; ValueType: string; ValueData: """{app}\hatchzip-gui.exe"" ""%1"""; Tasks: openwith
 Root: HKCU; Subkey: "Software\Classes\Applications\hatchzip-gui.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "HatchZip"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.tar\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.tgz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.gz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.001\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.r00\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.tar\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.tgz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.gz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.001\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKCU; Subkey: "Software\Classes\.r00\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+; Unticked on an update: what an earlier install added comes out again.
+Root: HKCU; Subkey: "Software\Classes\HatchZip.Archive"; ValueType: none; Flags: deletekey; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.zip\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.tar\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.tgz\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.gz\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.001\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.rar\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
+Root: HKCU; Subkey: "Software\Classes\.r00\OpenWithProgids"; ValueType: none; ValueName: "HatchZip.Archive"; Flags: deletevalue; Tasks: not openwith
 
 [Run]
 ; The right-click menu lives in the user's registry hive and is written by
 ; the app itself, so the installer and the app's settings switch agree.
-Filename: "{app}\hatchzip-gui.exe"; Parameters: "--register-shell"; StatusMsg: "Adding HatchZip to the right-click menu..."; Flags: runhidden waituntilterminated
+Filename: "{app}\hatchzip-gui.exe"; Parameters: "--register-shell"; StatusMsg: "Adding HatchZip to the right-click menu..."; Flags: runhidden waituntilterminated; Tasks: contextmenu
+Filename: "{app}\hatchzip-gui.exe"; Parameters: "--unregister-shell"; Flags: runhidden waituntilterminated; Tasks: not contextmenu
 Filename: "{app}\hatchzip-gui.exe"; Description: "Open HatchZip"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -180,7 +200,10 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    AddToPath(ExpandConstant('{app}'));
+    if WizardIsTaskSelected('path') then
+      AddToPath(ExpandConstant('{app}'))
+    else
+      RemoveFromPath(ExpandConstant('{app}'));
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

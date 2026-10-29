@@ -62,6 +62,15 @@ if ($entry.DisplayVersion -ne ($version -split ' ')[1]) { throw 'Apps and featur
 python .github/scripts/smoke.py (Join-Path $dir 'hatchzip.exe')
 if ($LASTEXITCODE) { throw 'the smoke test failed on the installed hatchzip.exe' }
 
+# Each change outside the install folder is a checkbox (hatchzip.iss
+# [Tasks]); unticked on an update, what the first install added comes out.
+Write-Host 'update with the right-click menu, Open with and PATH unticked'
+Run $Setup ($quiet + '/MERGETASKS="!contextmenu,!openwith,!path"')
+if (-not (Test-Path (Join-Path $dir 'hatchzip-gui.exe'))) { throw 'the update removed the app' }
+if ((UserPath) -contains $dir) { throw "$dir is still on the user PATH with the box unticked" }
+if (Test-Path $menuKey) { throw 'the right-click menu is still there with the box unticked' }
+if ((Test-Path $openWith) -and ((Get-ItemProperty $openWith).PSObject.Properties.Name -contains 'HatchZip.Archive')) { throw 'HatchZip is still in Open with with the box unticked' }
+
 Write-Host 'uninstall'
 Run (Join-Path $dir 'unins000.exe') $quiet
 # The uninstaller finishes from a copy of itself in TEMP, so the folder can
