@@ -290,7 +290,7 @@ What it cannot protect against: if the download itself is damaged, the files bef
 
 HatchZip does not connect to the network. It has no networking code and no networking library, and CI fails if an HTTP, TLS or socket crate enters the dependency tree ([deny.toml](deny.toml)). It collects nothing and sends nothing.
 
-The release files are not code-signed yet, and some antivirus engines that score files by machine learning or behaviour flag new, unsigned programs. On VirusTotal, the v0.1.3 Windows setup is flagged by 4 of 70 engines, all heuristic or machine-learning scores; Microsoft Defender reports it clean. What sandboxes list is what any installer does: it writes program files, adds the right-click menu and "Open with" entries, and runs Inno Setup's helper process. Code signing is planned.
+The release files are not code-signed yet, and some antivirus engines that score files by machine learning or behaviour flag new, unsigned programs. On VirusTotal, the v0.1.8 Windows setup is flagged by 3 of 63 engines, all machine-learning or heuristic scores. What sandboxes list is what any installer does: it writes program files, adds the right-click menu and "Open with" entries, and runs Inno Setup's helper process. The Windows downloads will be signed through the SignPath Foundation, as the [code signing policy](https://hatchzip.dev/code-signing.html) describes.
 
 To check that a download is genuine, compare its SHA-256 with the `.sha256` file next to it, or verify that this repository's release workflow built it:
 
