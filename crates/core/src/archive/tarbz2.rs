@@ -115,6 +115,11 @@ impl Walker {
                         }
                     );
                 }
+                if !matches!(s.at, TarAt::File { .. }) && r.written != 0 {
+                    bail!(
+                        "the journal's resume point claims a file is open where none is;                          the archive will not be modified"
+                    );
+                }
                 Bzip2::new(
                     reader,
                     end,
@@ -465,11 +470,17 @@ impl<R: Read + Seek> Bzip2<R> {
         self.input.discard_before(start / 8);
         let mut byte = self.input.bit / 8;
         let mut next = start + 80;
+        // At most 20 bits per symbol, plus room for the tables and selectors,
+        // covers every block a real compressor writes. The format itself has
+        // no such bound (table code lengths can be padded with deltas that
+        // cancel out), but without one a damaged archive would be buffered
+        // whole while looking for a boundary.
+        let limit = start / 8 + u64::from(self.point.level) * 400_000 + 65_536;
         loop {
             self.input.ensure(byte)?;
             let stop = self.input.base + self.input.bytes.len() as u64;
             // A candidate must finish before the byte that trips the limit.
-            let scan_stop = stop.min(start / 8 + u64::from(self.point.level) * 400_000 + 65_536);
+            let scan_stop = stop.min(limit);
             while let Some((candidate, magic)) = find_magic(
                 &self.input.bytes[..(scan_stop - self.input.base) as usize],
                 self.input.base,
@@ -496,9 +507,9 @@ impl<R: Read + Seek> Bzip2<R> {
                 }
             }
             byte = stop;
-            if byte - start / 8 > u64::from(self.point.level) * 400_000 + 65_536 {
+            if byte > limit {
                 bail!(
-                    "the bzip2 block is damaged (no CRC-checked boundary); the archive was not changed. Download it again"
+                    "the bzip2 block is damaged, or larger than any bzip2 compressor writes (no CRC-checked boundary); the archive was not changed. Download it again, or recompress it with bzip2"
                 );
             }
             // A signature in the final 47 bits may finish in the next chunk.
