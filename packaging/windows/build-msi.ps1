@@ -40,6 +40,10 @@ $out = Join-Path $root 'dist\HatchZip-x64.msi'
     -d "Version=$msiVersion" `
     -o $out (Join-Path $PSScriptRoot 'hatchzip.wxs')
 if ($LASTEXITCODE) { throw "wix build exited with $LASTEXITCODE" }
+# Windows Installer's own consistency checks (ICE), which WiX 4 and later
+# no longer run while building. They read the .wixpdb for source lines.
+& wix msi validate $out
+if ($LASTEXITCODE) { throw "the MSI failed validation (wix msi validate exited with $LASTEXITCODE)" }
 # WiX leaves a .wixpdb with debug data next to the msi; it isn't a download.
 Remove-Item -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($out, '.wixpdb'))
 Write-Host "built $out"
