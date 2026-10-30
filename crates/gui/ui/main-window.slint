@@ -10,13 +10,25 @@ export enum Mode { fresh, resume, orphan }
 
 export struct EntryRow {
     name: string,
+    path: string,
     size: string,
     dir: bool,
+    expanded: bool,
+    depth: int,
 }
 
 component EntryList inherits VerticalLayout {
     in property <[EntryRow]> entries;
     in property <string> empty-text;
+    property <int> selected: 0;
+    property <length> row-height: 26px;
+    init => { scope.focus(); }
+    callback toggle(int, int);
+    function show-selection() {
+        let y = list.content-y + root.selected * root.row-height;
+        if y < 0px { list.content-y -= y; }
+        if y + root.row-height > list.visible-height { list.content-y -= y + root.row-height - list.visible-height; }
+    }
 
     Rectangle {
         height: 30px;
@@ -43,19 +55,38 @@ component EntryList inherits VerticalLayout {
         }
     }
     Line { }
-    if root.entries.length == 0: Rectangle {
-        Text {
+    Rectangle {
+        if root.entries.length == 0: Text {
             text: root.empty-text;
             color: Theme.muted;
         }
-    }
-    if root.entries.length > 0: ListView {
-        for row in root.entries: Rectangle {
-            height: 26px;
+    list := ListView {
+        for row[index] in root.entries: Rectangle {
+            height: root.row-height;
+            accessible-role: list-item;
+            accessible-label: row.path;
+            accessible-description: row.dir ? "Folder" : row.size == "link" ? "Link" : "File";
+            accessible-expandable: row.dir;
+            accessible-expanded: row.expanded;
+            accessible-item-selectable: true;
+            accessible-item-selected: root.selected == index;
+            accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
+            accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
+            background: root.selected == index && scope.has-focus ? Palette.alternate-background : transparent;
             HorizontalLayout {
-                padding-left: Theme.gutter;
+                padding-left: Theme.gutter + row.depth * 16px;
                 padding-right: Theme.gutter;
                 spacing: 8px;
+                Path {
+                    width: 14px;
+                    height: 14px;
+                    viewbox-width: 14;
+                    viewbox-height: 14;
+                    stroke: Theme.muted;
+                    stroke-width: 1.4px;
+                    fill: transparent;
+                    commands: !row.dir ? "" : row.expanded ? "M 3 5 L 7 9 L 11 5" : "M 5 3 L 9 7 L 5 11";
+                }
                 if row.dir: FolderIcon {
                     y: (parent.height - self.height) / 2;
                 }
@@ -76,6 +107,24 @@ component EntryList inherits VerticalLayout {
                     width: 90px;
                 }
             }
+            TouchArea {
+                clicked => {
+                    root.selected = index;
+                    scope.focus();
+                    if row.dir { root.toggle(index, 0); }
+                }
+            }
+        }
+    }
+    }
+    scope := FocusScope {
+        height: 0px;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow { root.selected = max(0, root.selected - 1); root.show-selection(); return accept; }
+            if event.text == Key.DownArrow { root.selected = min(root.entries.length - 1, root.selected + 1); root.show-selection(); return accept; }
+            if event.text == Key.LeftArrow { root.toggle(root.selected, -1); return accept; }
+            if event.text == Key.RightArrow { root.toggle(root.selected, 1); return accept; }
+            return reject;
         }
     }
 }
@@ -123,6 +172,7 @@ export component MainWindow inherits Window {
     in property <bool> notice-bad;
 
     callback open-archive();
+    callback toggle-entry(int, int);
     callback password-ok(string);
     callback password-cancel();
     callback replace-answer(int, bool);
@@ -345,6 +395,7 @@ export component MainWindow inherits Window {
                 horizontal-stretch: 1;
                 entries: root.entries;
                 empty-text: root.mode == Mode.orphan ? "All entries have been extracted." : "This archive is empty.";
+                toggle(row, action) => { root.toggle-entry(row, action); }
             }
             VLine { }
             SpacePanel {

@@ -22,9 +22,10 @@ use hatchzip_gui::settings::Settings;
 use hatchzip_gui::{
     Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window, task_window,
 };
-use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
+use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
 use slint::language::ColorScheme;
-use slint::{ComponentHandle, LogicalSize, Timer, TimerMode};
+use slint::platform::{Key, PointerEventButton, WindowEvent};
+use slint::{ComponentHandle, LogicalSize, Model, Timer, TimerMode};
 
 const PASSWORD: &str = "open sesame";
 
@@ -135,6 +136,109 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         dir.path().join("northwind").display().to_string()
     );
     shot(ui.window(), &format!("{tag}-2-opened"));
+
+    // The tree accepts arrows immediately after load, without a mouse click.
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::LeftArrow.into(),
+    });
+    assert_eq!(
+        ui.get_entries()
+            .iter()
+            .map(|r| r.path.to_string())
+            .collect::<Vec<_>>(),
+        ["Northwind"]
+    );
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::RightArrow.into(),
+    });
+    assert!(ui.get_entries().iter().any(|r| r.path == "Northwind/bin"));
+    // Click a folder and navigate the same tree by keyboard.
+    let window = ui.window();
+    let folder = ElementHandle::find_by_accessible_label(&ui, "Northwind/bin")
+        .next()
+        .expect("the bin folder is visible");
+    assert_eq!(folder.accessible_description().unwrap(), "Folder");
+    assert_eq!(folder.accessible_expandable(), Some(true));
+    assert_eq!(folder.accessible_expanded(), Some(false));
+    assert_eq!(folder.accessible_item_selectable(), Some(true));
+    assert_eq!(folder.accessible_item_selected(), Some(false));
+    // Assistive technology can open and close a folder without a pointer.
+    folder.invoke_accessible_expand_action();
+    assert_eq!(folder.accessible_expanded(), Some(true));
+    assert_eq!(folder.accessible_item_selected(), Some(true));
+    assert!(
+        ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    folder.invoke_accessible_default_action();
+    assert_eq!(folder.accessible_expanded(), Some(false));
+    assert!(
+        !ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    let origin = folder.absolute_position();
+    let size = folder.size();
+    let pos =
+        slint::LogicalPosition::new(origin.x + size.width / 2.0, origin.y + size.height / 2.0);
+    window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+    window.dispatch_event(WindowEvent::PointerPressed {
+        position: pos,
+        button: PointerEventButton::Left,
+    });
+    window.dispatch_event(WindowEvent::PointerReleased {
+        position: pos,
+        button: PointerEventButton::Left,
+    });
+    assert!(
+        ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    assert_eq!(folder.accessible_expanded(), Some(true));
+    let file = ElementHandle::find_by_accessible_label(&ui, "Northwind/bin/northwind")
+        .next()
+        .expect("the file in the expanded folder is visible");
+    assert_eq!(file.accessible_description().unwrap(), "File");
+    assert_eq!(file.accessible_expandable(), Some(false));
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::LeftArrow.into(),
+    });
+    assert!(
+        !ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::RightArrow.into(),
+    });
+    assert!(
+        ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    shot(ui.window(), &format!("{tag}-2-tree-expanded"));
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::DownArrow.into(),
+    });
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::DownArrow.into(),
+    });
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::RightArrow.into(),
+    });
+    assert!(
+        ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/data/level29.pak")
+    );
+    for _ in 0..29 {
+        window.dispatch_event(WindowEvent::KeyPressed {
+            text: Key::DownArrow.into(),
+        });
+    }
+    shot(ui.window(), &format!("{tag}-2-tree-scrolled"));
 
     // Asking to keep 100 TB free makes it not fit, and says by how much.
     ui.set_keep_free("100000".into());

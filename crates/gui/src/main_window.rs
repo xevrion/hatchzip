@@ -15,7 +15,7 @@ use hatchzip_core::session::{self, State, display_name};
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, Timer, TimerMode};
 
 use crate::backend::Drops;
-use crate::entries::{self, Entries, Entry};
+use crate::entries::{self, Entries, EntriesModel};
 use crate::runner::Runner;
 use crate::settings::{self, Settings};
 use crate::task::Task;
@@ -56,7 +56,7 @@ const FORMATS: &str = if hatchzip_core::archive::RAR_SUPPORTED {
 struct Loaded {
     name: String,
     summary: String,
-    entries: Vec<Entry>,
+    entries: Entries,
     mode: Mode,
     /// Half extracted by a run that keeps the archive.
     kept: bool,
@@ -121,7 +121,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
     Ok(Loaded {
         name,
         summary: summary.join(" \u{b7} "),
-        entries: job.as_ref().map(entries::collect).unwrap_or_default(),
+        entries: Entries::new(job.as_ref().map(entries::collect).unwrap_or_default()),
         mode,
         kept,
         output,
@@ -136,6 +136,7 @@ type SharedJob = Arc<Mutex<Option<Job>>>;
 
 struct App {
     ui: slint::Weak<MainWindow>,
+    entries: RefCell<Option<Rc<EntriesModel>>>,
     runner: Rc<Runner>,
     archive: RefCell<Option<PathBuf>>,
     name: RefCell<String>,
@@ -170,7 +171,9 @@ thread_local! {
 /// Runs `f` on the UI thread with the app, from any thread.
 fn post(f: impl FnOnce(&Rc<App>) + Send + 'static) {
     let _ = slint::invoke_from_event_loop(move || {
-        if let Some(app) = APP.with(|a| a.borrow().clone()) {
+        if let Some(app) = APP.with(|a| a.borrow().clone())
+            && app.ui.upgrade().is_some()
+        {
             f(&app);
         }
     });
@@ -214,6 +217,7 @@ pub fn build(
     });
     let app = Rc::new(App {
         ui: ui.as_weak(),
+        entries: RefCell::new(None),
         runner,
         archive: RefCell::new(None),
         name: RefCell::new(String::new()),
@@ -278,6 +282,19 @@ pub fn about_window() -> Option<AboutWindow> {
 }
 
 fn wire(ui: &MainWindow, app: &Rc<App>) {
+    let a = app.clone();
+    ui.on_toggle_entry(move |row, action| {
+        if let Some(tree) = a.entries.borrow().as_ref() {
+            tree.toggle(
+                row.max(0) as usize,
+                match action {
+                    1 => Some(true),
+                    -1 => Some(false),
+                    _ => None,
+                },
+            );
+        }
+    });
     let a = app.clone();
     ui.on_open_archive(move || a.pick_archive());
     let a = app.clone();
@@ -360,6 +377,7 @@ impl App {
         ui.set_task(TaskView::default());
         ui.set_plan(PlanView::default());
         ui.set_entries(ModelRc::default());
+        *self.entries.borrow_mut() = None;
         ui.set_archive_name(
             path.file_name()
                 .unwrap_or_default()
@@ -418,7 +436,9 @@ impl App {
         };
         ui.set_archive_name(loaded.name.as_str().into());
         ui.set_summary(loaded.summary.into());
-        ui.set_entries(ModelRc::new(Entries(loaded.entries)));
+        let tree = Rc::new(EntriesModel::new(loaded.entries));
+        ui.set_entries(ModelRc::from(tree.clone()));
+        *self.entries.borrow_mut() = Some(tree);
         ui.set_mode(loaded.mode);
         ui.set_kept_run(loaded.kept);
         ui.set_output(loaded.output.display().to_string().into());
