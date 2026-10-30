@@ -36,11 +36,14 @@ pub struct Saved {
 }
 
 /// The folder entries of `units` that carry a mode or a time. A folder listed
-/// twice takes its last entry, as a file does.
+/// twice takes its last entry in the archive, as a file does.
 pub fn of(units: &[Unit]) -> Vec<Folder> {
+    // A job holds its units last first.
+    let mut in_order: Vec<&Unit> = units.iter().collect();
+    in_order.sort_by_key(|u| u.start);
     let mut folders: Vec<Folder> = Vec::new();
     let mut at: HashMap<&Path, usize> = HashMap::new();
-    for item in units.iter().flat_map(|u| &u.items) {
+    for item in in_order.into_iter().flat_map(|u| &u.items) {
         if item.kind != Kind::Dir || (item.mode.is_none() && item.mtime.is_none()) {
             continue;
         }

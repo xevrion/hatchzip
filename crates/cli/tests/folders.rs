@@ -104,6 +104,33 @@ fn a_kept_archive_sets_folders_too() {
     assert_no_side_files(&archive);
 }
 
+/// A folder listed twice takes the mode and time of its last entry.
+#[test]
+fn a_folder_listed_twice_takes_its_last_entry() {
+    let tmp = TempDir::new().unwrap();
+    let mut b = tar::Builder::new(Vec::new());
+    for (mode, mtime) in [(0o755, 946_684_800), (0o750, 1_000_000_000)] {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_mode(mode);
+        h.set_mtime(mtime);
+        h.set_size(0);
+        b.append_data(&mut h, "docs", std::io::empty()).unwrap();
+        let mut h = tar::Header::new_gnu();
+        h.set_size(4);
+        h.set_mode(0o644);
+        b.append_data(&mut h, format!("docs/{mtime}.txt"), &b"data"[..])
+            .unwrap();
+    }
+    let archive = tmp.path().join("docs.tar");
+    fs::write(&archive, b.into_inner().unwrap()).unwrap();
+    let out = tmp.path().join("out");
+
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_eq!(modified(&out.join("docs")), when());
+    assert_mode(&out.join("docs"), 0o750);
+}
+
 /// A crash after the last link and before the folders are set leaves the
 /// journal, and the resume sets them.
 #[test]
