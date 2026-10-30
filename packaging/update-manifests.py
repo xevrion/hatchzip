@@ -5,9 +5,12 @@
     python3 packaging/update-manifests.py v0.1.3 --sha256-dir dist
 
 It changes the AUR PKGBUILDs and .SRCINFO files, the winget manifests (and
-renames their version folder), the Homebrew formulae and cask, and the Scoop
-manifest. Nothing is pushed or submitted: see "Package managers" in
-packaging/README.md for that.
+renames their version folder), the Homebrew formulae and cask, the Scoop
+manifest, the Chocolatey package and the snapcraft.yaml. Nothing is pushed
+or submitted: see "Package managers" in packaging/README.md for that. The
+Flatpak manifest is not touched: it names the tag's commit and needs a
+cargo-sources.json regenerated from the new Cargo.lock (see
+packaging/flatpak/README.md).
 
 How the checksums are matched: the manifests are at some release now (the
 version in scoop/hatchzip.json). The script reads that release's published
@@ -59,6 +62,9 @@ FIXED_FILES = [
     PACKAGING / "homebrew" / "Formula" / "hatchzip.rb",
     PACKAGING / "homebrew" / "Casks" / "hatchzip.rb",
     PACKAGING / "homebrew" / "core" / "hatchzip.rb",
+    PACKAGING / "chocolatey" / "hatchzip.nuspec",
+    PACKAGING / "chocolatey" / "tools" / "chocolateyinstall.ps1",
+    PACKAGING / "snap" / "snapcraft.yaml",
     SCOOP,
 ]
 

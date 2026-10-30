@@ -1,0 +1,116 @@
+# The HatchZip snap: the CLI and the desktop app, built from the tagged
+# source. See README.md in this folder for building, publishing and version
+# updates. Build from this folder: `snapcraft pack`.
+name: hatchzip
+base: core24
+version: '0.1.8'
+title: HatchZip
+summary: Extract huge archives in place
+description: |
+  A 180 GB archive that unpacks to 200 GB normally needs 380 GB of free
+  disk, because the archive and everything extracted from it have to exist
+  at the same time. HatchZip needs a little over 200 GB: it extracts the
+  archive from the end and cuts each finished part off the archive as it
+  goes, so the space the archive gives back is reused for the next files.
+
+  - Checks that the extraction fits before it changes anything
+  - Keeps a margin of free space the whole way through
+  - Can be stopped or crash at any moment and continues where it left off
+  - Reads ZIP, 7z, tar, tar.gz and split archives
+
+  The archive is gone when the extraction finishes, unless you choose to
+  keep it. For an archive that cannot be downloaded again, HatchZip can
+  verify every file first.
+
+  This snap does not read RAR archives: the RAR decoder, UnRAR, is not free
+  software. RAR archives are refused before anything is changed.
+
+  Commands: `hatchzip` and `hatchzip.hz` on the command line, and the
+  desktop app from the applications menu or `hatchzip.gui`. Archives on
+  USB and other removable drives need the removable-media interface:
+  `sudo snap connect hatchzip:removable-media`.
+license: MIT OR Apache-2.0
+website: https://hatchzip.dev
+source-code: https://github.com/xevrion/hatchzip
+issues: https://github.com/xevrion/hatchzip/issues
+donation: https://buymeacoffee.com/xevrion
+grade: stable
+# Strict, with write access through `home` and `removable-media`. HatchZip
+# truncates and deletes the archive it extracts, writes its progress files
+# (<archive>.hatchzip, <archive>.hatchzip-tail) next to it and reads the
+# other volumes of a split archive from the same folder, so it needs write
+# access where the archives are, not just to files picked in a dialog.
+# `home` covers non-hidden files in the home folder and is connected
+# automatically; `removable-media` covers /media, /run/media and /mnt and is
+# connected by the user (or automatically, if the store grants it). Classic
+# confinement is not needed for that, and the store grants it only after a
+# review against a list of supported kinds of software, such as compilers
+# and IDEs.
+confinement: strict
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  hatchzip:
+    command: bin/hatchzip
+    completer: usr/share/bash-completion/completions/hatchzip
+    plugs:
+      - home
+      - removable-media
+  # The short name. Without a store alias it runs as `hatchzip.hz`.
+  hz:
+    command: bin/hatchzip
+    plugs:
+      - home
+      - removable-media
+  gui:
+    command: bin/hatchzip-gui
+    # Wayland, X11, OpenGL through the gpu-2404 interface, fontconfig and
+    # the desktop portals the file dialogs use. The app has no GTK
+    # dependency; the extension is used for these libraries and plugs.
+    extensions:
+      - gnome
+    desktop: usr/share/applications/io.github.xevrion.hatchzip.desktop
+    common-id: io.github.xevrion.hatchzip
+    plugs:
+      - home
+      - removable-media
+
+parts:
+  hatchzip:
+    plugin: rust
+    source: https://github.com/xevrion/hatchzip.git
+    source-tag: v0.1.8
+    source-depth: 1
+    # rust-toolchain.toml in the source pins the compiler the release
+    # builds use, and the plugin installs that version through rustup.
+    # Default features only: the `rar` feature compiles UnRAR's source,
+    # which is not free software.
+    rust-path:
+      - crates/cli
+      - crates/gui
+    build-packages:
+      - libfontconfig-dev
+      - desktop-file-utils
+    override-build: |
+      craftctl default
+
+      completions="$CRAFT_PART_INSTALL/usr/share/bash-completion/completions"
+      mkdir -p "$completions"
+      "$CRAFT_PART_INSTALL/bin/hatchzip" completions bash > "$completions/hatchzip"
+
+      desktop="$CRAFT_PART_INSTALL/usr/share/applications/io.github.xevrion.hatchzip.desktop"
+      install -Dm644 packaging/linux/io.github.xevrion.hatchzip.desktop "$desktop"
+      # The shared desktop entry also lists the RAR types, which this
+      # build can't open.
+      desktop-file-edit \
+        --set-key=MimeType \
+        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;' \
+        "$desktop"
+
+      for icon in packaging/linux/icons/hicolor/*/apps/io.github.xevrion.hatchzip.*; do
+        install -Dm644 "$icon" "$CRAFT_PART_INSTALL/usr/share/icons/${icon#packaging/linux/icons/}"
+      done
+      install -Dm644 -t "$CRAFT_PART_INSTALL/usr/share/doc/hatchzip" LICENSE-MIT LICENSE-APACHE

@@ -501,11 +501,11 @@ jobs:
           else
             gh release create "$TAG" dist/* --generate-notes --title "HatchZip $TAG" --repo "$GITHUB_REPOSITORY"
           fi
-      # The AUR, winget, Homebrew and Scoop manifests for this release,
-      # rewritten from the .sha256 files above and uploaded as an artifact to
-      # review. Nothing is pushed or submitted: that stays manual, see
-      # "Package managers" in packaging/README.md. Checked out into its own
-      # folder so the checkout can't clean dist/.
+      # The AUR, winget, Homebrew, Scoop, Chocolatey and Snap manifests for
+      # this release, rewritten from the .sha256 files above and uploaded as
+      # an artifact to review. Nothing is pushed or submitted: that stays
+      # manual, see "Package managers" in packaging/README.md. Checked out
+      # into its own folder so the checkout can't clean dist/.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -519,7 +519,9 @@ jobs:
           name: package-manifests
           path: |
             src/packaging/aur
+            src/packaging/chocolatey
             src/packaging/homebrew
             src/packaging/scoop
+            src/packaging/snap
             src/packaging/winget
           if-no-files-found: error
