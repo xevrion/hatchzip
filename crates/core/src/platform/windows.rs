@@ -228,6 +228,21 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok((u64::from(high) << 32) | u64::from(low))
 }
 
+/// How many names the file has on its filesystem.
+pub fn link_count(path: &Path) -> io::Result<u64> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+
+    let file = File::open(path)?;
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.nNumberOfLinks.into())
+}
+
 /// An archive path as UnRAR's C interface takes it: a wide string here.
 #[cfg(feature = "rar")]
 pub struct RarName(Vec<unrar_ng_sys::WCHAR>);

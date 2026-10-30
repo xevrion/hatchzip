@@ -6,6 +6,7 @@
 
 mod common;
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
@@ -269,6 +270,44 @@ fn an_in_place_run_cannot_switch_to_keeping() {
     assert_ok(&extract(&archive, &out, &[]));
     assert_tree(&out, &files);
     assert_consumed(&archive);
+}
+
+/// Shrinking a file shrinks it under every name it has, so another hard link
+/// to the archive, or to one volume of a set, would be emptied without a
+/// word. Refused before anything changes; keeping the archive is still fine.
+#[test]
+fn a_hard_linked_archive_is_only_extracted_while_kept() {
+    let files = sample_files();
+    for (name, build) in cases() {
+        let tmp = TempDir::new().unwrap();
+        let archive = build(tmp.path(), &files);
+        let before = snapshot(&archive);
+        let volume = &before.last().unwrap().0;
+        let other = tmp.path().join("other name");
+        fs::hard_link(volume, &other).unwrap();
+        let a = archive.to_str().unwrap();
+
+        for args in [
+            vec!["check", a, "--keep-free", "0"],
+            vec!["extract", a, "--keep-free", "0", "--yes"],
+        ] {
+            let refused = hatchzip(&args, &[]);
+            assert_eq!(refused.status.code(), Some(1), "{name}: {args:?}");
+            assert!(
+                String::from_utf8_lossy(&refused.stderr).contains("another hard link"),
+                "{name}: {}",
+                String::from_utf8_lossy(&refused.stderr)
+            );
+            assert_unchanged(&before);
+        }
+        assert_no_side_files(&archive);
+
+        let out = tmp.path().join("out");
+        assert_ok(&keep(&archive, &out, &[]));
+        assert_tree(&out, &files);
+        assert_unchanged(&before);
+        assert_eq!(fs::read(&other).unwrap(), before.last().unwrap().1);
+    }
 }
 
 /// With the free space set between what extracting in place needs and what

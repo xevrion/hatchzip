@@ -449,7 +449,14 @@ impl Job {
     /// Why the archive can't be extracted in place, if it can't. It can
     /// still be extracted while it is kept.
     pub fn in_place_refusal(&self) -> Option<String> {
-        self.format.refuses_in_place()
+        self.format.refuses_in_place().or_else(|| {
+            self.storage.hard_linked().map(|path| {
+                format!(
+                    "{} has another hard link, which extracting in place would empty as well",
+                    path.display()
+                )
+            })
+        })
     }
 
     pub fn item_count(&self) -> usize {

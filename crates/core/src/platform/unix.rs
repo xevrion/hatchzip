@@ -60,6 +60,11 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok(fs::metadata(path)?.blocks() * 512)
 }
 
+/// How many names the file has on its filesystem.
+pub fn link_count(path: &Path) -> io::Result<u64> {
+    Ok(fs::metadata(path)?.nlink())
+}
+
 /// Unix filesystems take any name without `/` or NUL, which path parsing
 /// already rules out, up to 255 bytes. A file is first written under its
 /// name plus `.hatchzip-part`, so that has to fit too.
