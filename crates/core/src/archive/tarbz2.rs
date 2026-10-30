@@ -120,7 +120,7 @@ impl Walker {
                 }
                 if !matches!(s.at, TarAt::File { .. }) && r.written != 0 {
                     bail!(
-                        "the journal's resume point claims a file is open where none is; the                          archive will not be modified"
+                        "the journal's resume point claims a file is open where none is; the archive will not be modified"
                     );
                 }
                 Bzip2::new(
