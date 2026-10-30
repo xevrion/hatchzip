@@ -56,6 +56,29 @@ pub fn open_existing_no_follow(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Opens an existing folder to set its time, failing if `path` is a link, a
+/// junction or anything but a folder. Windows needs backup semantics to open
+/// a folder at all.
+pub fn open_folder_no_follow(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        FILE_WRITE_ATTRIBUTES,
+    };
+    let dir = fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    // Opened this way, a link is the link itself, which is not a folder.
+    if !dir.metadata()?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "it is not a folder",
+        ));
+    }
+    Ok(dir)
+}
+
 /// Why Windows can't create a file or folder with this name, if it can't.
 /// Checked for every entry before the archive is touched, so a name made on
 /// another system fails up front instead of halfway through a run.

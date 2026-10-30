@@ -58,8 +58,9 @@ From then on the archive is parsed through `storage::Reader`, which serves the l
 | `resume` | While a large file is streamed: its unit, how many bytes of it are flushed, the bit of the archive decoding restarts at, and the CRC-32 so far. For a compressed tar, also `stream`, the decoder's and the tar parser's state. See below. |
 | `keep` | Present and true when the extraction keeps the archive; see [Keeping the archive](#keeping-the-archive) |
 | `replace` | Present when the extraction replaces existing files, with `moved` once they are all moved aside; see [Replacing existing files](#replacing-existing-files) |
+| `folders` | Present when the archive has folder entries with permissions or a modified time: how many are saved in `<archive>.hatchzip-folders`, and its CRC-32 |
 
-The journal is at version 3 since `resume` was added. Version 2 journals load as they are; older builds refuse version 3, which matters, because they would delete the half-written file whose archive bytes are already gone. `resume.stream` came later without a new version: only `tar.gz` journals have it, and builds that don't know that format refuse the journal before reading it. A journal with `keep` is version 4, and only such a journal is: builds from before `keep` refuse it, since they would resume it in place and truncate an archive the user asked to keep. Every other journal is still written as version 3, so an older build can finish it. A journal with `replace` is version 5, kept archive or not: older builds would delete the person's files at the paths of entries left to do, and a restore would not put the replaced files back.
+The journal is at version 3 since `resume` was added. Version 2 journals load as they are; older builds refuse version 3, which matters, because they would delete the half-written file whose archive bytes are already gone. `resume.stream` came later without a new version: only `tar.gz` journals have it, and builds that don't know that format refuse the journal before reading it. A journal with `keep` is version 4, and only such a journal is: builds from before `keep` refuse it, since they would resume it in place and truncate an archive the user asked to keep. Every other journal is still written as version 3, so an older build can finish it. A journal with `replace` is version 5, kept archive or not: older builds would delete the person's files at the paths of entries left to do, and a restore would not put the replaced files back. A journal with `folders` is version 7, whatever else it records: older builds would finish without setting the folders.
 
 There is no separate "done" counter: units start at distinct offsets, so `committed_len` alone says which are finished. The journal is always replaced atomically: written to `<archive>.hatchzip.tmp`, flushed, renamed over the old one, and the directory flushed. The saved tail is written the same way through `<archive>.hatchzip-tail.tmp`. Whatever is at either temporary name first is removed, which removes a link and never what it points to, and the file is then created only where nothing exists, without following a link.
 
@@ -79,7 +80,9 @@ Units are processed in batches. Each batch goes through these steps, in this ord
 4. **Commit.** The journal is updated with the new `committed_len` and the batch's links.
 5. **Truncate.** The archive is shortened to `committed_len`, the start of the batch's lowest unit. The freed space becomes available for the next batch.
 
-At the end, links are created, then the remaining archive (at most a self-extractor stub or the 7z signature header) is deleted, then the side files.
+At the end, links are created, then folders get their permissions and modified times, then the remaining archive (at most a self-extractor stub or the 7z signature header) is deleted, then the side files.
+
+Every file and link made inside a folder changes its modified time, and a folder without write permission takes no new files, so folders are set last, deepest first, without following a link. A ZIP or 7z folder entry's header can be truncated long before the end, so before anything is extracted the folder entries are written to `<archive>.hatchzip-folders`, the same way as the saved tail.
 
 ## Freeing space inside a large file
 
@@ -182,7 +185,8 @@ Each step can be interrupted. The order above makes every interruption recoverab
 | Committing | The atomic rename either happened or not | Either case above or below |
 | Truncating | The journal lists the batch, the archive is still longer than `committed_len` | Truncates the archive, continues with the next batch |
 | Creating links at the end | All units committed | Recreates every link, replacing any that exist. A link that can't be made (a folder in its place, which only an extraction started by a release without the checks in [Rejected before starting](#rejected-before-starting) can lead to, or a link on its way) stops the run with every file extracted; the error lists each such link and why, and the journal keeps them. Once what is in the way is moved, a resume makes them and finishes. Nothing is ever created through a link. |
-| Deleting the archive and side files | The archive is gone, the journal is still there | Recreates the links and removes the side files |
+| Setting folders at the end | All units committed, links made | Sets every saved folder again, then finishes |
+| Deleting the archive and side files | The archive is gone, the journal is still there | Recreates the links, sets the folders and removes the side files |
 
 The rule behind the table: **the journal never claims a file before it is durable, and the archive is never truncated past a unit before the journal claims it.**
 
@@ -276,6 +280,6 @@ Everything that differs between systems lives in `crates/core/src/platform/`, on
 | Flushing a batch | One `syncfs` | `F_FULLFSYNC` per file | `FlushFileBuffers` per file |
 | Directory flush | `fsync` on the directory | `fsync` on the directory | Not possible; NTFS journals renames |
 | Same disk check | Device ID | Device ID | Volume prefix of the canonical path |
-| Unix permissions | Restored, without setuid, setgid and sticky | Same | Ignored |
+| Unix permissions | Restored for files and folders, without setuid, setgid and sticky | Same | Ignored |
 | Symlinks | Created | Created | Written as a small text file holding the target, as Git does without developer mode |
 | Hard links | Created, or copied where the filesystem has none (FAT32, exFAT) | Same | Same |

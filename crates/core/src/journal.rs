@@ -35,7 +35,11 @@ const REPLACE_VERSION: u32 = 5;
 /// version 6. A build before that would finish it by deleting the files the
 /// person chose to keep.
 const CHOOSE_VERSION: u32 = 6;
-const READABLE: [u32; 5] = [2, 3, 4, 5, 6];
+/// One whose archive has folder entries with permissions or times writes
+/// version 7, whatever else it does, and keeps them in a side file. A build
+/// before that would finish without setting them.
+const FOLDERS_VERSION: u32 = 7;
+const READABLE: [u32; 6] = [2, 3, 4, 5, 6, 7];
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Link {
@@ -104,6 +108,10 @@ pub struct Journal {
     /// it started; see [`crate::replace`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replace: Option<Replace>,
+    /// The archive's folder entries are saved in their own file, set once
+    /// every file and link is made; see [`crate::folders`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folders: Option<crate::folders::Saved>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -133,6 +141,7 @@ pub struct Paths {
     pub archive: PathBuf,
     pub journal: PathBuf,
     pub tail: PathBuf,
+    pub folders: PathBuf,
 }
 
 impl Paths {
@@ -146,6 +155,7 @@ impl Paths {
             archive: archive.to_path_buf(),
             journal: with(".hatchzip"),
             tail: with(".hatchzip-tail"),
+            folders: with(".hatchzip-folders"),
         }
     }
 
@@ -155,7 +165,7 @@ impl Paths {
 
     pub fn remove(&self) -> Result<()> {
         crate::chosen::forget(&self.archive);
-        for p in [&self.tail, &self.journal] {
+        for p in [&self.folders, &self.tail, &self.journal] {
             match fs::remove_file(p) {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => {
                     return Err(e).with_context(|| format!("removing {}", p.display()));
@@ -176,10 +186,15 @@ pub struct Plan {
     /// Existing files are moved aside before the first entry is extracted,
     /// and what to do with each once it completes.
     pub replace: Option<Replace>,
+    /// Folder entries with a mode or a time, saved before anything is
+    /// extracted.
+    pub folders: Vec<crate::folders::Folder>,
 }
 
-fn version_for(keep: bool, replace: Option<&Replace>) -> u32 {
-    if replace.is_some_and(Replace::chose) {
+fn version_for(keep: bool, replace: Option<&Replace>, folders: bool) -> u32 {
+    if folders {
+        FOLDERS_VERSION
+    } else if replace.is_some_and(Replace::chose) {
         CHOOSE_VERSION
     } else if replace.is_some() {
         REPLACE_VERSION
@@ -197,8 +212,9 @@ impl Journal {
         r.seek(SeekFrom::Start(plan.tail_start))?;
         r.read_to_end(&mut tail)?;
         fsutil::write_atomic(&paths.tail, &tail)?;
+        let folders = crate::folders::save(&paths.folders, &plan.folders)?;
         let journal = Self {
-            version: version_for(plan.keep, plan.replace.as_ref()),
+            version: version_for(plan.keep, plan.replace.as_ref(), folders.is_some()),
             format: plan.format.to_string(),
             parts: storage.record(),
             tail_start: plan.tail_start,
@@ -211,6 +227,7 @@ impl Journal {
             restoring: None,
             keep: plan.keep,
             replace: plan.replace,
+            folders,
         };
         journal.save(paths)?;
         Ok(journal)
@@ -242,10 +259,16 @@ impl Journal {
         }
         let mut journal: Self = serde_json::from_slice(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?;
+        // Version 7 is written whatever else the run does, so it says nothing
+        // about keeping or replacing.
+        let folders = version == FOLDERS_VERSION;
         let replaces = version == REPLACE_VERSION || version == CHOOSE_VERSION;
-        if journal.replace.is_some() != replaces
-            || journal.replace.as_ref().is_some_and(Replace::chose) != (version == CHOOSE_VERSION)
-            || (!replaces && journal.keep != (version == KEEP_VERSION))
+        if journal.folders.is_some() != folders
+            || (!folders
+                && (journal.replace.is_some() != replaces
+                    || journal.replace.as_ref().is_some_and(Replace::chose)
+                        != (version == CHOOSE_VERSION)
+                    || (!replaces && journal.keep != (version == KEEP_VERSION))))
         {
             bail!("{} is damaged", paths.journal.display());
         }
@@ -260,7 +283,11 @@ impl Journal {
         {
             bail!("{} is damaged", paths.journal.display());
         }
-        journal.version = version_for(journal.keep, journal.replace.as_ref());
+        journal.version = version_for(
+            journal.keep,
+            journal.replace.as_ref(),
+            journal.folders.is_some(),
+        );
         journal.check_bound(paths)?;
         let tail =
             fs::read(&paths.tail).with_context(|| format!("reading {}", paths.tail.display()))?;
@@ -449,6 +476,28 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Saved folders make a journal version 7 whatever else the run does,
+    /// and no other journal may claim them.
+    #[test]
+    fn saved_folders_are_version_7_and_only_that_is() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-folders-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let folders = r#","folders":{"count":1,"crc":7}"#;
+        let (journal, _) = Journal::load(&write_with(&dir, 7, folders)).unwrap();
+        assert_eq!(journal.version, FOLDERS_VERSION);
+        let kept = format!(r#","keep":true,"replace":{{"moved":true,"keep":["a.txt"]}}{folders}"#);
+        let (journal, _) = Journal::load(&write_with(&dir, 7, &kept)).unwrap();
+        assert!(journal.keep && journal.replace.as_ref().is_some_and(Replace::chose));
+        assert_eq!(journal.version, FOLDERS_VERSION);
+
+        assert!(Journal::load(&write(&dir, 7)).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, folders)).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A run started by the previous release resumes; one started by a
     /// release that knows more is refused before anything is touched.
     #[test]
@@ -460,7 +509,7 @@ mod tests {
         assert_eq!(journal.resume, None);
         assert_eq!(journal.version, VERSION);
 
-        let err = Journal::load(&write(&dir, CHOOSE_VERSION + 1))
+        let err = Journal::load(&write(&dir, FOLDERS_VERSION + 1))
             .err()
             .unwrap();
         assert!(format!("{err:#}").contains("newer HatchZip"), "{err:#}");
