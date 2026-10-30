@@ -170,6 +170,16 @@ impl Storage {
         Ok(())
     }
 
+    /// The first volume that has another name, if any. Shrinking a file
+    /// shrinks it under every name it has, so extracting in place would
+    /// empty a hard link that may be the only copy someone meant to keep.
+    pub fn hard_linked(&self) -> Option<&Path> {
+        self.parts
+            .iter()
+            .find(|p| platform::link_count(&p.path).is_ok_and(|n| n > 1))
+            .map(|p| p.path.as_path())
+    }
+
     pub fn primary(&self) -> &Path {
         &self.parts[0].path
     }

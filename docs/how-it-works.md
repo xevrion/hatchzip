@@ -265,6 +265,7 @@ These are refused while the archive is still untouched:
 - Gzip files that don't hold a tar and compressed tar other than gzip (`.tar.zst`, `.tar.xz`, `.tar.bz2`).
 - In RAR: solid archives (unless the archive is kept), links, dictionaries over 4 GB, a volume missing or a stray one after the last, names UnRAR reads differently, a wrong password, and headers that fail their checksum (see [RAR](#rar)). Without the `rar` feature, every RAR archive.
 - A file or link at the path of an entry, so that a resume can safely delete anything it finds for uncommitted units, unless the run replaces existing files (see [Replacing existing files](#replacing-existing-files)). A folder where the archive has a file, a file where it needs a folder, and a link on the way to any entry are refused either way.
+- An archive, or one volume of a set, with another hard link, unless the archive is kept. Shrinking a file shrinks it under every name it has, so the other name would be emptied.
 - Anything at the name an entry's file is first written under, `<name>.hatchzip-part`, replacing files or not: it would be in the way, and a resume would delete it as its own. An entry whose name, or the name of a folder on its path, ends in `.hatchzip-part`, ignoring case, since it would share that name with another entry's file.
 
 ## Operating systems
