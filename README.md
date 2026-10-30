@@ -131,6 +131,8 @@ cargo install hatchzip
 
 This builds the command line tool from [crates.io](https://crates.io/crates/hatchzip). The engine is a library too: [`hatchzip-core`](https://crates.io/crates/hatchzip-core). It reads every format but RAR; `cargo install hatchzip --features rar` adds RAR support, which compiles UnRAR's C++ source under its own [license](#license) and needs a C++ compiler.
 
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), `cargo binstall hatchzip` downloads the release build for your system instead of compiling it, with RAR support, on Linux, macOS and Windows (x64; Arm on Linux and macOS).
+
 ### From source
 
 With [Rust](https://rustup.rs) (the version is pinned in `rust-toolchain.toml` and installed automatically):
