@@ -30,10 +30,10 @@ impl Answer {
 }
 
 pub struct Question {
-    pub text: String,
-    pub note: String,
-    /// Offers to answer for the files after this one; empty for the last.
-    pub rest: String,
+    pub(crate) file: String,
+    pub(crate) folder: String,
+    pub(crate) left: usize,
+    pub(crate) removing: bool,
     reply: Sender<Option<(Answer, bool)>>,
 }
 
@@ -80,9 +80,10 @@ pub fn ask(found: &[PathBuf], folder: &Path, removing: bool) -> Option<Choices> 
 fn one(file: &Path, folder: &Path, left: usize, removing: bool) -> Option<(Answer, bool)> {
     let (reply, answer) = channel();
     let question = Question {
-        text: crate::text::replace_question(file, folder),
-        note: crate::text::replace_note(removing).into(),
-        rest: crate::text::replace_rest(left),
+        file: file.display().to_string(),
+        folder: folder.display().to_string(),
+        left,
+        removing,
         reply,
     };
     let sent = slint::invoke_from_event_loop(move || {
@@ -122,9 +123,14 @@ macro_rules! host_in {
         let (p, weak) = (pending.clone(), $ui.as_weak());
         $crate::replace::set_host(move |q| {
             if let Some(ui) = weak.upgrade() {
-                ui.set_replace_text(q.text.as_str().into());
-                ui.set_replace_note(q.note.as_str().into());
-                ui.set_replace_rest(q.rest.as_str().into());
+                ui.set_replace_text(
+                    ui.invoke_replace_question(q.file.as_str().into(), q.folder.as_str().into()),
+                );
+                ui.set_replace_note(ui.invoke_replace_instructions(q.removing));
+                ui.set_replace_rest(ui.invoke_replace_remaining(
+                    i32::try_from(q.left).unwrap_or(i32::MAX),
+                    $crate::text::count(q.left).into(),
+                ));
                 ui.set_replace_shown(true);
                 p.put(q);
             }

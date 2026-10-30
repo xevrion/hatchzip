@@ -15,7 +15,10 @@ fn main() {
     // SLINT_STYLE still wins, to preview another style without editing this.
     let style = std::env::var("SLINT_STYLE").unwrap_or_else(|_| style.to_string());
     println!("cargo:rerun-if-env-changed=SLINT_STYLE");
-    let config = slint_build::CompilerConfiguration::new().with_style(style);
+    let config = slint_build::CompilerConfiguration::new()
+        .with_style(style)
+        .with_bundled_translations("translations")
+        .with_default_translation_context(slint_build::DefaultTranslationContext::None);
     slint_build::compile_with_config("ui/app.slint", config).expect("compiling the UI");
 
     if target_os == "windows" {

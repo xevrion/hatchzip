@@ -42,20 +42,12 @@ fn picker_extensions() -> Vec<String> {
         .collect()
 }
 
-/// The formats line under the Open button.
-const FORMATS: &str = if hatchzip_core::archive::RAR_SUPPORTED {
-    "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, RAR, and split \
-     archives."
-} else {
-    "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, and split \
-     archives."
-};
-
 /// An archive opened read-only for looking at. It takes no lock, so another
 /// HatchZip can still extract it; extraction reopens it for writing.
 struct Loaded {
     name: String,
-    summary: String,
+    total: u64,
+    left: Option<u64>,
     entries: Vec<Entry>,
     mode: Mode,
     /// Half extracted by a run that keeps the archive.
@@ -101,26 +93,10 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         Some(j) => display_name(j),
         None => file_name,
     };
-    let mut summary = Vec::new();
-    if let Some(j) = &job {
-        summary.push(format!("{} archive", j.format_name.to_uppercase()));
-        // Half extracted, the list only holds what is left to do.
-        match left {
-            None => {
-                summary.push(human(j.storage.original_len()));
-                summary.push(text::plural(j.item_count(), "entry", "entries"));
-            }
-            Some(left) => summary.push(format!(
-                "{} in {} remaining",
-                human(left),
-                text::plural(j.item_count(), "entry", "entries")
-            )),
-        }
-    }
-    summary.push(format!("{} uncompressed", human(total)));
     Ok(Loaded {
         name,
-        summary: summary.join(" \u{b7} "),
+        total,
+        left,
         entries: job.as_ref().map(entries::collect).unwrap_or_default(),
         mode,
         kept,
@@ -170,7 +146,9 @@ thread_local! {
 /// Runs `f` on the UI thread with the app, from any thread.
 fn post(f: impl FnOnce(&Rc<App>) + Send + 'static) {
     let _ = slint::invoke_from_event_loop(move || {
-        if let Some(app) = APP.with(|a| a.borrow().clone()) {
+        if let Some(app) = APP.with(|a| a.borrow().clone())
+            && app.ui.upgrade().is_some()
+        {
             f(&app);
         }
     });
@@ -202,14 +180,117 @@ pub fn build(
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
     ui.set_close_when_done(settings.close_when_done);
-    ui.set_formats(FORMATS.into());
+    ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
-    ui.set_shell_menu_label(platform::SHELL_MENU_LABEL.into());
+    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
+        "explorer" => ui.invoke_shell_explorer(),
+        "finder" => ui.invoke_shell_finder(),
+        _ => ui.invoke_shell_files(),
+    });
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(task.view.clone());
+            let mut view = task.view.clone();
+            view.heading = ui.invoke_task_heading(
+                view.phase,
+                view.is_test,
+                task.is_restoring(),
+                task.name().into(),
+            );
+            view.busy = ui.invoke_checking_space();
+            view.detail = if task.is_restoring() {
+                ui.invoke_restore_detail()
+            } else if view.is_test {
+                ui.invoke_test_detail()
+            } else if let Some(path) = &task.output {
+                ui.invoke_task_destination(path.display().to_string().into())
+            } else {
+                Default::default()
+            };
+            if task.waiting_for_disk() && !view.rate.is_empty() {
+                view.rate = ui.invoke_waiting_disk();
+            }
+            match view.phase {
+                crate::Phase::Pausing => view.message = ui.invoke_pausing_message(),
+                crate::Phase::Verifying if !view.is_test => {
+                    view.message = ui.invoke_verifying_message()
+                }
+                crate::Phase::Paused => view.message = ui.invoke_paused_message(),
+                crate::Phase::Done if !view.is_test && !task.is_restoring() => {
+                    view.message = if task.keeps_archive() {
+                        ui.invoke_extracted_kept()
+                    } else {
+                        ui.invoke_extracted_removed()
+                    };
+                }
+                _ => {}
+            }
+            if let Some(reason) = &task.resumable_failure {
+                view.message = ui.invoke_task_resumable_error(reason.as_str().into());
+            }
+            if let Some((entries, output, kept, aside)) = &task.restore_result {
+                let held = ui.invoke_restore_held(*entries == 1, text::count(*entries).into());
+                let mut message = ui
+                    .invoke_restore_result(*kept, held, output.display().to_string().into())
+                    .to_string();
+                if *aside > 0 {
+                    message.push(' ');
+                    message.push_str(
+                        &ui.invoke_restore_aside(
+                            *aside == 1,
+                            text::count(*aside).into(),
+                            hatchzip_core::replace::folder(output)
+                                .display()
+                                .to_string()
+                                .into(),
+                        ),
+                    );
+                }
+                view.message = message.into();
+            }
+            if let Some(count) = task.tested_entries {
+                view.message = ui.invoke_task_test_result(count == 1, text::count(count).into());
+            }
+            if let Some(percent) = task.reading_percent {
+                view.busy = ui.invoke_reading_archive(percent);
+            }
+            if !view.amounts.is_empty()
+                && let Some((done, total)) = task.progress_bytes
+            {
+                view.amounts = ui.invoke_task_amounts(human(done).into(), human(total).into());
+            }
+            if !view.archive_left.is_empty()
+                && let Some(left) = task.remaining_archive_bytes
+            {
+                view.archive_left = ui.invoke_task_archive_left(human(left).into());
+            }
+            if !view.rate.is_empty()
+                && let Some((speed, seconds)) = task.rate_estimate
+            {
+                let duration = match seconds {
+                    0..=4 => ui.invoke_time_short().to_string(),
+                    5..=59 => ui
+                        .invoke_time_seconds(seconds == 1, seconds.to_string().into())
+                        .to_string(),
+                    60..=3599 => {
+                        let minutes = seconds.div_ceil(60);
+                        ui.invoke_time_minutes(minutes == 1, minutes.to_string().into())
+                            .to_string()
+                    }
+                    _ => {
+                        let hours = seconds / 3600;
+                        let minutes = (seconds % 3600) / 60;
+                        format!(
+                            "{} {}",
+                            ui.invoke_time_hours(hours == 1, hours.to_string().into()),
+                            ui.invoke_time_minutes(minutes == 1, minutes.to_string().into())
+                        )
+                    }
+                };
+                view.rate = ui.invoke_task_rate(human(speed).into(), duration.into());
+            }
+            ui.set_task(view);
         }
     });
     let app = Rc::new(App {
@@ -379,7 +460,7 @@ impl App {
                     && f < 1.0
                     && start.elapsed() >= Duration::from_millis(500)
                 {
-                    ui.set_loading_detail(text::reading_text(f).into());
+                    ui.set_loading_detail(ui.invoke_reading_archive((f * 100.0).floor() as i32));
                 }
             });
         // Opening the same archive again, after a run, needn't ask again.
@@ -417,7 +498,30 @@ impl App {
             }
         };
         ui.set_archive_name(loaded.name.as_str().into());
-        ui.set_summary(loaded.summary.into());
+        let mut summary = Vec::new();
+        if let Some(job) = &loaded.job {
+            summary.push(
+                ui.invoke_archive_kind(job.format_name.to_uppercase().into())
+                    .to_string(),
+            );
+            let count = job.item_count();
+            let entries = ui.invoke_entry_count(text::count(count).into(), count == 1);
+            match loaded.left {
+                None => {
+                    summary.push(human(job.storage.original_len()));
+                    summary.push(entries.to_string());
+                }
+                Some(left) => summary.push(
+                    ui.invoke_remaining_summary(human(left).into(), entries)
+                        .to_string(),
+                ),
+            }
+        }
+        summary.push(
+            ui.invoke_uncompressed_summary(human(loaded.total).into())
+                .to_string(),
+        );
+        ui.set_summary(summary.join(" \u{b7} ").into());
         ui.set_entries(ModelRc::new(Entries(loaded.entries)));
         ui.set_mode(loaded.mode);
         ui.set_kept_run(loaded.kept);
@@ -438,7 +542,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                verdict: "No entries remaining".into(),
+                verdict: ui.invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -518,8 +622,8 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => ("Context menu entries added.".to_string(), false),
-                    Ok(()) => ("Context menu entries removed.".to_string(), false),
+                    Ok(()) if on => (app.ui().invoke_menu_added().to_string(), false),
+                    Ok(()) => (app.ui().invoke_menu_removed().to_string(), false),
                     Err(e) => {
                         // Show the box as it really is.
                         app.ui().set_shell_menu_on(!on);
@@ -551,9 +655,9 @@ impl App {
         }
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title("Open archive")
-            .add_filter("Archives", &picker_extensions())
-            .add_filter("All files", &["*"])
+            .set_title(ui.invoke_open_archive_title().as_str())
+            .add_filter(ui.invoke_archives_filter().as_str(), &picker_extensions())
+            .add_filter(ui.invoke_all_files_filter().as_str(), &["*"])
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
             dialog = dialog.set_directory(dir);
@@ -574,7 +678,7 @@ impl App {
         // looking that up needs no disk access on this thread.
         let start = current.parent();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title("Select destination folder")
+            .set_title(ui.invoke_destination_title().as_str())
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);

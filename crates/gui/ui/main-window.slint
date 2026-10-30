@@ -26,14 +26,14 @@ component EntryList inherits VerticalLayout {
             padding-right: Theme.gutter;
             spacing: 8px;
             Text {
-                text: "Name";
+                text: @tr("Name");
                 color: Theme.muted;
                 font-size: Theme.small-size;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
             Text {
-                text: "Size";
+                text: @tr("Size");
                 color: Theme.muted;
                 font-size: Theme.small-size;
                 vertical-alignment: center;
@@ -69,7 +69,7 @@ component EntryList inherits VerticalLayout {
                     horizontal-stretch: 1;
                 }
                 Text {
-                    text: row.size;
+                    text: row.size == "link" ? @tr("link") : row.size;
                     color: Theme.muted;
                     vertical-alignment: center;
                     horizontal-alignment: right;
@@ -95,13 +95,15 @@ export component MainWindow inherits Window {
     in property <string> output;
     in-out property <string> keep-free: "2";
     in property <bool> keep-free-valid: true;
+    out property <string> storage-unit: @tr("GB");
     in-out property <bool> verify-first;
     // Off keeps the archive: a standard extraction that removes nothing.
     in-out property <bool> remove-archive: true;
     // For the small window a right-click opens, not this one.
     in-out property <bool> close-when-done: true;
     // The formats line under the Open button; RAR only in builds with it.
-    in property <string> formats: "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, and split archives.";
+    in property <bool> supports-rar;
+    in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, and split archives.");
     // The half-extracted run being resumed keeps its archive.
     in property <bool> kept-run;
     in property <TaskView> task;
@@ -122,9 +124,76 @@ export component MainWindow inherits Window {
     in property <string> notice;
     in property <bool> notice-bad;
 
+    public function shell-explorer() -> string { return @tr("Show in the Explorer context menu"); }
+    public function shell-files() -> string { return @tr("Show in the file manager's context menu"); }
+    public function shell-finder() -> string { return @tr("Show in the Finder context menu"); }
+    public function open-archive-title() -> string { return @tr("Open archive"); }
+    public function archives-filter() -> string { return @tr("Archives"); }
+    public function all-files-filter() -> string { return @tr("All files"); }
+    public function destination-title() -> string { return @tr("Select destination folder"); }
+    public function menu-added() -> string { return @tr("Context menu entries added."); }
+    public function menu-removed() -> string { return @tr("Context menu entries removed."); }
+    public function no-entries() -> string { return @tr("No entries remaining"); }
+    public function checking-space() -> string { return @tr("Checking disk space…"); }
+    public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
+    public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
+    public function pausing-message() -> string { return @tr("Pausing after the current batch…"); }
+    public function verifying-message() -> string { return @tr("Verifying archive before extracting…"); }
+    public function paused-message() -> string { return @tr("Progress is saved. The extraction can be resumed now or later."); }
+    public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
+    public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
+    public function test-one() -> string { return @tr("Test passed: 1 entry verified."); }
+    public function waiting-disk() -> string { return @tr("Waiting for disk"); }
+
+    public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
+    public function archive-kind(name: string) -> string { return @tr("{} archive", name); }
+    public function entry-count(number: string, one: bool) -> string { return one ? @tr("{} entry", number) : @tr("{} entries", number); }
+    public function remaining-summary(size: string, entries: string) -> string { return @tr("{} in {} remaining", size, entries); }
+    public function uncompressed-summary(size: string) -> string { return @tr("{} uncompressed", size); }
+
+    public function task-heading(phase: Phase, is-test: bool, restoring: bool, name: string) -> string {
+        if (restoring) {
+            if (phase == Phase.done) { return @tr("Restore complete"); }
+            if (phase == Phase.failed) { return @tr("Restore failed"); }
+            return @tr("Restoring {}", name);
+        }
+        if (is-test) {
+            if (phase == Phase.done) { return @tr("Test complete"); }
+            if (phase == Phase.failed) { return @tr("Test failed"); }
+            return @tr("Testing {}", name);
+        }
+        if (phase == Phase.done) { return @tr("Extraction complete"); }
+        if (phase == Phase.paused) { return @tr("Extraction paused"); }
+        if (phase == Phase.failed) { return @tr("Extraction failed"); }
+        if (phase == Phase.no-space) { return @tr("Insufficient disk space"); }
+        return @tr("Extracting {}", name);
+    }
+
+    public function task-destination(path: string) -> string { return @tr("Destination: {}", path); }
+    public function task-amounts(done: string, total: string) -> string { return @tr("{} of {}", done, total); }
+    public function task-archive-left(size: string) -> string { return @tr("Archive remaining: {}", size); }
+
+    public function task-test-result(one: bool, count: string) -> string { return one ? @tr("Test passed: 1 entry verified.") : @tr("Test passed: {} entries verified.", count); }
+
+    public function task-rate(speed: string, time: string) -> string { return @tr("{}/s, {} remaining", speed, time); }
+    public function time-short() -> string { return @tr("less than 5 seconds"); }
+    public function time-seconds(one: bool, n: string) -> string { return one ? @tr("{} second", n) : @tr("{} seconds", n); }
+    public function time-minutes(one: bool, n: string) -> string { return one ? @tr("{} minute", n) : @tr("{} minutes", n); }
+    public function time-hours(one: bool, n: string) -> string { return one ? @tr("{} hour", n) : @tr("{} hours", n); }
+
+    public function restore-held(one: bool, n: string) -> string { return one ? @tr("the 1 entry") : @tr("the {} entries", n); }
+    public function restore-result(kept: bool, held: string, path: string) -> string { return kept ? @tr("Extraction progress discarded. The archive was not modified. Extracted files remain in {}.", path) : @tr("Archive restored. It contains {} not yet extracted. Extracted files remain in {}.", held, path); }
+    public function restore-aside(one: bool, n: string, path: string) -> string { return one ? @tr("1 replaced file remains in {}, since the file extracted at its path is no longer in the archive.", path) : @tr("{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive.", n, path); }
+
+    public function task-resumable-error(reason: string) -> string { return @tr("{} Progress is saved; the extraction can be resumed.", reason); }
+
     callback open-archive();
     callback password-ok(string);
     callback password-cancel();
+    public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
+    public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
+    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : left == 1 ? @tr("Do the same for the next file") : @tr("Do the same for the next {} files", count); }
+
     callback replace-answer(int, bool);
     callback replace-cancel();
     callback shell-menu-toggled();
@@ -153,9 +222,9 @@ export component MainWindow inherits Window {
 
     MenuBar {
         Menu {
-            title: "File";
+            title: @tr("File");
             MenuItem {
-                title: "Open…";
+                title: @tr("Open…");
                 shortcut: @keys(Control + O);
                 enabled: root.task.phase == Phase.idle || root.task.phase == Phase.done;
                 activated => {
@@ -164,7 +233,7 @@ export component MainWindow inherits Window {
             }
             MenuSeparator { }
             MenuItem {
-                title: "Quit";
+                title: @tr("Quit");
                 shortcut: @keys(Control + Q);
                 activated => {
                     root.quit();
@@ -172,7 +241,7 @@ export component MainWindow inherits Window {
             }
         }
         Menu {
-            title: "Settings";
+            title: @tr("Settings");
             if root.shell-menu-available: MenuItem {
                 title: root.shell-menu-label;
                 checkable: true;
@@ -182,7 +251,7 @@ export component MainWindow inherits Window {
                 }
             }
             MenuItem {
-                title: "Verify archive before extracting";
+                title: @tr("Verify archive before extracting");
                 checkable: true;
                 checked <=> root.verify-first;
                 activated => {
@@ -190,7 +259,7 @@ export component MainWindow inherits Window {
                 }
             }
             MenuItem {
-                title: "Remove the archive during extraction";
+                title: @tr("Remove the archive during extraction");
                 checkable: true;
                 checked <=> root.remove-archive;
                 activated => {
@@ -198,7 +267,7 @@ export component MainWindow inherits Window {
                 }
             }
             MenuItem {
-                title: "Close the progress window when extraction completes";
+                title: @tr("Close the progress window when extraction completes");
                 checkable: true;
                 checked <=> root.close-when-done;
                 activated => {
@@ -207,16 +276,16 @@ export component MainWindow inherits Window {
             }
         }
         Menu {
-            title: "Help";
+            title: @tr("Help");
             MenuItem {
-                title: "Check for updates";
+                title: @tr("Check for updates");
                 activated => {
                     root.check-for-updates();
                 }
             }
             MenuSeparator { }
             MenuItem {
-                title: "About HatchZip";
+                title: @tr("About HatchZip");
                 activated => {
                     root.about();
                 }
@@ -234,13 +303,13 @@ export component MainWindow inherits Window {
                 DropIcon { }
             }
             Text {
-                text: root.drop-hover ? "Drop the archive to open it" : "No archive open";
+                text: root.drop-hover ? @tr("Drop the archive to open it") : @tr("No archive open");
                 font-size: 16px;
                 font-weight: 600;
                 horizontal-alignment: center;
             }
             Text {
-                text: "The archive is removed progressively during extraction, so only the space for the extracted files is required.";
+                text: @tr("The archive is removed progressively during extraction, so only the space for the extracted files is required.");
                 color: Theme.muted;
                 horizontal-alignment: center;
                 wrap: word-wrap;
@@ -249,7 +318,7 @@ export component MainWindow inherits Window {
                 alignment: center;
                 padding-top: 6px;
                 Button {
-                    text: "Open archive…";
+                    text: @tr("Open archive…");
                     primary: true;
                     clicked => {
                         root.open-archive();
@@ -258,6 +327,7 @@ export component MainWindow inherits Window {
             }
             Text {
                 text: root.formats;
+                wrap: word-wrap;
                 color: Theme.faint;
                 font-size: Theme.small-size;
                 horizontal-alignment: center;
@@ -284,7 +354,7 @@ export component MainWindow inherits Window {
         HorizontalLayout {
             alignment: center;
             Busy {
-                text: root.loading-detail != "" ? root.loading-detail : "Opening " + root.archive-name + "…";
+                text: root.loading-detail != "" ? root.loading-detail : @tr("Opening {}…", root.archive-name);
             }
         }
     }
@@ -294,7 +364,7 @@ export component MainWindow inherits Window {
         spacing: 12px;
         padding: 40px;
         Text {
-            text: "Unable to open " + root.archive-name;
+            text: @tr("Unable to open {}", root.archive-name);
             font-size: 16px;
             font-weight: 600;
             horizontal-alignment: center;
@@ -309,7 +379,7 @@ export component MainWindow inherits Window {
             alignment: center;
             padding-top: 6px;
             Button {
-                text: "Open another archive…";
+                text: @tr("Open another archive…");
                 clicked => {
                     root.open-archive();
                 }
@@ -344,7 +414,7 @@ export component MainWindow inherits Window {
             EntryList {
                 horizontal-stretch: 1;
                 entries: root.entries;
-                empty-text: root.mode == Mode.orphan ? "All entries have been extracted." : "This archive is empty.";
+                empty-text: root.mode == Mode.orphan ? @tr("All entries have been extracted.") : @tr("This archive is empty.");
             }
             VLine { }
             SpacePanel {
@@ -361,7 +431,7 @@ export component MainWindow inherits Window {
             spacing: 12px;
 
             if root.mode == Mode.resume || root.mode == Mode.orphan: Text {
-                text: root.mode == Mode.resume ? "This archive is partially extracted to " + root.output + "." + (root.kept-run ? " The archive is kept." : "") : "All entries have been extracted to " + root.output + ". Select Finish to remove the remaining temporary files.";
+                text: root.mode == Mode.resume ? @tr("This archive is partially extracted to {}.", root.output) + (root.kept-run ? @tr(" The archive is kept.") : "") : @tr("All entries have been extracted to {}. Select Finish to remove the remaining temporary files.", root.output);
                 wrap: word-wrap;
                 font-weight: 600;
             }
@@ -369,7 +439,7 @@ export component MainWindow inherits Window {
             if root.mode == Mode.fresh: HorizontalLayout {
                 spacing: 8px;
                 Text {
-                    text: "Extract to";
+                    text: @tr("Extract to");
                     vertical-alignment: center;
                     width: 112px;
                 }
@@ -379,7 +449,7 @@ export component MainWindow inherits Window {
                     horizontal-stretch: 1;
                 }
                 Button {
-                    text: "Browse…";
+                    text: @tr("Browse…");
                     clicked => {
                         root.change-output();
                     }
@@ -389,7 +459,7 @@ export component MainWindow inherits Window {
             if root.mode != Mode.orphan: HorizontalLayout {
                 spacing: 8px;
                 Text {
-                    text: "Reserved space";
+                    text: @tr("Reserved space");
                     vertical-alignment: center;
                     width: 112px;
                 }
@@ -403,7 +473,7 @@ export component MainWindow inherits Window {
                     }
                 }
                 Text {
-                    text: root.keep-free-valid ? "GB" : "GB. Enter a number, such as 2 or 0.5.";
+                    text: root.keep-free-valid ? root.storage-unit : @tr("GB. Enter a number, such as 2 or 0.5.");
                     vertical-alignment: center;
                     color: root.keep-free-valid ? Palette.foreground : Theme.danger;
                 }
@@ -411,7 +481,7 @@ export component MainWindow inherits Window {
                     width: 16px;
                 }
                 if root.mode == Mode.fresh: CheckBox {
-                    text: "Verify archive before extracting";
+                    text: @tr("Verify archive before extracting");
                     checked <=> root.verify-first;
                     toggled => {
                         root.verify-first-toggled();
@@ -429,7 +499,7 @@ export component MainWindow inherits Window {
                     width: 112px;
                 }
                 CheckBox {
-                    text: "Remove the archive during extraction";
+                    text: @tr("Remove the archive during extraction");
                     checked <=> root.remove-archive;
                     toggled => {
                         root.remove-archive-toggled();
@@ -443,7 +513,7 @@ export component MainWindow inherits Window {
             HorizontalLayout {
                 spacing: 8px;
                 Text {
-                    text: root.mode != Mode.fresh ? "" : root.remove-archive ? "The archive is removed progressively during extraction. An interrupted extraction can be resumed." : "The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.";
+                    text: root.mode != Mode.fresh ? "" : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
                     color: Theme.muted;
                     font-size: Theme.small-size;
                     wrap: word-wrap;
@@ -451,20 +521,20 @@ export component MainWindow inherits Window {
                     horizontal-stretch: 1;
                 }
                 if root.mode == Mode.fresh: Button {
-                    text: "Test";
+                    text: @tr("Test");
                     clicked => {
                         root.test();
                     }
                 }
                 // A kept archive was never changed; there is nothing to restore.
                 if root.mode == Mode.resume && !root.kept-run: Button {
-                    text: "Restore archive";
+                    text: @tr("Restore archive");
                     clicked => {
                         root.give-back();
                     }
                 }
                 Button {
-                    text: root.mode == Mode.fresh ? "Extract" : (root.mode == Mode.resume ? "Resume extraction" : "Finish");
+                    text: root.mode == Mode.fresh ? @tr("Extract") : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
                     primary: true;
                     enabled: root.mode == Mode.orphan || (root.plan.ready && root.plan.fits && root.keep-free-valid);
                     clicked => {
@@ -500,7 +570,7 @@ export component MainWindow inherits Window {
                 // nothing to reopen; offer the same way out as the error
                 // screen instead of leaving only the folder.
                 if root.task.phase == Phase.done && root.task.can-open-folder: Button {
-                    text: "Open another archive…";
+                    text: @tr("Open another archive…");
                     clicked => {
                         root.open-archive();
                     }

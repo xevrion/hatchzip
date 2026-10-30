@@ -16,6 +16,13 @@ pub struct Task {
     pub view: TaskView,
     pub plan: PlanView,
     pub output: Option<PathBuf>,
+    pub progress_bytes: Option<(u64, u64)>,
+    pub remaining_archive_bytes: Option<u64>,
+    pub reading_percent: Option<i32>,
+    pub tested_entries: Option<usize>,
+    pub rate_estimate: Option<(u64, u64)>,
+    pub restore_result: Option<(usize, PathBuf, bool, usize)>,
+    pub resumable_failure: Option<String>,
     name: String,
     is_test: bool,
     restoring: bool,
@@ -74,6 +81,13 @@ impl Task {
             },
             plan: PlanView::default(),
             output: None,
+            progress_bytes: None,
+            remaining_archive_bytes: None,
+            reading_percent: None,
+            tested_entries: None,
+            rate_estimate: None,
+            restore_result: None,
+            resumable_failure: None,
             name: name.to_string(),
             is_test,
             restoring: false,
@@ -89,6 +103,18 @@ impl Task {
     /// The archive's name, as the prompts and headings show it.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn is_restoring(&self) -> bool {
+        self.restoring
+    }
+
+    pub fn keeps_archive(&self) -> bool {
+        self.keep
+    }
+
+    pub fn waiting_for_disk(&self) -> bool {
+        self.rate.per_second().is_some_and(|r| r < 1.0)
     }
 
     fn heading(&self) -> String {
@@ -152,6 +178,13 @@ impl Task {
                 v.phase = Phase::Checking;
                 v.busy = CHECKING.into();
                 self.checking_since = None;
+                self.progress_bytes = None;
+                self.remaining_archive_bytes = None;
+                self.reading_percent = None;
+                self.tested_entries = None;
+                self.rate_estimate = None;
+                self.restore_result = None;
+                self.resumable_failure = None;
                 v.fraction = 0.0;
                 v.amounts = "".into();
                 v.rate = "".into();
@@ -208,6 +241,7 @@ impl Task {
                 self.set_output(&output);
             }
             Update::Tested(entries) => {
+                self.tested_entries = Some(entries);
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
@@ -223,6 +257,7 @@ impl Task {
                 kept,
                 set_aside,
             } => {
+                self.restore_result = Some((entries, output.clone(), kept, set_aside));
                 v.phase = Phase::Done;
                 v.fraction = 0.0;
                 v.amounts = "".into();
@@ -253,6 +288,7 @@ impl Task {
                 v.message = message.into();
             }
             Update::Failed(f) => {
+                self.resumable_failure = f.resumable.then(|| f.message.clone());
                 v.phase = Phase::Failed;
                 v.rate = "".into();
                 v.message = if f.resumable {
@@ -284,9 +320,13 @@ impl Task {
             let since = *self.checking_since.get_or_insert(now);
             self.view.busy = match counters.reading.fraction() {
                 Some(f) if f < 1.0 && now.duration_since(since) >= READING_AFTER => {
+                    self.reading_percent = Some((f * 100.0).floor() as i32);
                     reading_text(f).into()
                 }
-                _ => CHECKING.into(),
+                _ => {
+                    self.reading_percent = None;
+                    CHECKING.into()
+                }
             };
             return;
         }
@@ -299,12 +339,20 @@ impl Task {
         let done = counters.done.load(Ordering::Relaxed);
         let total = counters.total.load(Ordering::Relaxed).max(1);
         self.rate.add(now, done);
+        self.rate_estimate = self.rate.per_second().filter(|&r| r >= 1.0).map(|r| {
+            (
+                r as u64,
+                Duration::from_secs_f64(total.saturating_sub(done) as f64 / r).as_secs(),
+            )
+        });
+        self.progress_bytes = Some((done, total));
         let v = &mut self.view;
         v.fraction = (done as f64 / total as f64).min(1.0) as f32;
         v.amounts = format!("{} of {}", human(done), human(total)).into();
         v.rate = self.rate.describe(total.saturating_sub(done)).into();
         if !self.is_test && !self.keep && v.phase != Phase::Verifying {
             let left = counters.archive.load(Ordering::Relaxed);
+            self.remaining_archive_bytes = Some(left);
             v.archive_left = format!("Archive remaining: {}", human(left)).into();
         }
     }
