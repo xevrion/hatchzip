@@ -54,6 +54,16 @@ pub fn open_existing_no_follow(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Opens an existing folder to set its mode and time, failing if `path` is
+/// a link or anything but a folder.
+pub fn open_folder_no_follow(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(path)
+}
+
 /// Bytes the file really occupies on disk. Punching a hole lowers it while
 /// the length stays the same.
 pub fn allocated_bytes(path: &Path) -> io::Result<u64> {

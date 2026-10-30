@@ -622,6 +622,7 @@ pub fn begin(
         total_size: job.remaining_size(),
         keep: keep_archive,
         replace,
+        folders: crate::folders::of(&job.units),
     };
     Journal::create(paths, &job.storage, plan)
 }

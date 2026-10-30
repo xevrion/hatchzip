@@ -120,9 +120,17 @@ pub fn side_files(archive: &Path) -> [PathBuf; 2] {
     ]
 }
 
+/// The saved folder entries, written only when the archive has some.
+pub fn folders_file(archive: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.hatchzip-folders", archive.display()))
+}
+
 pub fn assert_consumed(archive: &Path) {
     assert!(!archive.exists(), "the archive should be gone");
-    for p in side_files(archive) {
+    for p in side_files(archive)
+        .into_iter()
+        .chain([folders_file(archive)])
+    {
         assert!(!p.exists(), "{} should be cleaned up", p.display());
     }
 }
@@ -285,7 +293,10 @@ pub fn assert_unchanged(before: &[(PathBuf, Vec<u8>)]) {
 }
 
 pub fn assert_no_side_files(archive: &Path) {
-    for p in side_files(archive) {
+    for p in side_files(archive)
+        .into_iter()
+        .chain([folders_file(archive)])
+    {
         assert!(!p.exists(), "{} should be cleaned up", p.display());
     }
 }

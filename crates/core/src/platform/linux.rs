@@ -5,7 +5,8 @@ use std::path::Path;
 
 pub use super::unix::{
     allocated_bytes, apply_mode, create_new_no_follow, create_symlink, name_problem,
-    open_exclusive, open_existing_no_follow, path_len, same_filesystem, sync_dir,
+    open_exclusive, open_existing_no_follow, open_folder_no_follow, path_len, same_filesystem,
+    sync_dir,
 };
 
 /// `PATH_MAX` is 4096 bytes including the terminating NUL; `.hatchzip-part`

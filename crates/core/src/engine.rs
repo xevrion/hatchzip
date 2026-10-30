@@ -42,7 +42,7 @@ use crate::archive::storage::{Reads, Storage, Tail};
 use crate::archive::targz::{Event, Profile, Walker};
 use crate::archive::{self, Codec, Format, Item, Kind, PasswordCheck, Sink, Stream, Unit};
 use crate::journal::{Journal, Link, Paths, Resume, TarAt};
-use crate::{fsutil, platform, replace};
+use crate::{folders, fsutil, platform, replace};
 
 /// Larger batches extract in parallel better, smaller ones redo less work
 /// after a crash and keep the archive shrinking in fine steps.
@@ -1546,6 +1546,9 @@ impl Run<'_> {
             replace::settle(out, r)?;
             replace::remove(out)?;
         }
+        // Last, since every file, link and put-back file changes its
+        // folder's time.
+        set_folders(&self.journal, &self.paths, out)?;
         if self.journal.keep {
             // The archive stays as it was; only the progress files go.
             return self.paths.remove();
@@ -1644,7 +1647,19 @@ pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
         replace::settle(&journal.output, r)?;
         replace::remove(&journal.output)?;
     }
+    set_folders(journal, paths, &journal.output)?;
     paths.remove()
+}
+
+/// Sets the saved folders' permissions and times. The journal stays until
+/// they are set, so a crash before the end sets them again on resume.
+fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<()> {
+    let Some(saved) = journal.folders else {
+        return Ok(());
+    };
+    crash_point("before-folders");
+    let list = folders::load(&paths.folders, saved)?;
+    folders::apply(&list, out)
 }
 
 /// The last step of a run, when every file is extracted and the archive is
