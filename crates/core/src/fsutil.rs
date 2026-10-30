@@ -239,9 +239,36 @@ pub fn from_epoch_secs(secs: i64) -> Option<SystemTime> {
     }
 }
 
+/// The time a Windows FILETIME names: 100 ns ticks since 1601, with 0 for
+/// unset. `None` for that, or when the system can't represent the time.
+pub fn from_filetime(ticks: u64) -> Option<SystemTime> {
+    const TICKS_PER_SEC: u64 = 10_000_000;
+    const SECS_FROM_1601_TO_1970: i64 = 11_644_473_600;
+    if ticks == 0 {
+        return None;
+    }
+    let secs = i64::try_from(ticks / TICKS_PER_SEC).ok()? - SECS_FROM_1601_TO_1970;
+    let nanos = (ticks % TICKS_PER_SEC) * 100;
+    from_epoch_secs(secs)?.checked_add(Duration::from_nanos(nanos))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filetimes_count_from_1601() {
+        assert_eq!(from_filetime(0), None);
+        assert_eq!(from_filetime(116_444_736_000_000_000), Some(UNIX_EPOCH));
+        assert_eq!(
+            from_filetime(116_444_736_000_000_001),
+            Some(UNIX_EPOCH + Duration::from_nanos(100))
+        );
+        assert_eq!(
+            from_filetime(116_444_735_990_000_000),
+            UNIX_EPOCH.checked_sub(Duration::from_secs(1))
+        );
+    }
 
     /// A resume point keeps a time before 1970, as a .tar.gz stores it.
     #[test]

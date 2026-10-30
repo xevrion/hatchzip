@@ -2,7 +2,7 @@
 
 use std::io::{Read, Seek};
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ::zip::extra_fields::ExtraField;
 use ::zip::read::{ArchiveOffset, Config, ZipArchiveMetadata};
@@ -71,14 +71,18 @@ pub fn open(
         }
     };
 
-    // The extended timestamp field (written by Info-ZIP zip) holds the
-    // modification time in UTC; the DOS time beside it has no zone. An entry
-    // already truncated away on resume has no readable header and falls back.
-    let utc_mtimes: Vec<Option<u32>> = (0..zip.len())
+    // The extended timestamp field (written by Info-ZIP zip) and the NTFS
+    // field (written by 7-Zip and Windows tools) hold the modification time
+    // in UTC; the DOS time beside them has no zone. An entry already
+    // truncated away on resume has no readable header and falls back.
+    let utc_mtimes: Vec<Option<SystemTime>> = (0..zip.len())
         .map(|i| {
             zip.by_index_raw(i).ok().and_then(|f| {
                 f.extra_data_fields().find_map(|field| match field {
-                    ExtraField::ExtendedTimestamp(t) => t.mod_time(),
+                    ExtraField::ExtendedTimestamp(t) => t
+                        .mod_time()
+                        .map(|secs| UNIX_EPOCH + Duration::from_secs(secs.into())),
+                    ExtraField::Ntfs(ntfs) => fsutil::from_filetime(ntfs.mtime()),
                     _ => None,
                 })
             })
@@ -115,10 +119,11 @@ pub fn open(
                 size: e.size(),
                 kind,
                 mode: e.unix_mode(),
-                mtime: match utc_mtimes.get(index).copied().flatten() {
-                    Some(secs) => Some(UNIX_EPOCH + Duration::from_secs(secs.into())),
-                    None => e.last_modified().and_then(fsutil::zip_time),
-                },
+                mtime: utc_mtimes
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .or_else(|| e.last_modified().and_then(fsutil::zip_time)),
             }],
             encrypted: e.encrypted(),
         });

@@ -560,3 +560,37 @@ fn restores_the_extended_timestamp_mtime() {
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(utc.into())
     );
 }
+
+/// 7-Zip and Windows tools store the UTC modification time in an NTFS field
+/// next to the zone-less DOS time; that one is restored.
+#[test]
+fn restores_the_ntfs_mtime() {
+    let tmp = TempDir::new().unwrap();
+    let utc: u64 = 981_173_106; // 2001-02-03 04:05:06 UTC
+    let ticks = (utc + 11_644_473_600) * 10_000_000 + 2_500_000;
+    let mut opts = zip::write::FullFileOptions::default().last_modified_time(
+        zip::DateTime::from_date_and_time(2001, 2, 3, 9, 35, 6).unwrap(), // local time at UTC+05:30
+    );
+    let mut ntfs = vec![0u8; 4]; // reserved
+    ntfs.extend_from_slice(&1u16.to_le_bytes()); // tag: file times
+    ntfs.extend_from_slice(&24u16.to_le_bytes());
+    for time in [ticks, 0, 0] {
+        ntfs.extend_from_slice(&time.to_le_bytes());
+    }
+    opts.add_extra_field(0x000a, ntfs, false).unwrap();
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.start_file("a.txt", opts).unwrap();
+    w.write_all(b"a").unwrap();
+    let archive = tmp.path().join("t.zip");
+    fs::write(&archive, w.finish().unwrap().into_inner()).unwrap();
+    let out = tmp.path().join("out");
+
+    assert_ok(&extract(&archive, &out, &[]));
+    let mtime = fs::metadata(out.join("a.txt")).unwrap().modified().unwrap();
+    assert_eq!(
+        mtime,
+        std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(utc)
+            + std::time::Duration::from_millis(250)
+    );
+}
