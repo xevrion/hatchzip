@@ -1,0 +1,91 @@
+# Flathub manifest for HatchZip: the desktop app and the CLI, built from the
+# tagged source with the rust-stable SDK extension. See README.md in this
+# folder for local builds, the Flathub submission and version updates.
+#
+# cargo-sources.json is generated from the tag's Cargo.lock by
+# flatpak-cargo-generator (README.md has the command) and is not committed
+# here. The build has no network access, so every crate comes from it.
+id: io.github.xevrion.hatchzip
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: hatchzip-gui
+
+finish-args:
+  # The app draws with OpenGL through winit, natively on Wayland and through
+  # X11 elsewhere, and falls back to its software renderer when OpenGL is
+  # unavailable. X11 needs the IPC namespace for shared memory.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # HatchZip modifies the archive it extracts: it truncates the archive
+  # file as each part is extracted and deletes it at the end. It also
+  # writes two progress files next to the archive (<archive>.hatchzip and
+  # <archive>.hatchzip-tail), reads the other volumes of a split archive
+  # from the same folder, and extracts into a folder next to it by default.
+  # The FileChooser and Documents portals grant access to the one file the
+  # user picked, so none of that works through them. Flathub requires
+  # static permissions to be kept to an absolute minimum and portals to be
+  # used where they cover the use case
+  # (https://docs.flathub.org/docs/for-app-authors/requirements#permissions),
+  # and Flatpak advises avoiding full home access where specific folders
+  # suffice (https://docs.flatpak.org/en/latest/sandbox-permissions.html#filesystem-access).
+  # Archives can be anywhere in the home folder, so the narrowest set that
+  # works is the home folder plus the folders where removable and secondary
+  # drives are mounted (udisks2 uses /run/media on most distributions and
+  # /media on Debian and Ubuntu; /mnt is the conventional manual mount
+  # point). This is narrower than --filesystem=host, and the same home
+  # access GNOME's archive manager has on Flathub (org.gnome.FileRoller).
+  # No network: the app makes no network connections.
+  - --filesystem=home
+  - --filesystem=/run/media
+  - --filesystem=/media
+  - --filesystem=/mnt
+
+modules:
+  - name: hatchzip
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        # flatpak-cargo-generator writes its source replacement config into
+        # cargo/ of the build directory, which is named after the module.
+        CARGO_HOME: /run/build/hatchzip/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      # Default features only: the `rar` feature compiles UnRAR's source,
+      # which is not free software, so RAR archives are refused before
+      # anything is touched in this build.
+      - cargo --offline build --release --locked -p hatchzip -p hatchzip-gui
+      - install -Dm755 -t /app/bin target/release/hatchzip target/release/hatchzip-gui
+      - install -Dm644 -t /app/share/applications packaging/linux/io.github.xevrion.hatchzip.desktop
+      # The shared desktop entry also lists the RAR types, which this build
+      # can't open.
+      - >-
+        desktop-file-edit
+        --set-key=MimeType
+        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;'
+        /app/share/applications/io.github.xevrion.hatchzip.desktop
+      - install -Dm644 -t /app/share/metainfo io.github.xevrion.hatchzip.metainfo.xml
+      - |
+        for icon in packaging/linux/icons/hicolor/*/apps/io.github.xevrion.hatchzip.*; do
+          install -Dm644 "$icon" "/app/share/icons/${icon#packaging/linux/icons/}"
+        done
+      - install -Dm644 -t /app/share/licenses/io.github.xevrion.hatchzip LICENSE-MIT LICENSE-APACHE
+    sources:
+      - type: git
+        url: https://github.com/xevrion/hatchzip.git
+        tag: v0.1.8
+        commit: c99cb5e997685e82a30b47928020d0a1bd315aa8
+        x-checker-data:
+          type: git
+          tag-pattern: ^v([\d.]+)$
+      - cargo-sources.json
+      # The Flatpak's own metadata: the shared copy in packaging/linux
+      # describes the release builds, which read RAR archives.
+      - type: file
+        path: io.github.xevrion.hatchzip.metainfo.xml
