@@ -109,6 +109,14 @@ impl Task {
         self.restoring
     }
 
+    pub fn keeps_archive(&self) -> bool {
+        self.keep
+    }
+
+    pub fn waiting_for_disk(&self) -> bool {
+        self.rate.per_second().is_some_and(|r| r < 1.0)
+    }
+
     fn heading(&self) -> String {
         let n = &self.name;
         if self.restoring {

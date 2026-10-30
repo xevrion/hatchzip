@@ -1,8 +1,5 @@
 use std::path::PathBuf;
 
-/// The settings switch, named after this system's file manager.
-pub const SHELL_MENU_LABEL: &str = "Show in the file manager's context menu";
-
 /// The file managers hatchzip-shell knows (Dolphin, GNOME Files, Nemo).
 pub const SHELL_MENU: bool = true;
 
@@ -18,3 +15,5 @@ pub fn config_dir() -> Option<PathBuf> {
 /// File managers pass the files as arguments here, so there is nothing to
 /// listen for.
 pub fn forward_opened_files(_on_open: impl Fn(PathBuf) + 'static) {}
+
+pub const SHELL_MENU_NAME: &str = "files";

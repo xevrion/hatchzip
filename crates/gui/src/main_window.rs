@@ -185,7 +185,11 @@ pub fn build(
     ui.set_close_when_done(settings.close_when_done);
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
-    ui.set_shell_menu_label(ui.invoke_translated(platform::SHELL_MENU_LABEL.into()));
+    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
+        "explorer" => ui.invoke_shell_explorer(),
+        "finder" => ui.invoke_shell_finder(),
+        _ => ui.invoke_shell_files(),
+    });
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
@@ -197,10 +201,34 @@ pub fn build(
                 task.is_restoring(),
                 task.name().into(),
             );
-            view.busy = ui.invoke_translated(view.busy);
-            view.detail = ui.invoke_translated(view.detail);
-            view.rate = ui.invoke_translated(view.rate);
-            view.message = ui.invoke_translated(view.message);
+            view.busy = ui.invoke_checking_space();
+            view.detail = if task.is_restoring() {
+                ui.invoke_restore_detail()
+            } else if view.is_test {
+                ui.invoke_test_detail()
+            } else if let Some(path) = &task.output {
+                ui.invoke_task_destination(path.display().to_string().into())
+            } else {
+                Default::default()
+            };
+            if task.waiting_for_disk() && !view.rate.is_empty() {
+                view.rate = ui.invoke_waiting_disk();
+            }
+            match view.phase {
+                crate::Phase::Pausing => view.message = ui.invoke_pausing_message(),
+                crate::Phase::Verifying if !view.is_test => {
+                    view.message = ui.invoke_verifying_message()
+                }
+                crate::Phase::Paused => view.message = ui.invoke_paused_message(),
+                crate::Phase::Done if !view.is_test && !task.is_restoring() => {
+                    view.message = if task.keeps_archive() {
+                        ui.invoke_extracted_kept()
+                    } else {
+                        ui.invoke_extracted_removed()
+                    };
+                }
+                _ => {}
+            }
             if let Some(reason) = &task.resumable_failure {
                 view.message = ui.invoke_task_resumable_error(reason.as_str().into());
             }
@@ -229,11 +257,6 @@ pub fn build(
             }
             if let Some(percent) = task.reading_percent {
                 view.busy = ui.invoke_reading_archive(percent);
-            }
-            if view.detail.starts_with("Destination: ")
-                && let Some(path) = &task.output
-            {
-                view.detail = ui.invoke_task_destination(path.display().to_string().into());
             }
             if !view.amounts.is_empty()
                 && let Some((done, total)) = task.progress_bytes
@@ -539,7 +562,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                verdict: ui.invoke_translated("No entries remaining".into()),
+                verdict: ui.invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -619,18 +642,8 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (
-                        app.ui()
-                            .invoke_translated("Context menu entries added.".into())
-                            .to_string(),
-                        false,
-                    ),
-                    Ok(()) => (
-                        app.ui()
-                            .invoke_translated("Context menu entries removed.".into())
-                            .to_string(),
-                        false,
-                    ),
+                    Ok(()) if on => (app.ui().invoke_menu_added().to_string(), false),
+                    Ok(()) => (app.ui().invoke_menu_removed().to_string(), false),
                     Err(e) => {
                         // Show the box as it really is.
                         app.ui().set_shell_menu_on(!on);
@@ -662,12 +675,9 @@ impl App {
         }
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_translated("Open archive".into()).as_str())
-            .add_filter(
-                ui.invoke_translated("Archives".into()).as_str(),
-                &picker_extensions(),
-            )
-            .add_filter(ui.invoke_translated("All files".into()).as_str(), &["*"])
+            .set_title(ui.invoke_open_archive_title().as_str())
+            .add_filter(ui.invoke_archives_filter().as_str(), &picker_extensions())
+            .add_filter(ui.invoke_all_files_filter().as_str(), &["*"])
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
             dialog = dialog.set_directory(dir);
@@ -688,10 +698,7 @@ impl App {
         // looking that up needs no disk access on this thread.
         let start = current.parent();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(
-                ui.invoke_translated("Select destination folder".into())
-                    .as_str(),
-            )
+            .set_title(ui.invoke_destination_title().as_str())
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);

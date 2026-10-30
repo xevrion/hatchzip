@@ -180,29 +180,26 @@ export component MainWindow inherits Window {
     in property <string> notice;
     in property <bool> notice-bad;
 
-    public function translated(key: string) -> string {
-        if (key == "Show in the Explorer context menu") { return @tr("Show in the Explorer context menu"); }
-        if (key == "Show in the file manager's context menu") { return @tr("Show in the file manager's context menu"); }
-        if (key == "Show in the Finder context menu") { return @tr("Show in the Finder context menu"); }
-        if (key == "Open archive") { return @tr("Open archive"); }
-        if (key == "Archives") { return @tr("Archives"); }
-        if (key == "All files") { return @tr("All files"); }
-        if (key == "Select destination folder") { return @tr("Select destination folder"); }
-        if (key == "Context menu entries added.") { return @tr("Context menu entries added."); }
-        if (key == "Context menu entries removed.") { return @tr("Context menu entries removed."); }
-        if (key == "No entries remaining") { return @tr("No entries remaining"); }
-        if (key == "Checking disk space…") { return @tr("Checking disk space…"); }
-        if (key == "Converting it back to a standard archive. Extracted files are kept.") { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
-        if (key == "Verifying every entry. No files are written.") { return @tr("Verifying every entry. No files are written."); }
-        if (key == "Pausing after the current batch…") { return @tr("Pausing after the current batch…"); }
-        if (key == "Verifying archive before extracting…") { return @tr("Verifying archive before extracting…"); }
-        if (key == "Progress is saved. The extraction can be resumed now or later.") { return @tr("Progress is saved. The extraction can be resumed now or later."); }
-        if (key == "All entries were extracted. The archive was kept.") { return @tr("All entries were extracted. The archive was kept."); }
-        if (key == "All entries were extracted. The archive was removed.") { return @tr("All entries were extracted. The archive was removed."); }
-        if (key == "Test passed: 1 entry verified.") { return @tr("Test passed: 1 entry verified."); }
-        if (key == "Waiting for disk") { return @tr("Waiting for disk"); }
-        return key;
-    }
+    public function shell-explorer() -> string { return @tr("Show in the Explorer context menu"); }
+    public function shell-files() -> string { return @tr("Show in the file manager's context menu"); }
+    public function shell-finder() -> string { return @tr("Show in the Finder context menu"); }
+    public function open-archive-title() -> string { return @tr("Open archive"); }
+    public function archives-filter() -> string { return @tr("Archives"); }
+    public function all-files-filter() -> string { return @tr("All files"); }
+    public function destination-title() -> string { return @tr("Select destination folder"); }
+    public function menu-added() -> string { return @tr("Context menu entries added."); }
+    public function menu-removed() -> string { return @tr("Context menu entries removed."); }
+    public function no-entries() -> string { return @tr("No entries remaining"); }
+    public function checking-space() -> string { return @tr("Checking disk space…"); }
+    public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
+    public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
+    public function pausing-message() -> string { return @tr("Pausing after the current batch…"); }
+    public function verifying-message() -> string { return @tr("Verifying archive before extracting…"); }
+    public function paused-message() -> string { return @tr("Progress is saved. The extraction can be resumed now or later."); }
+    public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
+    public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
+    public function test-one() -> string { return @tr("Test passed: 1 entry verified."); }
+    public function waiting-disk() -> string { return @tr("Waiting for disk"); }
 
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
     public function archive-kind(name: string) -> string { return @tr("{} archive", name); }

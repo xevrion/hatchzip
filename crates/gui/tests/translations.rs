@@ -17,7 +17,7 @@ fn bundled_hindi_and_english_fallback() {
     .unwrap();
     let ui = MainWindow::new().unwrap();
     slint::select_bundled_translation("hi").unwrap();
-    assert_eq!(ui.invoke_translated("Open archive".into()), "आर्काइव खोलें");
+    assert_eq!(ui.invoke_open_archive_title(), "आर्काइव खोलें");
     assert_eq!(ui.invoke_reading_archive(37), "आर्काइव पढ़ा जा रहा है… 37%");
     assert_eq!(ui.invoke_entry_count("35".into(), false), "35 प्रविष्टियाँ");
     assert_eq!(
@@ -30,6 +30,13 @@ fn bundled_hindi_and_english_fallback() {
         "game.zip एक्सट्रैक्ट हो रहा है"
     );
     assert!(ui.get_formats().contains("समर्थित फ़ॉर्मैट"));
+    assert_eq!(ui.invoke_checking_space(), "डिस्क की जगह जाँची जा रही है…");
+    assert_eq!(
+        ui.invoke_paused_message(),
+        "प्रगति सहेज ली गई है। एक्सट्रैक्शन अभी या बाद में फिर शुरू किया जा सकता है।"
+    );
+    assert_eq!(ui.invoke_menu_added(), "संदर्भ मेन्यू प्रविष्टियाँ जोड़ दी गई हैं।");
+    assert_eq!(ui.invoke_menu_removed(), "संदर्भ मेन्यू प्रविष्टियाँ हटा दी गई हैं।");
     assert!(
         ui.invoke_restore_result(
             false,
@@ -150,12 +157,8 @@ fn bundled_hindi_and_english_fallback() {
     window.hide().unwrap();
     // GB is deliberately absent from the catalog and falls back to English.
     assert_eq!(ui.get_storage_unit(), "GB");
-    assert_eq!(
-        ui.invoke_translated("Not in the catalog".into()),
-        "Not in the catalog"
-    );
     slint::select_bundled_translation("en").unwrap();
-    assert_eq!(ui.invoke_translated("Open archive".into()), "Open archive");
+    assert_eq!(ui.invoke_open_archive_title(), "Open archive");
     assert_eq!(ui.invoke_reading_archive(37), "Reading archive… 37%");
     assert_eq!(
         ui.invoke_restore_result(
