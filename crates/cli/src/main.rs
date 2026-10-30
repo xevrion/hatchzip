@@ -720,6 +720,9 @@ fn extract(
     let (job, journal) = match state {
         State::Orphan(journal) => {
             engine::finish_orphaned(&journal, &paths)?;
+            if journal.keep {
+                say!("This extraction was started with --keep-archive; the archive is kept.");
+            }
             say!(
                 "{GOOD}Extraction complete.{GOOD:#} Files are in {}.",
                 journal.output.display()

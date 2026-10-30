@@ -15,6 +15,10 @@
 //! point instead, since the bytes before it may be gone. The extraction
 //! walks the same way with the same buffer sizes, so it meets exactly the
 //! points the scan measured.
+//!
+//! The tar parser's own state machine is in [`TarStream`], driven by the
+//! decoder hooks of [`Feed`]. `tarxz` runs the same thing over xz blocks,
+//! so both compressed tars parse identically down to their events.
 
 use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
@@ -25,39 +29,77 @@ use serde::{Deserialize, Serialize};
 
 use super::resumable::{GzPoint, Gzip};
 use super::storage::Storage;
-use super::{Format, Item, Kind, Opened, Sink, Unit, Worker, safe_path};
+use super::{Format, Item, Kind, Opened, Sink, SolidStream, SolidWalker, Unit, Worker, safe_path};
 use crate::fsutil;
 use crate::journal::Resume;
 
 pub const NAME: &str = "tar.gz";
 
 /// Decoded output is handed out in pieces of at most this much.
-const BUF: usize = 1024 * 1024;
+pub(super) const BUF: usize = 1024 * 1024;
 
 /// Long-name and pax records in front of one entry, together. GNU tar and
 /// pax write a few hundred bytes; anything this large is refused.
-const MAX_HEADER: u64 = 1024 * 1024;
+pub(super) const MAX_HEADER: u64 = 1024 * 1024;
 
 /// The decoder's and the tar parser's state at a resume point, beyond the
 /// bit position and output length the journal's [`Resume`] already holds.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StreamPoint {
-    /// The point is where a gzip member's header begins, not a deflate block
-    /// boundary inside a member.
+    /// Which codec the point belongs to, so a journal can never be read as
+    /// the wrong compressed tar's: a `.tar.xz` point says `xz`. Older
+    /// tar.gz journals have no field and read as `gzip`, which was the only
+    /// codec then.
+    #[serde(default, skip_serializing_if = "CodecKind::is_gzip")]
+    pub kind: CodecKind,
+    /// Gzip: the point is where a gzip member's header begins, not a
+    /// deflate block boundary inside a member. Written even at its default,
+    /// and so are the three below: 0.1.8 reads this journal structure and
+    /// has no defaults, so a field left out makes it report the journal as
+    /// damaged. Only fields added after 0.1.8 may be omitted.
+    #[serde(default)]
     pub member_start: bool,
-    /// CRC-32 and length of the member's output before the point, which
-    /// its trailer is checked against.
+    /// Gzip: CRC-32 and length of the member's output before the point,
+    /// which its trailer is checked against.
+    #[serde(default)]
     pub member_crc: u32,
+    #[serde(default)]
     pub member_len: u64,
-    /// The member's last 32 KiB of output before the point, which deflate
-    /// back-references may reach into. It is part tar headers and part
-    /// several files, so unlike a single ZIP entry's window it can't be
-    /// read back from one output file.
-    #[serde(with = "hex")]
+    /// Gzip: the member's last 32 KiB of output before the point, which
+    /// deflate back-references may reach into. It is part tar headers and
+    /// part several files, so unlike a single ZIP entry's window it can't
+    /// be read back from one output file. Xz needs no window: a block
+    /// borrows nothing from before it.
+    #[serde(default, with = "hex")]
     pub window: Vec<u8>,
+    /// Xz: which block of the stream the point is at, where its header
+    /// begins. The blocks before it never need decoding again.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub block: u64,
     /// Offset of the point in the uncompressed tar.
     pub tar_pos: u64,
     pub at: TarAt,
+}
+
+/// Which compressed-stream codec owns a resume point. The stream state it
+/// carries belongs to exactly one; a point read under another kind is
+/// refused, before anything is touched.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CodecKind {
+    #[default]
+    Gzip,
+    Xz,
+}
+
+impl CodecKind {
+    pub fn is_gzip(&self) -> bool {
+        *self == Self::Gzip
+    }
+}
+
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
 }
 
 /// Where the point falls in the tar.
@@ -106,7 +148,7 @@ pub struct Solid {
     storage: Arc<Storage>,
     /// The point the scan began at: a resumed run's, or the start.
     from: Option<Resume>,
-    pub profile: Profile,
+    profile: Profile,
 }
 
 impl Solid {
@@ -129,11 +171,12 @@ pub enum Event<'a> {
     FileEnd,
     /// Decoding can restart right here; [`Walker::point`] describes how.
     Point,
-    /// The tar ended, and so did the gzip stream, every member checked.
+    /// The tar ended, and so did the compressed stream, every check done.
     End,
 }
 
-enum State {
+/// The parser's state between events, shared by the tar.xz walker.
+pub(super) enum State {
     /// Collecting an entry's header records.
     Header(Vec<u8>),
     File {
@@ -146,8 +189,75 @@ enum State {
     Trailer,
 }
 
-pub struct Walker {
-    gz: Gzip,
+impl State {
+    /// Whether the parser's state here can be written down in a
+    /// [`StreamPoint`]. Inside an entry's header records it can't.
+    pub(super) fn at_rest(&self) -> bool {
+        match self {
+            State::Header(held) => held.is_empty(),
+            State::File { .. } | State::Skip(_) | State::Trailer => true,
+        }
+    }
+}
+
+/// The decoder hooks a [`TarStream`] needs from its compressed stream.
+pub(super) trait Feed {
+    /// Fills `buf` with more decoded bytes; 0 means the stream is over. A
+    /// call returns at most enough bytes to reach somewhere a point falls.
+    fn fill(&mut self, buf: &mut [u8]) -> Result<usize>;
+    /// Whether the bytes the last [`fill`](Self::fill) ended at make a
+    /// resume point.
+    fn restartable(&self) -> bool;
+    /// The resume point those bytes make, as the journal stores it. `at`
+    /// and `written` describe where the tar got to, which the codec stores
+    /// beside its own state.
+    fn point(&self, tar_pos: u64, at: TarAt, written: u64) -> Result<Resume>;
+    /// The archive byte a resume point here would restart in. Cheap, for
+    /// the scan, which only measures.
+    fn point_byte(&self) -> Option<u64>;
+}
+
+impl Feed for Gzip {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.read(buf)
+    }
+
+    fn restartable(&self) -> bool {
+        self.restart_bit().is_some()
+    }
+
+    fn point(&self, tar_pos: u64, at: TarAt, written: u64) -> Result<Resume> {
+        let point = self
+            .restart_point()?
+            .ok_or_else(|| anyhow!("the compressed stream cannot be resumed here"))?;
+        Ok(Resume {
+            unit: 0,
+            written,
+            bit: point.bit,
+            crc: 0,
+            stream: Some(Box::new(StreamPoint {
+                kind: CodecKind::Gzip,
+                member_start: point.member_start,
+                member_crc: point.crc,
+                member_len: point.len,
+                window: point.window,
+                block: 0,
+                tar_pos,
+                at,
+            })),
+        })
+    }
+
+    fn point_byte(&self) -> Option<u64> {
+        self.restart_bit().map(|(bit, _)| bit / 8)
+    }
+}
+
+/// The tar parser a compressed stream feeds: it hands out the archive's
+/// events and says where decoding can restart. The walk depends on nothing
+/// but the stream, so a [`TarStream`] outlives whatever handle made it.
+pub(super) struct TarStream<F: Feed> {
+    feed: F,
     buf: Vec<u8>,
     pos: usize,
     len: usize,
@@ -160,38 +270,22 @@ pub struct Walker {
     resumed: Option<(Item, u64)>,
 }
 
-impl Walker {
-    fn new(storage: &Storage, from: Option<&Resume>) -> Result<Self> {
-        let reader = storage.reader(None);
-        let end = storage.original_len();
-        let (gz, tar_pos, state, resumed) = match from {
-            None => (
-                Gzip::new(reader, end, &GzPoint::start())?,
-                0,
-                State::Header(Vec::new()),
-                None,
-            ),
+impl<F: Feed> TarStream<F> {
+    /// Builds the tar side of a walk from `from`, or from the start. `from`
+    /// must belong to `feed`'s kind of stream; the caller checks that.
+    pub(super) fn new(feed: F, from: Option<&Resume>) -> Result<Self> {
+        let (tar_pos, state, resumed) = match from {
+            None => (0, State::Header(Vec::new()), None),
             Some(r) => {
                 let s = r.stream.as_ref().ok_or_else(|| {
                     anyhow!("the journal's resume point does not belong to a compressed tar")
                 })?;
-                let gz = Gzip::new(
-                    reader,
-                    end,
-                    &GzPoint {
-                        bit: r.bit,
-                        member_start: s.member_start,
-                        crc: s.member_crc,
-                        len: s.member_len,
-                        window: s.window.clone(),
-                    },
-                )?;
                 let (state, resumed) = resumed_state(s, r.written)?;
-                (gz, s.tar_pos, state, resumed)
+                (s.tar_pos, state, resumed)
             }
         };
         Ok(Self {
-            gz,
+            feed,
             buf: vec![0; BUF],
             pos: 0,
             len: 0,
@@ -203,7 +297,7 @@ impl Walker {
     }
 
     /// The next event. `Data` is at most `max` bytes.
-    pub fn next(&mut self, max: usize) -> Result<Event<'_>> {
+    pub(super) fn next(&mut self, max: usize) -> Result<Event<'_>> {
         if let Some((item, done)) = self.resumed.take() {
             return Ok(Event::Entry {
                 item,
@@ -224,16 +318,16 @@ impl Walker {
                 _ => {}
             }
             if self.pos == self.len {
-                if std::mem::take(&mut self.restartable) && self.at_rest() {
+                if std::mem::take(&mut self.restartable) && self.state.at_rest() {
                     return Ok(Event::Point);
                 }
-                let n = self.gz.read(&mut self.buf)?;
+                let n = self.feed.fill(&mut self.buf)?;
                 if n == 0 {
-                    return self.end();
+                    return end_state(&self.state);
                 }
                 self.pos = 0;
                 self.len = n;
-                self.restartable = self.gz.restart_bit().is_some();
+                self.restartable = self.feed.restartable();
             }
             let avail = (self.len - self.pos) as u64;
             match &mut self.state {
@@ -271,7 +365,8 @@ impl Walker {
                     Group::End => self.state = State::Trailer,
                     Group::Complete => {
                         let held = std::mem::take(held);
-                        if let Some(event) = self.begin(&held)? {
+                        if let Some(event) = begin_entry(&mut self.tar_pos, &mut self.state, &held)?
+                        {
                             return Ok(event);
                         }
                     }
@@ -280,22 +375,9 @@ impl Walker {
         }
     }
 
-    /// Whether the parser's state here can be written down in a
-    /// [`StreamPoint`]. Inside an entry's header records it can't.
-    fn at_rest(&self) -> bool {
-        match &self.state {
-            State::Header(held) => held.is_empty(),
-            State::File { .. } | State::Skip(_) | State::Trailer => true,
-        }
-    }
-
     /// The resume point at the `Point` event just returned. Its `unit` is
     /// left for the engine to fill in.
-    pub fn point(&self) -> Result<Resume> {
-        let gz = self
-            .gz
-            .restart_point()?
-            .ok_or_else(|| anyhow!("the compressed stream cannot be resumed here"))?;
+    pub(super) fn point(&self) -> Result<Resume> {
         let (written, at) = match &self.state {
             State::Header(_) => (0, TarAt::Boundary),
             State::File {
@@ -313,93 +395,17 @@ impl Walker {
             State::Skip(left) => (0, TarAt::Skip { left: *left }),
             State::Trailer => (0, TarAt::End),
         };
-        Ok(Resume {
-            unit: 0,
-            written,
-            bit: gz.bit,
-            crc: 0,
-            stream: Some(Box::new(StreamPoint {
-                member_start: gz.member_start,
-                member_crc: gz.crc,
-                member_len: gz.len,
-                window: gz.window,
-                tar_pos: self.tar_pos,
-                at,
-            })),
-        })
+        self.feed.point(self.tar_pos, at, written)
     }
 
     /// The archive byte a resume point here would restart in. Cheap, for
     /// the scan, which only measures.
-    fn point_byte(&self) -> Option<u64> {
-        self.gz.restart_bit().map(|(bit, _)| bit / 8)
-    }
-
-    /// Turns a complete set of header records into the entry they describe.
-    fn begin(&mut self, held: &[u8]) -> Result<Option<Event<'static>>> {
-        let last = &held[held.len() - 512..];
-        if last[156] == b'S' {
-            let name = ::tar::Header::from_byte_slice(last)
-                .path_bytes()
-                .into_owned();
-            bail!(
-                "'{}' is a sparse file, which is not supported",
-                String::from_utf8_lossy(&name)
-            );
-        }
-        let mut archive = ::tar::Archive::new(Cursor::new(held));
-        let mut entries = archive.entries().context("reading the tar headers")?;
-        let mut e = entries
-            .next()
-            .ok_or_else(|| anyhow!("reading the tar headers: an entry is incomplete"))?
-            .context("reading the tar headers")?;
-        let size = e.size();
-        let described = super::tar::describe(&mut e)?;
-        let data_start = self.tar_pos;
-        let span = size
-            .checked_next_multiple_of(512)
-            .ok_or_else(|| anyhow!("reading the tar headers: an entry size is invalid"))?;
-        Ok(match described {
-            Some((item, _)) if item.kind == Kind::File => {
-                self.state = State::File {
-                    item: item.clone(),
-                    data_start,
-                    left: size,
-                    pad: span - size,
-                };
-                Some(Event::Entry {
-                    item,
-                    link: None,
-                    done: 0,
-                })
-            }
-            Some((item, link)) => {
-                self.state = State::Skip(span);
-                Some(Event::Entry {
-                    item,
-                    link,
-                    done: 0,
-                })
-            }
-            None => {
-                self.state = State::Skip(span);
-                None
-            }
-        })
-    }
-
-    fn end(&self) -> Result<Event<'static>> {
-        match &self.state {
-            State::Trailer => Ok(Event::End),
-            // No end-of-archive marker, or part of one: GNU tar accepts
-            // both, and so does the tar crate for uncompressed tar.
-            State::Header(held) if held.iter().all(|b| *b == 0) => Ok(Event::End),
-            _ => bail!("the tar archive inside the compressed stream ends early"),
-        }
+    pub(super) fn point_byte(&self) -> Option<u64> {
+        self.feed.point_byte()
     }
 }
 
-enum Group {
+pub(super) enum Group {
     /// This many more bytes are needed to tell.
     Need(usize),
     /// The records end with an entry's own header.
@@ -411,7 +417,7 @@ enum Group {
 /// Whether `held`, the records seen since the last entry ended, is a whole
 /// entry header: any GNU long-name and long-link records and a pax record,
 /// each with its data, then the entry's own header.
-fn group(held: &[u8]) -> Result<Group> {
+pub(super) fn group(held: &[u8]) -> Result<Group> {
     let mut at = 0usize;
     loop {
         if held.len() < at + 512 {
@@ -440,7 +446,80 @@ fn group(held: &[u8]) -> Result<Group> {
     }
 }
 
-fn resumed_state(s: &StreamPoint, written: u64) -> Result<(State, Option<(Item, u64)>)> {
+/// Turns a complete set of header records into the entry they describe,
+/// moving `state` past them and `tar_pos` to the data that follows. `None`
+/// means the records describe nothing to extract, like padding.
+pub(super) fn begin_entry(
+    tar_pos: &mut u64,
+    state: &mut State,
+    held: &[u8],
+) -> Result<Option<Event<'static>>> {
+    let last = &held[held.len() - 512..];
+    if last[156] == b'S' {
+        let name = ::tar::Header::from_byte_slice(last)
+            .path_bytes()
+            .into_owned();
+        bail!(
+            "'{}' is a sparse file, which is not supported",
+            String::from_utf8_lossy(&name)
+        );
+    }
+    let mut archive = ::tar::Archive::new(Cursor::new(held));
+    let mut entries = archive.entries().context("reading the tar headers")?;
+    let mut e = entries
+        .next()
+        .ok_or_else(|| anyhow!("reading the tar headers: an entry is incomplete"))?
+        .context("reading the tar headers")?;
+    let size = e.size();
+    let described = super::tar::describe(&mut e)?;
+    let data_start = *tar_pos;
+    let span = size
+        .checked_next_multiple_of(512)
+        .ok_or_else(|| anyhow!("reading the tar headers: an entry size is invalid"))?;
+    Ok(match described {
+        Some((item, _)) if item.kind == Kind::File => {
+            *state = State::File {
+                item: item.clone(),
+                data_start,
+                left: size,
+                pad: span - size,
+            };
+            Some(Event::Entry {
+                item,
+                link: None,
+                done: 0,
+            })
+        }
+        Some((item, link)) => {
+            *state = State::Skip(span);
+            Some(Event::Entry {
+                item,
+                link,
+                done: 0,
+            })
+        }
+        None => {
+            *state = State::Skip(span);
+            None
+        }
+    })
+}
+
+/// Whether the stream can end with the parser in `state`: it takes the
+/// end-of-archive marker, a final entry that GNU tar allows to have no
+/// marker, or the trailer after it. Anything else ends the tar early.
+pub(super) fn end_state(state: &State) -> Result<Event<'static>> {
+    match state {
+        State::Trailer => Ok(Event::End),
+        State::Header(held) if held.iter().all(|b| *b == 0) => Ok(Event::End),
+        _ => bail!("the tar archive inside the compressed stream ends early"),
+    }
+}
+
+/// The part of the tar state of a resume point that comes before the
+/// compressed data's offsets. For gzip, whether the point falls in a header
+/// or the entry data, and how much was written.
+pub(super) fn resumed_state(s: &StreamPoint, written: u64) -> Result<(State, Option<(Item, u64)>)> {
     Ok(match &s.at {
         TarAt::Boundary => (State::Header(Vec::new()), None),
         TarAt::Skip { left } => (State::Skip(*left), None),
@@ -477,8 +556,76 @@ fn resumed_state(s: &StreamPoint, written: u64) -> Result<(State, Option<(Item, 
     })
 }
 
-struct TarGz {
-    solid: Solid,
+/// Walks the archive from `from`, or from its start, listing what is left
+/// and measuring it. Damage anywhere is found here, before anything is
+/// touched.
+pub struct Walker {
+    inner: TarStream<Gzip>,
+}
+
+impl Walker {
+    fn new(storage: &Storage, from: Option<&Resume>) -> Result<Self> {
+        let reader = storage.reader(None);
+        let end = storage.original_len();
+        let gz = match from {
+            None => Gzip::new(reader, end, &GzPoint::start())?,
+            Some(r) => {
+                let s = r.stream.as_ref().ok_or_else(|| {
+                    anyhow!("the journal's resume point does not belong to a compressed tar")
+                })?;
+                if s.kind != CodecKind::Gzip {
+                    bail!(
+                        "the journal's resume point belongs to {}, not this archive's \
+                         compressed stream",
+                        match s.kind {
+                            CodecKind::Gzip => "a gzip member of",
+                            CodecKind::Xz => "an xz block of",
+                        }
+                    );
+                }
+                Gzip::new(
+                    reader,
+                    end,
+                    &GzPoint {
+                        bit: r.bit,
+                        member_start: s.member_start,
+                        crc: s.member_crc,
+                        len: s.member_len,
+                        window: s.window.clone(),
+                    },
+                )?
+            }
+        };
+        Ok(Self {
+            inner: TarStream::new(gz, from)?,
+        })
+    }
+
+    fn next(&mut self, max: usize) -> Result<Event<'_>> {
+        self.inner.next(max)
+    }
+
+    fn point(&self) -> Result<Resume> {
+        self.inner.point()
+    }
+
+    fn point_byte(&self) -> Option<u64> {
+        self.inner.point_byte()
+    }
+}
+
+impl SolidWalker for Walker {
+    fn next(&mut self, max: usize) -> Result<Event<'_>> {
+        self.next(max)
+    }
+
+    fn point(&self) -> Result<Resume> {
+        self.point()
+    }
+
+    fn point_byte(&self) -> Option<u64> {
+        self.point_byte()
+    }
 }
 
 /// Walks the archive from `from`, or from its start, listing what is left
@@ -497,7 +644,7 @@ pub fn open(storage: &Arc<Storage>, from: Option<&Resume>) -> Result<Opened> {
         .to_string_lossy()
         .into_owned();
     storage.expect_reads(storage.original_len() - from.map_or(0, |r| r.bit / 8));
-    let (items, profile) = scan(&solid, from)
+    let (items, profile) = super::scan(&solid, from)
         .map_err(|e| anyhow::Error::new(super::Damaged(e)))
         .with_context(|| format!("checking {name} (nothing was changed)"))?;
     solid.profile = profile;
@@ -517,42 +664,8 @@ pub fn open(storage: &Arc<Storage>, from: Option<&Resume>) -> Result<Opened> {
     })
 }
 
-fn scan(solid: &Solid, from: Option<&Resume>) -> Result<(Vec<Item>, Profile)> {
-    let start = from.map_or(0, |r| r.bit / 8);
-    let mut w = solid.walk(from)?;
-    let mut items = Vec::new();
-    let mut p = Profile::default();
-    let (mut out, mut last, mut size) = (0u64, 0u64, 0u64);
-    loop {
-        match w.next(usize::MAX)? {
-            Event::Entry { item, .. } => {
-                if item.kind == Kind::File {
-                    size = item.size;
-                }
-                items.push(item);
-            }
-            Event::Data(d) => out += d.len() as u64,
-            Event::FileEnd => out += size.next_multiple_of(4096) - size,
-            Event::Point => {
-                let consumed = w.point_byte().unwrap_or(start).saturating_sub(start);
-                p.lead = p.lead.max(out as i128 - consumed as i128);
-                p.gap = p.gap.max(out - last);
-                last = out;
-            }
-            Event::End => break,
-        }
-    }
-    p.gap = p.gap.max(out - last);
-    p.files = out;
-    super::tar::size_links(&mut items);
-    p.links = items
-        .iter()
-        .filter(|i| i.kind != Kind::File)
-        .fold(0u64, |sum, i| {
-            let size = i.size.checked_next_multiple_of(4096).unwrap_or(u64::MAX);
-            sum.saturating_add(size)
-        });
-    Ok((items, p))
+struct TarGz {
+    solid: Solid,
 }
 
 impl Format for TarGz {
@@ -560,8 +673,18 @@ impl Format for TarGz {
         Ok(Box::new(TarGzWorker { solid: &self.solid }))
     }
 
-    fn solid(&self) -> Option<&Solid> {
+    fn solid(&self) -> Option<&dyn SolidStream> {
         Some(&self.solid)
+    }
+}
+
+impl SolidStream for Solid {
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn walk(&self, from: Option<&Resume>) -> Result<Box<dyn SolidWalker>> {
+        Ok(Box::new(self.walk(from)?))
     }
 }
 
@@ -645,5 +768,39 @@ mod hex {
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(D::Error::custom))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 0.1.8 reads this journal structure and has no defaults for the gzip
+    /// fields, so a point must write them even at their defaults. Only the
+    /// fields added after it may stay out.
+    #[test]
+    fn a_gzip_point_writes_every_field_older_builds_read() {
+        let point = StreamPoint {
+            kind: CodecKind::Gzip,
+            member_start: false,
+            member_crc: 0,
+            member_len: 0,
+            window: Vec::new(),
+            block: 0,
+            tar_pos: 0,
+            at: TarAt::Boundary,
+        };
+        let json = serde_json::to_value(&point).unwrap();
+        for field in [
+            "member_start",
+            "member_crc",
+            "member_len",
+            "window",
+            "tar_pos",
+        ] {
+            assert!(json.get(field).is_some(), "{field} missing from {json}");
+        }
+        assert!(json.get("kind").is_none(), "kind is new and stays out");
+        assert!(json.get("block").is_none(), "block is new and stays out");
     }
 }

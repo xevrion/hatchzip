@@ -18,6 +18,12 @@ fs4 = "1.1.0"
 # Z_BLOCK, which resuming a deflate stream mid-way needs and the safe
 # wrappers don't expose. Its zlib-rs core is already flate2's backend here.
 libz-rs-sys = "0.6.8"
+# The XZ container's decoder chain: one LZMA2 block at a time, with the
+# BCJ and delta filters the chain declares, already in the tree through
+# sevenz-rust2. The container itself is parsed in archive/xz.rs, since the
+# crate's container types are private. Core only decodes: the encoder and
+# lzip halves stay out of this build.
+lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "optimization"] }
 rayon = "1.12.0"
 serde.workspace = true
 serde_json.workspace = true

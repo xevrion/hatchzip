@@ -1,6 +1,6 @@
 # Format notes
 
-Research for the formats after ZIP, checked against crate sources and against real archives made with zstd 1.5.7, xz 5.8.2, 7-Zip 25.01, gzip and pigz. Anything marked unverified has not been tested.
+Research for the formats after ZIP, checked against crate sources and against real archives made with zstd 1.5.7, xz 5.8.2 and 5.8.4, 7-Zip 25.01, gzip and pigz. Anything marked unverified has not been tested.
 
 ## The general problem
 
@@ -15,7 +15,7 @@ The answer is a **resume point**: a saved state from which decoding can restart 
 - the length of each open output file
 - the running checksum state
 
-The protocol: flush the outputs, write and flush the journal, then punch up to the point just made durable. **Done** for single files stored or deflated in ZIP and for tar entries ([How it works](how-it-works.md#freeing-space-inside-a-large-file)); the deflate decoder state is the bit position plus the last 32 KiB of output, read back from the flushed output file instead of stored in the journal. **Done** for `.tar.gz` as well ([How it works](how-it-works.md#compressed-tar)), where the 32 KiB window spans tar headers and several files, so it is stored in the journal.
+The protocol: flush the outputs, write and flush the journal, then punch up to the point just made durable. **Done** for single files stored or deflated in ZIP and for tar entries ([How it works](how-it-works.md#freeing-space-inside-a-large-file)); the deflate decoder state is the bit position plus the last 32 KiB of output, read back from the flushed output file instead of stored in the journal. **Done** for `.tar.gz` as well ([How it works](how-it-works.md#compressed-tar)), where the 32 KiB window spans tar headers and several files, so it is stored in the journal. **Done** for `.tar.xz` too: an xz block borrows nothing from before it, so a point at a block header needs no window, only the block's index.
 
 ## Per format
 
@@ -25,13 +25,13 @@ The protocol: flush the outputs, write and flush the journal, then punch up to t
 | Split archives | **Done** (`crates/core/src/archive/storage.rs`) for byte splits. | n/a | `.7z.001` and `.zip.001` are byte splits of one archive. Native `.z01` ZIP, which keeps the directory in the last part and numbers disks in its offsets, is not done. |
 | tar | **Done** (`crates/core/src/archive/tar.rs`) for uncompressed tar, per entry. | `tar` (MIT or Apache) | |
 | `.tar.gz`, `.tgz` | **Done** (`crates/core/src/archive/targz.rs`, gzip framing in `resumable.rs`). Any deflate block boundary, plus the start of every gzip member. Multi-member files (`bgzip`, `pigz -i`, concatenated `.gz`) work; every member's CRC-32 and ISIZE are checked. | `libz-rs-sys` (Zlib license) exports `inflatePrime`, `inflateSetDictionary`, `inflateGetDictionary` and `Z_BLOCK`. The safe `zlib-rs` API does not expose them. | Done. Tested with archives from GNU tar 1.35 with gzip 1.13 (levels 1 and 6), pigz with and without `-i`, and flate2. |
-| `.tar.xz` | Per xz block. xz 5.8.2 defaults to multithreaded mode, which writes many blocks; `-T1` writes one. See [below](#tarzst-and-tarxz). | `lzma-rust2` (Apache-2.0, pure Rust, already a dependency through `zip`): start a fresh `Lzma2Reader` per block. | Medium for multi-block files. Large for single-block files. |
+| `.tar.xz` | **Done** (`crates/core/src/archive/tarxz.rs`, container in `xz.rs`). A point is the start of an xz block; xz's multithreaded default writes a block every three dictionaries of output, `-T1` writes one, which is refused in place. Every block's CRC-32 or CRC-64 is checked. The container is parsed from its end (footer, index, block headers) and blocks already punched away are trusted only for the extents the index records. SHA-256 checks, unknown filters, concatenated streams and LZMA2 dictionaries over 1 GiB are refused. An unchecked stream (`--check=none`) is refused for in-place extraction, since damage inside a block could not be caught before its bytes are freed. | `lzma-rust2` 0.23.0 (Apache-2.0, pure Rust): `Lzma2Reader` and the `BcjReader`/`DeltaReader` filters, one fresh chain per block. | Done for multi-block files. Restarting inside a block would need the decoder state `lzma-rust2` keeps private, so a single-block file is extracted only while the archive is kept. |
 | `.tar.zst` | Per frame only. The `zstd` CLI writes one frame even with `-T0`, so typical files have no restart point. See [below](#tarzst-and-tarxz). | `ruzstd` (MIT) keeps exactly the needed state in `DecoderScratch` and can stop at block boundaries, but it is crate-private. | Medium for multi-frame files (`pzstd`). Large for the usual single frame. |
 | RAR | **Done** (`crates/core/src/archive/rar.rs`) per file, for archives that are not solid, behind the `rar` cargo feature. Files follow one another with their headers inline, as in tar, so the archive is truncated behind each committed file and a volume goes once every file reaching into it is out. The headers are read in Rust, and decrypted there for archives with encrypted file names (`-hp`); UnRAR only decodes. A stored file that lies whole in one volume is streamed like a tar entry, with resume points anywhere. Inside a compressed file there is no resume point: UnRAR can't save its decoder's state. | `unrar-ng-sys` 0.7.7 (MIT or Apache) builds UnRAR 7.21 beta 1 from source (its `version.hpp`), under its own freeware license (see below). It replaced `unrar_sys` 0.5.8 (UnRAR 7.01), whose structs are declared `repr(C)` while UnRAR's are packed, so every field after the first pointer sat at the wrong offset. The safe `unrar` crates read a file into memory or onto disk and have no data callback, so the engine would need a second copy of every file. `rars` (Apache-2.0, pure Rust, takes `Read + Seek`) is new and its own README asks for more testing. | Solid RAR is extracted only while the archive is kept. Links are not done. `restore` refuses archives with encrypted file names: it takes no password, which they need to be listed and to get a new, encrypted end of archive header. |
 
 ## `.tar.zst` and `.tar.xz`
 
-Research only; nothing is implemented. Both fit the engine `.tar.gz` uses: one solid unit, extracted front to back by `targz::Walker`, which already keeps the tar parser state separate from the decoder. What each needs is a decoder that can stop at a point, describe that point in a few fields, and start again from it in a new process. Where the format has independent pieces, the point is just an offset.
+`.tar.xz` is implemented; `.tar.zst` is research. Both fit the engine `.tar.gz` uses: one solid unit, extracted front to back by the shared tar parser, which already keeps the tar parser state separate from the decoder. Where the format has independent pieces, the point is just an offset.
 
 Measured on a 503,070,720-byte tar (the dataset from [How it works](how-it-works.md#compressed-tar): seven 50 MB random files, six 25 MB text files, 2,000 small JSON files):
 
@@ -42,15 +42,17 @@ Measured on a 503,070,720-byte tar (the dataset from [How it works](how-it-works
 | `xz -6` (xz 5.8.2, multithreaded by default) | 20 blocks of 24 MiB (3 times the 8 MiB dictionary) | none at block starts |
 | `xz -6 -T1` | 1 block | 8 MiB dictionary plus the LZMA state |
 
-**`.tar.xz`: feasible, and the multi-block case is medium work.** An xz block decodes on its own: it starts with a fresh LZMA2 state and dictionary, and the index at the end of the stream lists every block's compressed and uncompressed size. So:
+**`.tar.xz`: implemented** (`tarxz.rs`, container in `xz.rs`). An xz block decodes on its own: it starts with a fresh LZMA2 state and dictionary, and the index at the end of the stream lists every block's compressed and uncompressed size. So the format works as planned:
 
-1. Before anything is touched, read the stream footer and the index (they are at the end, so this costs no decoding), and check the index against the blocks as the scan walks them.
+1. Before anything is touched, the stream footer and the index are read from the end, so the block extents cost no decoding, and each block header the walk reaches is validated against the index.
 2. A resume point is the start of a block: its compressed offset, its offset in the tar, and the tar parser state, exactly as for gzip member starts. No window is stored.
-3. Decode each block with a fresh `Lzma2Reader` (and a BCJ filter if the block header lists one), check the block's CRC-32, CRC-64 or SHA-256 at its end, and the index and stream footer at the end of the stream.
+3. Each block is decoded with a fresh `Lzma2Reader` (and the BCJ or delta filters its header lists), and its CRC-32 or CRC-64 is checked before the next block starts. SHA-256 and unknown checks or filters are refused on opening.
 
-The default 24 MiB blocks give a candidate point every 24 MiB of output, far more often than the 256 MiB step needs. Since blocks are independent, the next few could also be decoded on other cores while one is written, as `lzma-rust2`'s own `XzReaderMt` does.
+A resumed run parses the container again from its end. Blocks an earlier run punched away have no headers left, so their extents come from the index alone and they are marked unvalidated; only the blocks from the resume point on are read whole. The walk refuses a journal whose point is not exactly such a block header.
 
-A single-block file (`xz -T1`) has no restart point except its start. Restarting inside a block means saving the LZMA2 decoder at a chunk boundary: the dictionary (8 MiB at `-6`, 64 MiB at `-9`), the probability tables, the range coder and the state machine. The dictionary would go to a side file written before each journal update, 8 or 64 MiB per 256 MiB step. `lzma-rust2` keeps that state private, so this needs a fork. Without it, such a file can still be extracted in place, but frees nothing until it ends, like a deflate stream written as one block; the space check would say so, as it does for `.tar.gz`.
+The default 24 MiB blocks give a candidate point every 24 MiB of output, far more often than the 256 MiB step needs. Since blocks are independent, the next few could also be decoded on other cores while one is written, as `lzma-rust2`'s own `XzReaderMt` does; the extraction decodes one block at a time today.
+
+A single-block file (`xz -T1`) has no restart point except its start, and nothing can be freed while its block decodes, so it is refused for in-place extraction with a message naming `--keep-archive`, which extracts it and keeps the archive. Restarting inside a block would mean saving the LZMA2 decoder at a chunk boundary: the dictionary (8 MiB at `-6`, 64 MiB at `-9`), the probability tables, the range coder and the state machine. The dictionary would go to a side file written before each journal update, 8 or 64 MiB per 256 MiB step. `lzma-rust2` keeps that state private, so this needs a fork.
 
 **`.tar.zst`: feasible only with a decoder that saves its state; large work for the usual single frame.** A zstd frame decodes only from its start, and the CLI writes one frame however many threads it uses. Inside a frame, blocks are at most 128 KiB, and a block boundary is a valid restart point if the decoder can be given back:
 
@@ -60,7 +62,7 @@ A single-block file (`xz -T1`) has no restart point except its start. Restarting
 
 libzstd keeps all of this in an opaque `ZSTD_DCtx` with no way to save or restore it. `ruzstd` holds exactly these pieces in `DecoderScratch`, but it is crate-private, so this needs a ruzstd fork with save and load; its decoding speed against libzstd is not measured. Files with several frames, from `pzstd` or the seekable format, are the easy case: every frame start is a free restart point needing no window, the same as a gzip member, and the `zstd` crate already in the tree can decode frame by frame. A first version could support those and extract single-frame files without freeing anything until the end.
 
-For both formats the `Walker`'s tar half can be reused unchanged; the decoder half (`resumable::Gzip` today) would become a trait with `read`, `restart_bit` and `restart_point`, and the journal's `StreamPoint` would gain a field for the decoder kind.
+For `.tar.zst` the `Walker`'s tar half can be reused unchanged; the decoder half (gzip's `Gzip` today, xz's `XzFeed`) would be another `Feed`, and the journal's `StreamPoint` already carries a codec tag.
 
 ## Dependency licenses
 

@@ -74,6 +74,12 @@ pub fn open(
             }
             return Ok(State::Orphan(journal));
         }
+        // The final commit was journaled: every unit is extracted, and only
+        // the archive's removal and the links are left. Nothing is read from
+        // it again; a compressed stream's start was punched away by then.
+        if journal.done {
+            return Ok(State::Orphan(journal));
+        }
         let job = Job::resume(&journal, tail, writable, password, reads.clone())?;
         check_no_links_on_the_way(&job, &journal.output)?;
         return Ok(State::Resume(job, journal));
@@ -416,7 +422,9 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name.truncate(stem.len() - digits.len() - ".part".len());
         return primary.with_file_name(name);
     }
-    for ext in [".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".rar", ".exe"] {
+    for ext in [
+        ".zip", ".7z", ".tar.xz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
+    ] {
         if lower.ends_with(ext) && name.len() > ext.len() {
             name.truncate(name.len() - ext.len());
             break;
@@ -657,6 +665,7 @@ mod tests {
         assert_eq!(name("game.part1.rar"), Path::new("game"));
         assert_eq!(name("game.PART02.RAR"), Path::new("game"));
         assert_eq!(name("game.rar"), Path::new("game"));
+        assert_eq!(name("game.tar.xz"), Path::new("game"));
         assert_eq!(name("game.part.rar"), Path::new("game.part"));
         assert_eq!(name("notes.txt"), Path::new("notes.txt-extracted"));
     }

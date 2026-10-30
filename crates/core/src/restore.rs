@@ -79,6 +79,18 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
     if journal.keep {
         return discard(&mut journal, tail, &paths);
     }
+    // The final commit was journaled: every entry is extracted and the
+    // archive only waits to be removed. Truncating it back would leave a
+    // file that is no longer the original and no longer an archive.
+    if journal.done {
+        if !journal.links.is_empty() {
+            bail!(
+                "every entry is already extracted, so there is nothing to restore; only the \
+                 links remain to be created. Run extract to create them"
+            );
+        }
+        bail!("every entry is already extracted; run extract to complete the cleanup");
+    }
     if !journal.parts[0].0.exists() {
         bail!("all entries are already extracted. Run extract to complete the cleanup");
     }

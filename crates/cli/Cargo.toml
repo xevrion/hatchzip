@@ -36,6 +36,14 @@ winresource = { version = "0.1.34", default-features = false }
 # Writes the .tar.gz test archives and the RAR 4 volumes; already in the tree.
 crc32fast = "1.5.3"
 flate2 = "1.1.10"
+# Writes the .tar.xz test archives, same crate the format decodes with.
+# The tests need the encoder and the xz container half; core does not.
+lzma-rust2 = { version = "0.23.0", default-features = false, features = [
+    "std",
+    "optimization",
+    "encoder",
+    "xz",
+] }
 serde_json.workspace = true
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
 tar.workspace = true

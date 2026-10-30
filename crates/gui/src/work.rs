@@ -278,7 +278,7 @@ fn extract(
             engine::finish_orphaned(&journal, &paths)?;
             send(Update::Extracted {
                 output: journal.output,
-                keep: false,
+                keep: journal.keep,
             });
             return Ok(());
         }

@@ -89,6 +89,12 @@ pub struct Journal {
     /// one is in progress. It always belongs to the highest uncommitted unit.
     #[serde(default)]
     pub resume: Option<Resume>,
+    /// Every unit was extracted and the final commit was journaled: only the
+    /// archive's removal and the links are left. A compressed stream lands
+    /// here with its archive punched up to its last resume point, so it no
+    /// longer parses from its start and must not be read again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub done: bool,
     /// Set while `restore` turns the archive back into a normal one: the
     /// bytes it overwrites below `committed_len`, so that an interrupted
     /// restore can be undone by putting them back and cutting off whatever it
@@ -208,6 +214,7 @@ impl Journal {
             committed_len: storage.original_len(),
             links: Vec::new(),
             resume: None,
+            done: false,
             restoring: None,
             keep: plan.keep,
             replace: plan.replace,

@@ -9,6 +9,8 @@ mod sevenz;
 pub mod storage;
 mod tar;
 pub mod targz;
+pub mod tarxz;
+mod xz;
 mod zip;
 
 use std::io::Read;
@@ -20,7 +22,36 @@ use anyhow::{Context, Result, bail};
 
 use crate::journal::Resume;
 use storage::{Storage, Tail};
-use targz::Solid;
+use targz::Event;
+use targz::Profile;
+
+/// An archive that is one compressed stream, decodable only from the front:
+/// everything it holds is inside one decode pass, so instead of units
+/// extracted from the end, the whole archive is one unit extracted front to
+/// back, and the engine frees the compressed bytes behind the decoder. See
+/// `targz` and `tarxz`.
+pub trait SolidStream: Send + Sync {
+    /// What a scan measured about the output: see [`targz::Profile`].
+    fn profile(&self) -> &targz::Profile;
+    /// Walks the archive from `from`, or from its start. The walk depends
+    /// on nothing but the archive, so the box outlives the cloneable
+    /// handle it came from.
+    fn walk(&self, from: Option<&Resume>) -> Result<Box<dyn SolidWalker>>;
+}
+
+/// The walk a [`SolidStream`] produces: the tar's events and, at the
+/// [`Event::Point`] ones, how decoding can restart.
+pub trait SolidWalker {
+    /// The next event. `Data` is at most `max` bytes, borrowed until the
+    /// next call.
+    fn next(&mut self, max: usize) -> Result<Event<'_>>;
+    /// The resume point at the `Point` event just returned. Its `unit` is
+    /// left for the engine to fill in.
+    fn point(&self) -> Result<Resume>;
+    /// The archive byte a resume point here would restart in. Cheap: for
+    /// measuring only.
+    fn point_byte(&self) -> Option<u64>;
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -91,6 +122,21 @@ impl std::fmt::Display for Damaged {
 
 impl std::error::Error for Damaged {}
 
+/// The archive is valid but uses something this build does not extract: an
+/// unknown or unprovided check, an unknown filter, several xz streams, or a
+/// dictionary too large to hold. Front ends report it as unsupported, never
+/// as damage.
+#[derive(Debug)]
+pub struct Unsupported(pub anyhow::Error);
+
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#}", self.0)
+    }
+}
+
+impl std::error::Error for Unsupported {}
+
 /// The format name of RAR archives in the journal.
 pub const RAR: &str = "rar";
 
@@ -146,7 +192,7 @@ pub trait Format: Send + Sync {
     /// For an archive that is one compressed stream, decodable only from the
     /// front: its single unit, extracted front to back while the bytes behind
     /// the decoder are freed.
-    fn solid(&self) -> Option<&Solid> {
+    fn solid(&self) -> Option<&dyn SolidStream> {
         None
     }
 
@@ -234,6 +280,7 @@ pub fn open(
         #[cfg(not(feature = "rar"))]
         RAR => Err(no_rar()),
         targz::NAME => targz::open(storage, point),
+        tarxz::NAME => tarxz::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
 }
@@ -246,6 +293,52 @@ pub struct NewIndex {
     /// Written over bytes below `keep`: the 7z start header, which has to
     /// point at the new header.
     pub patches: Vec<(u64, Vec<u8>)>,
+}
+
+/// Lists the entries of a [`SolidStream`]'s walk from `from` once to the
+/// end, and measures how the output runs ahead of the decoded bytes, which
+/// the space check needs. Damage found here, in the pass that runs before
+/// anything is touched and again from the resume point of a resumed run,
+/// stops the run.
+fn scan(solid: &dyn SolidStream, from: Option<&Resume>) -> Result<(Vec<Item>, Profile)> {
+    let from_byte = from.map_or(0, |r| r.bit / 8);
+    let mut w = solid.walk(from)?;
+    let mut items = Vec::new();
+    let mut p = Profile::default();
+    let (mut out, mut last, mut size) = (0u64, 0u64, 0u64);
+    loop {
+        match w.next(usize::MAX)? {
+            Event::Entry { item, .. } => {
+                if item.kind == Kind::File {
+                    size = item.size;
+                }
+                items.push(item);
+            }
+            Event::Data(d) => out += d.len() as u64,
+            Event::FileEnd => out += size.next_multiple_of(4096) - size,
+            Event::Point => {
+                let consumed = w
+                    .point_byte()
+                    .unwrap_or(from_byte)
+                    .saturating_sub(from_byte);
+                p.lead = p.lead.max(out as i128 - consumed as i128);
+                p.gap = p.gap.max(out - last);
+                last = out;
+            }
+            Event::End => break,
+        }
+    }
+    p.gap = p.gap.max(out - last);
+    p.files = out;
+    tar::size_links(&mut items);
+    p.links = items
+        .iter()
+        .filter(|i| i.kind != Kind::File)
+        .fold(0u64, |sum, i| {
+            let size = i.size.checked_next_multiple_of(4096).unwrap_or(u64::MAX);
+            sum.saturating_add(size)
+        });
+    Ok((items, p))
 }
 
 /// Builds the [`NewIndex`] for the entries that start below `keep`, from
@@ -318,9 +411,14 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
              compressed tar archives (.tar.gz) can be extracted"
         );
     }
-    if starts(b"\x28\xB5\x2F\xFD") || starts(b"\xFD7zXZ\x00") || starts(b"BZh") {
+    if starts(b"\xFD7zXZ\x00") {
+        // A .xz only ever comes as a compressed tar here; anything else is
+        // refused once the stream opens.
+        return Ok(tarxz::NAME);
+    }
+    if starts(b"\x28\xB5\x2F\xFD") || starts(b"BZh") {
         bail!(
-            "this is a compressed stream (.zst, .xz or .bz2). In-place extraction of these \
+            "this is a compressed stream (.zst or .bz2). In-place extraction of these \
              compressed streams is not supported yet"
         );
     }

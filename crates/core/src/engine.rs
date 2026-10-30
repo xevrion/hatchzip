@@ -39,8 +39,10 @@ use rayon::prelude::*;
 
 use crate::archive::resumable::{self, Decoder};
 use crate::archive::storage::{Reads, Storage, Tail};
-use crate::archive::targz::{Event, Profile, Walker};
-use crate::archive::{self, Codec, Format, Item, Kind, PasswordCheck, Sink, Stream, Unit};
+use crate::archive::targz::{Event, Profile};
+use crate::archive::{
+    self, Codec, Format, Item, Kind, PasswordCheck, Sink, SolidWalker, Stream, Unit,
+};
 use crate::journal::{Journal, Link, Paths, Resume, TarAt};
 use crate::{fsutil, platform, replace};
 
@@ -520,7 +522,7 @@ impl Job {
         for (i, u) in self.units.iter().enumerate() {
             let span = self.span(i) as i128;
             if let Some(solid) = self.format.solid() {
-                let (rise, net) = self.solid_cost(i, &solid.profile, span, reclaims);
+                let (rise, net) = self.solid_cost(i, solid.profile(), span, reclaims);
                 peak = peak.max(extra + rise);
                 extra += net;
                 continue;
@@ -964,6 +966,7 @@ impl Run<'_> {
         // A streamed unit's point is spent once the unit itself is claimed;
         // both change in the same atomic write.
         self.journal.resume = None;
+        self.journal.done = end == self.job.units.len();
         self.job.resume = None;
         self.journal.save(&self.paths)?;
         crash_point("after-journal");
@@ -1202,7 +1205,7 @@ impl Run<'_> {
     fn stream_solid(
         &mut self,
         i: usize,
-        mut walk: Walker,
+        mut walk: Box<dyn SolidWalker>,
         reclaims: bool,
         out: &Path,
     ) -> Result<Option<Vec<Link>>> {
@@ -1212,7 +1215,7 @@ impl Run<'_> {
         // doesn't help it, and the space check didn't count on it.
         let mut punching = self.job.punch_support().filter(|_| reclaims);
         let profile = match self.job.format.solid() {
-            Some(s) => s.profile.clone(),
+            Some(s) => s.profile().clone(),
             None => bail!("the archive is not a compressed stream"),
         };
         let mut left = profile.files;
@@ -1643,6 +1646,18 @@ pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
     if let Some(r) = &journal.replace {
         replace::settle(&journal.output, r)?;
         replace::remove(&journal.output)?;
+    }
+    // The final commit was interrupted before the archive was removed, and
+    // all of it is free to go now. A kept archive stays.
+    if journal.done && !journal.keep {
+        for (part, _) in &journal.parts {
+            match fs::remove_file(part) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("deleting {}", part.display()));
+                }
+                _ => {}
+            }
+        }
     }
     paths.remove()
 }
