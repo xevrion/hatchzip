@@ -21,6 +21,10 @@ export component TaskWindow inherits Window {
     callback give-back();
     callback password-ok(string);
     callback password-cancel();
+    public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
+    public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
+    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : left == 1 ? @tr("Do the same for the next file") : @tr("Do the same for the next {} files", count); }
+
     callback replace-answer(int, bool);
     callback replace-cancel();
 

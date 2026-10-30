@@ -1,0 +1,378 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: hi\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Name"
+msgstr "नाम"
+
+msgid "Size"
+msgstr "आकार"
+
+msgid "File"
+msgstr "फ़ाइल"
+
+msgid "Open…"
+msgstr "खोलें…"
+
+msgid "Quit"
+msgstr "बंद करें"
+
+msgid "Settings"
+msgstr "सेटिंग्स"
+
+msgid "Verify archive before extracting"
+msgstr "एक्सट्रैक्ट करने से पहले आर्काइव की जाँच करें"
+
+msgid "Remove the archive during extraction"
+msgstr "एक्सट्रैक्शन के दौरान आर्काइव हटाएँ"
+
+msgid "Close the progress window when extraction completes"
+msgstr "एक्सट्रैक्शन पूरा होने पर प्रगति विंडो बंद करें"
+
+msgid "Help"
+msgstr "मदद"
+
+msgid "Check for updates"
+msgstr "अपडेट देखें"
+
+msgid "About HatchZip"
+msgstr "HatchZip के बारे में"
+
+msgid "Drop the archive to open it"
+msgstr "आर्काइव खोलने के लिए यहाँ छोड़ें"
+
+msgid "No archive open"
+msgstr "कोई आर्काइव खुला नहीं है"
+
+msgid "The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "एक्सट्रैक्शन के दौरान आर्काइव धीरे-धीरे हटता है, इसलिए केवल एक्सट्रैक्ट की गई फ़ाइलों के लिए जगह चाहिए।"
+
+msgid "Open archive…"
+msgstr "आर्काइव खोलें…"
+
+msgid "Open another archive…"
+msgstr "दूसरा आर्काइव खोलें…"
+
+msgid "All entries have been extracted."
+msgstr "सभी प्रविष्टियाँ एक्सट्रैक्ट हो चुकी हैं।"
+
+msgid "This archive is empty."
+msgstr "यह आर्काइव खाली है।"
+
+msgid "Extract to"
+msgstr "यहाँ एक्सट्रैक्ट करें"
+
+msgid "Browse…"
+msgstr "ब्राउज़ करें…"
+
+msgid "Reserved space"
+msgstr "आरक्षित जगह"
+
+msgid "GB. Enter a number, such as 2 or 0.5."
+msgstr "GB. कोई संख्या दर्ज करें, जैसे 2 या 0.5।"
+
+msgid "The archive is removed progressively during extraction. An interrupted extraction can be resumed."
+msgstr "एक्सट्रैक्शन के दौरान आर्काइव धीरे-धीरे हटता है। रुका हुआ एक्सट्रैक्शन फिर से शुरू किया जा सकता है।"
+
+msgid "The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed."
+msgstr "आर्काइव अपरिवर्तित रखा जाता है, इसलिए सभी एक्सट्रैक्ट की गई फ़ाइलों के लिए जगह चाहिए। रुका हुआ एक्सट्रैक्शन फिर से शुरू किया जा सकता है।"
+
+msgid "Test"
+msgstr "जाँचें"
+
+msgid "Restore archive"
+msgstr "आर्काइव पुनर्स्थापित करें"
+
+msgid "Extract"
+msgstr "एक्सट्रैक्ट करें"
+
+msgid "Resume extraction"
+msgstr "एक्सट्रैक्शन फिर शुरू करें"
+
+msgid "Finish"
+msgstr "पूरा करें"
+
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz और विभाजित आर्काइव।"
+
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, RAR, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, RAR और विभाजित आर्काइव।"
+
+msgid "Opening {}…"
+msgstr "{} खोला जा रहा है…"
+
+msgid "Unable to open {}"
+msgstr "{} नहीं खोला जा सका"
+
+msgid "This archive is partially extracted to {}."
+msgstr "यह आर्काइव आंशिक रूप से {} में एक्सट्रैक्ट हुआ है।"
+
+msgid " The archive is kept."
+msgstr " आर्काइव रखा गया है।"
+
+msgid "All entries have been extracted to {}. Select Finish to remove the remaining temporary files."
+msgstr "सभी प्रविष्टियाँ {} में एक्सट्रैक्ट हो चुकी हैं। बची हुई अस्थायी फ़ाइलें हटाने के लिए पूरा करें चुनें।"
+
+msgid "Show in the Explorer context menu"
+msgstr "Explorer के संदर्भ मेन्यू में दिखाएँ"
+
+msgid "Show in the file manager's context menu"
+msgstr "फ़ाइल प्रबंधक के संदर्भ मेन्यू में दिखाएँ"
+
+msgid "Show in the Finder context menu"
+msgstr "Finder के संदर्भ मेन्यू में दिखाएँ"
+
+msgid "Open archive"
+msgstr "आर्काइव खोलें"
+
+msgid "Archives"
+msgstr "आर्काइव"
+
+msgid "All files"
+msgstr "सभी फ़ाइलें"
+
+msgid "Select destination folder"
+msgstr "गंतव्य फ़ोल्डर चुनें"
+
+msgid "Context menu entries added."
+msgstr "संदर्भ मेन्यू प्रविष्टियाँ जोड़ दी गई हैं।"
+
+msgid "Context menu entries removed."
+msgstr "संदर्भ मेन्यू प्रविष्टियाँ हटा दी गई हैं।"
+
+msgid "No entries remaining"
+msgstr "कोई प्रविष्टि शेष नहीं है"
+
+msgid "Reading archive… {}%"
+msgstr "आर्काइव पढ़ा जा रहा है… {}%"
+
+msgid "{} archive"
+msgstr "{} आर्काइव"
+
+msgid "{} entry"
+msgstr "{} प्रविष्टि"
+
+msgid "{} entries"
+msgstr "{} प्रविष्टियाँ"
+
+msgid "{} in {} remaining"
+msgstr "{} शेष, कुल {}"
+
+msgid "{} uncompressed"
+msgstr "{} बिना संपीड़न के"
+
+msgid "Disk space"
+msgstr "डिस्क की जगह"
+
+msgid "Calculating…"
+msgstr "गणना हो रही है…"
+
+msgid "Back"
+msgstr "वापस"
+
+msgid "Cancel"
+msgstr "रद्द करें"
+
+msgid "Close"
+msgstr "बंद करें"
+
+msgid "Pausing…"
+msgstr "रोका जा रहा है…"
+
+msgid "Pause"
+msgstr "रोकें"
+
+msgid "Resume"
+msgstr "फिर शुरू करें"
+
+msgid "Check again"
+msgstr "फिर जाँचें"
+
+msgid "Retry"
+msgstr "फिर कोशिश करें"
+
+msgid "Open folder"
+msgstr "फ़ोल्डर खोलें"
+
+msgid "Password required"
+msgstr "पासवर्ड आवश्यक है"
+
+msgid "Password"
+msgstr "पासवर्ड"
+
+msgid "Incorrect password."
+msgstr "पासवर्ड गलत है।"
+
+msgid "OK"
+msgstr "ठीक है"
+
+msgid "Replace or skip files"
+msgstr "फ़ाइलें बदलें या छोड़ें"
+
+msgid "Keep both"
+msgstr "दोनों रखें"
+
+msgid "Skip"
+msgstr "छोड़ें"
+
+msgid "Replace"
+msgstr "बदलें"
+
+msgid "Enter the password for {}."
+msgstr "{} के लिए पासवर्ड दर्ज करें।"
+
+msgid "Available"
+msgstr "उपलब्ध"
+
+msgid "Required, archive removed"
+msgstr "ज़रूरी, आर्काइव हटाने पर"
+
+msgid "Required, archive kept"
+msgstr "ज़रूरी, आर्काइव रखने पर"
+
+msgid "Reserved"
+msgstr "आरक्षित"
+
+msgid "Available after extraction"
+msgstr "एक्सट्रैक्शन के बाद उपलब्ध"
+
+msgid "Restore complete"
+msgstr "पुनर्स्थापन पूरा हुआ"
+
+msgid "Restore failed"
+msgstr "पुनर्स्थापन विफल हुआ"
+
+msgid "Restoring {}"
+msgstr "{} पुनर्स्थापित किया जा रहा है"
+
+msgid "Test complete"
+msgstr "जाँच पूरी हुई"
+
+msgid "Test failed"
+msgstr "जाँच विफल हुई"
+
+msgid "Testing {}"
+msgstr "{} की जाँच हो रही है"
+
+msgid "Extraction complete"
+msgstr "एक्सट्रैक्शन पूरा हुआ"
+
+msgid "Extraction paused"
+msgstr "एक्सट्रैक्शन रुका हुआ है"
+
+msgid "Extraction failed"
+msgstr "एक्सट्रैक्शन विफल हुआ"
+
+msgid "Insufficient disk space"
+msgstr "डिस्क में पर्याप्त जगह नहीं है"
+
+msgid "Extracting {}"
+msgstr "{} एक्सट्रैक्ट हो रहा है"
+
+msgid "Checking disk space…"
+msgstr "डिस्क की जगह जाँची जा रही है…"
+
+msgid "Converting it back to a standard archive. Extracted files are kept."
+msgstr "इसे वापस सामान्य आर्काइव में बदला जा रहा है। एक्सट्रैक्ट की गई फ़ाइलें रखी जाएँगी।"
+
+msgid "Verifying every entry. No files are written."
+msgstr "हर प्रविष्टि की जाँच हो रही है। कोई फ़ाइल नहीं लिखी जाएगी।"
+
+msgid "Pausing after the current batch…"
+msgstr "वर्तमान बैच के बाद रोका जाएगा…"
+
+msgid "Verifying archive before extracting…"
+msgstr "एक्सट्रैक्ट करने से पहले आर्काइव की जाँच हो रही है…"
+
+msgid "Progress is saved. The extraction can be resumed now or later."
+msgstr "प्रगति सहेज ली गई है। एक्सट्रैक्शन अभी या बाद में फिर शुरू किया जा सकता है।"
+
+msgid "All entries were extracted. The archive was kept."
+msgstr "सभी प्रविष्टियाँ एक्सट्रैक्ट हो गईं। आर्काइव रखा गया है।"
+
+msgid "All entries were extracted. The archive was removed."
+msgstr "सभी प्रविष्टियाँ एक्सट्रैक्ट हो गईं। आर्काइव हटा दिया गया है।"
+
+msgid "Test passed: 1 entry verified."
+msgstr "जाँच सफल: 1 प्रविष्टि सत्यापित हुई।"
+
+msgid "'{}' already exists in {}."
+msgstr "'{}' पहले से {} में मौजूद है।"
+
+msgid "Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name."
+msgstr "एक्सट्रैक्शन पूरा होने पर बदलें मौजूदा फ़ाइल हटा देता है। छोड़ें उसे रखता है और आर्काइव की प्रति नहीं रखी जाती। दोनों रखें मौजूदा फ़ाइल रखता है और आर्काइव की प्रति नाम के बाद एक संख्या के साथ जोड़ता है।"
+
+msgid "Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."
+msgstr "एक्सट्रैक्शन पूरा होने पर बदलें मौजूदा फ़ाइल हटा देता है। छोड़ें उसे रखता है। दोनों रखें मौजूदा फ़ाइल रखता है और आर्काइव की प्रति नाम के बाद एक संख्या के साथ जोड़ता है।"
+
+msgid "Do the same for the next file"
+msgstr "अगली फ़ाइल के लिए भी यही करें"
+
+msgid "Do the same for the next {} files"
+msgstr "अगली {} फ़ाइलों के लिए भी यही करें"
+
+msgid "Destination: {}"
+msgstr "गंतव्य: {}"
+
+msgid "{} of {}"
+msgstr "{1} में से {0}"
+
+msgid "Archive remaining: {}"
+msgstr "आर्काइव शेष: {}"
+
+msgid "Test passed: {} entries verified."
+msgstr "जाँच सफल: {} प्रविष्टियाँ सत्यापित हुईं।"
+
+msgid "Waiting for disk"
+msgstr "डिस्क की प्रतीक्षा हो रही है"
+
+msgid "{}/s, {} remaining"
+msgstr "{}/s, {} शेष"
+
+msgid "less than 5 seconds"
+msgstr "5 सेकंड से कम"
+
+msgid "{} second"
+msgstr "{} सेकंड"
+
+msgid "{} seconds"
+msgstr "{} सेकंड"
+
+msgid "{} minute"
+msgstr "{} मिनट"
+
+msgid "{} minutes"
+msgstr "{} मिनट"
+
+msgid "{} hour"
+msgstr "{} घंटा"
+
+msgid "{} hours"
+msgstr "{} घंटे"
+
+msgid "the 1 entry"
+msgstr "1 प्रविष्टि"
+
+msgid "the {} entries"
+msgstr "{} प्रविष्टियाँ"
+
+msgid "Extraction progress discarded. The archive was not modified. Extracted files remain in {}."
+msgstr "एक्सट्रैक्शन की प्रगति हटा दी गई। आर्काइव नहीं बदला गया। एक्सट्रैक्ट की गई फ़ाइलें {} में बनी रहेंगी।"
+
+msgid "Archive restored. It contains {} not yet extracted. Extracted files remain in {}."
+msgstr "आर्काइव पुनर्स्थापित हुआ। इसमें अभी एक्सट्रैक्ट न हुई {} हैं। एक्सट्रैक्ट की गई फ़ाइलें {} में बनी रहेंगी।"
+
+msgid "1 replaced file remains in {}, since the file extracted at its path is no longer in the archive."
+msgstr "1 बदली हुई फ़ाइल {} में बनी है, क्योंकि उसके स्थान पर एक्सट्रैक्ट की गई फ़ाइल अब आर्काइव में नहीं है।"
+
+msgid "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive."
+msgstr "{} बदली हुई फ़ाइलें {} में बनी हैं, क्योंकि उनके स्थानों पर एक्सट्रैक्ट की गई फ़ाइलें अब आर्काइव में नहीं हैं।"
+
+msgid "link"
+msgstr "लिंक"
+
+msgid "{} Progress is saved; the extraction can be resumed."
+msgstr "{} प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
+

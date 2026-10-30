@@ -29,42 +29,6 @@ pub fn count(n: usize) -> String {
     out
 }
 
-pub fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{} {}", count(n), if n == 1 { one } else { many })
-}
-
-/// What the replace prompt asks about one file in the way, given relative
-/// to the folder.
-pub fn replace_question(file: &Path, folder: &Path) -> String {
-    format!(
-        "'{}' already exists in {}.",
-        file.display(),
-        folder.display()
-    )
-}
-
-/// What each answer to the replace prompt does. `removing`: the archive
-/// goes as it is extracted, so a skipped file's copy in it is not kept.
-pub fn replace_note(removing: bool) -> &'static str {
-    if removing {
-        "Replace deletes the existing file when the extraction completes. Skip keeps it, and the \
-         archive's copy is not kept. Keep both keeps it and adds the archive's copy with a \
-         number after its name."
-    } else {
-        "Replace deletes the existing file when the extraction completes. Skip keeps it. Keep \
-         both keeps it and adds the archive's copy with a number after its name."
-    }
-}
-
-/// The offer to answer for the `left` files after this one.
-pub fn replace_rest(left: usize) -> String {
-    match left {
-        0 => String::new(),
-        1 => "Do the same for the next file".to_string(),
-        n => format!("Do the same for the next {} files", count(n)),
-    }
-}
-
 /// Why a restore left replaced files where they are, and where that is.
 pub fn set_aside(n: usize, output: &Path) -> String {
     let (files, them) = if n == 1 {
@@ -259,26 +223,6 @@ mod tests {
         assert_eq!(count(999), "999");
         assert_eq!(count(1000), "1,000");
         assert_eq!(count(3_412_001), "3,412,001");
-        assert_eq!(plural(1, "file", "files"), "1 file");
-        assert_eq!(plural(1200, "file", "files"), "1,200 files");
-    }
-
-    #[test]
-    fn the_replace_prompt_names_the_file_and_counts_the_rest() {
-        let folder = Path::new("/games/game");
-        assert_eq!(
-            replace_question(Path::new("data/level.pak"), folder),
-            format!(
-                "'{}' already exists in {}.",
-                Path::new("data/level.pak").display(),
-                folder.display()
-            )
-        );
-        assert_eq!(replace_rest(0), "");
-        assert_eq!(replace_rest(1), "Do the same for the next file");
-        assert_eq!(replace_rest(1200), "Do the same for the next 1,200 files");
-        assert!(replace_note(true).contains("the archive's copy is not kept"));
-        assert!(!replace_note(false).contains("not kept"));
     }
 
     #[test]

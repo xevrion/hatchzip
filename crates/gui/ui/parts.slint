@@ -82,7 +82,7 @@ export component SpacePanel inherits VerticalLayout {
     alignment: start;
 
     Text {
-        text: "Disk space";
+        text: @tr("Disk space");
         font-weight: 600;
     }
     if !root.plan.ready: HorizontalLayout {
@@ -94,7 +94,7 @@ export component SpacePanel inherits VerticalLayout {
             height: 16px;
         }
         Text {
-            text: "Calculating…";
+            text: @tr("Calculating…");
             color: Theme.muted;
             vertical-alignment: center;
         }
@@ -102,27 +102,27 @@ export component SpacePanel inherits VerticalLayout {
     if root.plan.ready: VerticalLayout {
         spacing: 8px;
         Row {
-            label: "Available";
+            label: @tr("Available");
             value: root.plan.free;
         }
         // Both ways, the chosen one in bold, so the difference the archive
         // makes is in plain view.
         Row {
-            label: "Required, archive removed";
+            label: @tr("Required, archive removed");
             value: root.plan.in-place;
             strong: !root.plan.keep-archive;
         }
         Row {
-            label: "Required, archive kept";
+            label: @tr("Required, archive kept");
             value: root.plan.normal;
             strong: root.plan.keep-archive;
         }
         Row {
-            label: "Reserved";
+            label: @tr("Reserved");
             value: root.plan.keep;
         }
         Row {
-            label: "Available after extraction";
+            label: @tr("Available after extraction");
             value: root.plan.after;
         }
         Rectangle {
@@ -216,47 +216,47 @@ export component TaskButtons inherits HorizontalLayout {
     spacing: 8px;
 
     if root.task.can-give-back: Button {
-        text: "Restore archive";
+        text: @tr("Restore archive");
         clicked => {
             root.give-back();
         }
     }
 
     if !root.closable && (root.task.phase == Phase.paused || root.task.phase == Phase.failed || root.task.phase == Phase.no-space || (root.task.phase == Phase.done && !root.task.can-open-folder)): Button {
-        text: "Back";
+        text: @tr("Back");
         clicked => {
             root.back();
         }
     }
     // Checking and testing are safe to cut short, so they can be cancelled.
     if root.closable && root.task.phase != Phase.working && root.task.phase != Phase.pausing: Button {
-        text: root.task.phase == Phase.checking || root.task.phase == Phase.verifying ? "Cancel" : "Close";
+        text: root.task.phase == Phase.checking || root.task.phase == Phase.verifying ? @tr("Cancel") : @tr("Close");
         clicked => {
             root.close();
         }
     }
     if root.task.phase == Phase.working || root.task.phase == Phase.pausing: Button {
-        text: root.task.phase == Phase.pausing ? "Pausing…" : "Pause";
+        text: root.task.phase == Phase.pausing ? @tr("Pausing…") : @tr("Pause");
         enabled: root.task.phase == Phase.working;
         clicked => {
             root.pause();
         }
     }
     if root.task.phase == Phase.paused: Button {
-        text: "Resume";
+        text: @tr("Resume");
         primary: true;
         clicked => {
             root.resume();
         }
     }
     if root.task.can-retry && (root.task.phase == Phase.failed || root.task.phase == Phase.no-space): Button {
-        text: root.task.phase == Phase.no-space ? "Check again" : "Retry";
+        text: root.task.phase == Phase.no-space ? @tr("Check again") : @tr("Retry");
         clicked => {
             root.resume();
         }
     }
     if root.task.phase == Phase.done && root.task.can-open-folder: Button {
-        text: "Open folder";
+        text: @tr("Open folder");
         primary: true;
         clicked => {
             root.open-folder();
@@ -298,37 +298,37 @@ export component PasswordPrompt inherits Rectangle {
                 padding: Theme.gutter;
                 spacing: 10px;
                 Text {
-                    text: "Password required";
+                    text: @tr("Password required");
                     font-size: 15px;
                     font-weight: 600;
                 }
                 Text {
-                    text: "Enter the password for " + root.name + ".";
+                    text: @tr("Enter the password for {}.", root.name);
                     color: Theme.muted;
                     wrap: word-wrap;
                 }
                 input := LineEdit {
                     input-type: password;
-                    placeholder-text: "Password";
+                    placeholder-text: @tr("Password");
                     accepted(text) => {
                         root.ok(text);
                     }
                 }
                 if root.wrong: Text {
-                    text: "Incorrect password.";
+                    text: @tr("Incorrect password.");
                     color: Theme.danger;
                 }
                 HorizontalLayout {
                     alignment: end;
                     spacing: 8px;
                     Button {
-                        text: "Cancel";
+                        text: @tr("Cancel");
                         clicked => {
                             root.cancel();
                         }
                     }
                     Button {
-                        text: "OK";
+                        text: @tr("OK");
                         primary: true;
                         clicked => {
                             root.ok(input.text);
@@ -387,7 +387,7 @@ export component ReplacePrompt inherits Rectangle {
                 padding: Theme.gutter;
                 spacing: 8px;
                 Text {
-                    text: "Replace or skip files";
+                    text: @tr("Replace or skip files");
                     font-size: 15px;
                     font-weight: 600;
                 }
@@ -409,25 +409,25 @@ export component ReplacePrompt inherits Rectangle {
                     alignment: end;
                     spacing: 8px;
                     Button {
-                        text: "Cancel";
+                        text: @tr("Cancel");
                         clicked => {
                             root.cancel();
                         }
                     }
                     Button {
-                        text: "Keep both";
+                        text: @tr("Keep both");
                         clicked => {
                             root.answer(2, root.for-rest);
                         }
                     }
                     Button {
-                        text: "Skip";
+                        text: @tr("Skip");
                         clicked => {
                             root.answer(1, root.for-rest);
                         }
                     }
                     Button {
-                        text: "Replace";
+                        text: @tr("Replace");
                         primary: true;
                         clicked => {
                             root.answer(0, root.for-rest);
