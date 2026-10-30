@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Chocolatey package: installs HatchZip-x64-setup.exe from the GitHub
+     release, checked against its SHA-256. See README.md in this folder. -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>hatchzip</id>
+    <version>0.1.8</version>
+    <packageSourceUrl>https://github.com/xevrion/hatchzip/tree/main/packaging/chocolatey</packageSourceUrl>
+    <owners>xevrion</owners>
+    <title>HatchZip</title>
+    <authors>Yash Bavadiya</authors>
+    <projectUrl>https://hatchzip.dev</projectUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/xevrion/hatchzip@v0.1.8/assets/icon/png/hatchzip-256.png</iconUrl>
+    <copyright>Copyright (c) 2026 Yash Bavadiya</copyright>
+    <licenseUrl>https://github.com/xevrion/hatchzip#license</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/xevrion/hatchzip</projectSourceUrl>
+    <docsUrl>https://github.com/xevrion/hatchzip#usage</docsUrl>
+    <bugTrackerUrl>https://github.com/xevrion/hatchzip/issues</bugTrackerUrl>
+    <tags>hatchzip zip 7z tar rar extract unzip archive split-archive disk-space foss cli</tags>
+    <summary>Extract huge archives in place, without needing room for both the archive and its contents.</summary>
+    <description><![CDATA[A 180 GB archive that unpacks to 200 GB normally needs 380 GB of free disk, because the archive and everything extracted from it have to exist at the same time. HatchZip needs a little over 200 GB: it extracts the archive from the end and cuts each finished part off the archive as it goes, so the space the archive gives back is reused for the next files.
+
+## Features
+
+- Checks that the extraction fits before it changes anything
+- Keeps a margin of free space the whole way through
+- Can be stopped or crash at any moment and continues where it left off
+- Reads ZIP, 7z, tar, tar.gz, RAR and split archives
+- Can extract and keep the archive, like any other extractor
+
+The archive is gone when an in-place extraction finishes. For an archive that cannot be downloaded again, HatchZip can verify every file first.
+
+## What this package installs
+
+This package runs `HatchZip-x64-setup.exe` from the GitHub release. It installs the desktop app and the `hatchzip` command (also as `hz`) for the user who runs Chocolatey, in `%LOCALAPPDATA%\Programs\HatchZip`; the setup itself needs no administrator rights. It adds the folder to that user's PATH, a Start menu entry, HatchZip under "Open with" for archive files, and the Explorer right-click menu.
+
+Because the setup installs per user, run Chocolatey from your own account (an elevated prompt of the same account is fine). Installed from another account, such as SYSTEM, HatchZip goes into that account's profile.
+
+Open a new terminal after installing for `hatchzip` to be on PATH, or run `refreshenv`.
+
+RAR archives are decoded by UnRAR, under its own license: https://github.com/xevrion/hatchzip/blob/main/LICENSE-UNRAR
+]]></description>
+    <releaseNotes>https://github.com/xevrion/hatchzip/releases/tag/v0.1.8</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
