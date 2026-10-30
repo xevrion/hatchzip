@@ -28,6 +28,44 @@ rpassword = "7.5.4"
 # hatchzip-core. Off by default, on in the release builds.
 rar = ["hatchzip-core/rar"]
 
+# `cargo binstall hatchzip` downloads the release build for the target
+# instead of compiling, RAR support included. Each target names its file on
+# the GitHub release and where the program sits inside it.
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-x86_64-linux.tar.gz"
+bin-dir = "hatchzip-x86_64-linux/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-musl]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-x86_64-linux.tar.gz"
+bin-dir = "hatchzip-x86_64-linux/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-aarch64-linux.tar.gz"
+bin-dir = "hatchzip-aarch64-linux/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-musl]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-aarch64-linux.tar.gz"
+bin-dir = "hatchzip-aarch64-linux/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-x86_64-macos.tar.gz"
+bin-dir = "hatchzip-x86_64-macos/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-aarch64-macos.tar.gz"
+bin-dir = "hatchzip-aarch64-macos/{ bin }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/hatchzip-x86_64-windows.zip"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "zip"
+
 [build-dependencies]
 # Only used when the target is Windows; see build.rs.
 winresource = { version = "0.1.34", default-features = false }
