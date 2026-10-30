@@ -714,6 +714,7 @@ pub fn begin(
         replace,
         case_folders: job.case_folders(),
         case_beyond_ascii: job.case_beyond_ascii(),
+        folders: crate::folders::of(&job.units),
     };
     Journal::create(paths, &job.storage, plan)
 }
