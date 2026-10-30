@@ -19,8 +19,8 @@ before anything is published: in clean Ubuntu 22.04 and Fedora containers
 for the .deb and .rpm, by a silent install and uninstall of the setup and
 of the MSI on the Windows runner, and by opening the dmg on the Mac runner.
 
-The AUR, winget, Homebrew and Scoop manifests that install these
-downloads are in this folder too: see [Package managers](#package-managers).
+The AUR, winget, Homebrew, Scoop, Chocolatey, Flathub and Snap manifests
+are in this folder too: see [Package managers](#package-managers).
 
 The Windows and macOS jobs build the app next to the CLI and package both.
 The Linux packages have a job of their own on Ubuntu 22.04: the app links
@@ -276,10 +276,12 @@ sudo ln -sf /Applications/HatchZip.app/Contents/Resources/man/man1/hatchzip.1 /u
 
 ## Package managers
 
-The manifests for the AUR, winget, Homebrew and Scoop live here, ready to
-submit. They install the release downloads above, checked against their
-published `.sha256`, except the AUR `hatchzip` package and the
-homebrew-core formula, which build from the tagged source.
+The manifests for the AUR, winget, Homebrew, Scoop, Chocolatey, Flathub and
+Snap live here, ready to submit. They install the release downloads above,
+checked against their published `.sha256`, except the AUR `hatchzip`
+package, the homebrew-core formula, the Flatpak and the snap, which build
+from the tagged source. The Flatpak and the snap build without the `rar`
+feature, since UnRAR's license is not a free software license.
 
 | Folder | Package | Installs |
 |---|---|---|
@@ -290,6 +292,9 @@ homebrew-core formula, which build from the tagged source.
 | `homebrew/Casks/hatchzip.rb` | tap cask, macOS | `HatchZip.app` from the dmg, plus the CLI, `hz` and man page inside it |
 | `homebrew/core/hatchzip.rb` | for a later homebrew-core pull request | CLI built from source |
 | `scoop/hatchzip.json` | Scoop | CLI and `hz` from `hatchzip-x86_64-windows.zip` |
+| `chocolatey/` | Chocolatey `hatchzip` | `HatchZip-x64-setup.exe`, per user, silent. See [chocolatey/README.md](chocolatey/README.md) |
+| `flatpak/` | Flathub `io.github.xevrion.hatchzip`, x86_64 and aarch64 | App and CLI, built from source, no RAR. See [flatpak/README.md](flatpak/README.md) |
+| `snap/` | Snap Store `hatchzip`, amd64 and arm64 | App and CLI, built from source, no RAR. See [snap/README.md](snap/README.md) |
 
 The formula and the cask both put `hatchzip` on PATH, so a Mac user
 installs one or the other: the cask when they want the app too.
@@ -319,7 +324,12 @@ It reads the version the manifests are at now, downloads that release's
 one of the same download, along with the version, the URLs, `pkgrel`, the
 winget `ReleaseDate` and the winget version folder. A checksum it can't
 match to a download stops it before it writes anything. Commit the result,
-then publish each one as below.
+then publish each one as below. The Flatpak is updated by hand, as
+[flatpak/README.md](flatpak/README.md) describes, since it names the tag's
+commit and needs its crate list regenerated.
+
+Chocolatey, Flathub and the Snap Store are published as their own READMEs
+describe.
 
 ### Publishing, the first time
 
