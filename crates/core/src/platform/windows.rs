@@ -254,8 +254,8 @@ pub fn local_time(
         wMilliseconds: 0,
     };
     let mut utc = SYSTEMTIME::default();
-    // SAFETY: both pointers are to locals. A null zone means the active one,
-    // and the Ex variant uses its rules for that year, not only today's.
+    // SAFETY: both pointers are to locals. A null zone means the active one.
+    // The Ex variant is the one with dynamic daylight saving settings.
     if unsafe { TzSpecificLocalTimeToSystemTimeEx(std::ptr::null(), &local, &mut utc) } == 0 {
         return None;
     }
