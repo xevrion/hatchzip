@@ -7,6 +7,9 @@ use objc2::sel;
 use objc2_app_kit::NSApplication;
 use objc2_foundation::{MainThreadMarker, NSArray, NSURL};
 
+/// The settings switch, named after this system's file manager.
+pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Finder;
+
 /// hatchzip-shell can't add Finder entries yet, so the setting is hidden.
 pub const SHELL_MENU: bool = false;
 
@@ -70,5 +73,3 @@ extern "C-unwind" fn open_urls(
         }
     }
 }
-
-pub const SHELL_MENU_NAME: &str = "finder";

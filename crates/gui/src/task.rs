@@ -227,6 +227,7 @@ impl Task {
                 v.message = "Progress is saved. The extraction can be resumed now or later.".into();
             }
             Update::Extracted { output, keep } => {
+                self.keep = keep;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
@@ -615,5 +616,17 @@ mod tests {
         assert!(!t.request_pause());
         t.apply(Update::Tested(1));
         assert_eq!(t.view.message, "Test passed: 1 entry verified.");
+    }
+
+    #[test]
+    fn completion_uses_the_reported_archive_policy() {
+        for keep in [false, true] {
+            let mut task = Task::extract("test.zip", None, !keep);
+            task.apply(Update::Extracted {
+                output: "out".into(),
+                keep,
+            });
+            assert_eq!(task.keeps_archive(), keep);
+        }
     }
 }

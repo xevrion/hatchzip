@@ -112,6 +112,11 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
 /// one, so it never waits on them.
 type SharedJob = Arc<Mutex<Option<Job>>>;
 
+// Slint's plural selector is an int; the formatted count is passed separately.
+fn plural_count(n: usize) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 struct App {
     ui: slint::Weak<MainWindow>,
     entries: RefCell<Option<Rc<EntriesModel>>>,
@@ -186,9 +191,9 @@ pub fn build(
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
     ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
-        "explorer" => ui.invoke_shell_explorer(),
-        "finder" => ui.invoke_shell_finder(),
-        _ => ui.invoke_shell_files(),
+        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
+        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
+        platform::ShellMenuName::Files => ui.invoke_shell_files(),
     });
 
     let weak = ui.as_weak();
@@ -233,7 +238,8 @@ pub fn build(
                 view.message = ui.invoke_task_resumable_error(reason.as_str().into());
             }
             if let Some((entries, output, kept, aside)) = &task.restore_result {
-                let held = ui.invoke_restore_held(*entries == 1, text::count(*entries).into());
+                let held =
+                    ui.invoke_restore_held(plural_count(*entries), text::count(*entries).into());
                 let mut message = ui
                     .invoke_restore_result(*kept, held, output.display().to_string().into())
                     .to_string();
@@ -241,7 +247,7 @@ pub fn build(
                     message.push(' ');
                     message.push_str(
                         &ui.invoke_restore_aside(
-                            *aside == 1,
+                            plural_count(*aside),
                             text::count(*aside).into(),
                             hatchzip_core::replace::folder(output)
                                 .display()
@@ -253,7 +259,8 @@ pub fn build(
                 view.message = message.into();
             }
             if let Some(count) = task.tested_entries {
-                view.message = ui.invoke_task_test_result(count == 1, text::count(count).into());
+                view.message =
+                    ui.invoke_task_test_result(plural_count(count), text::count(count).into());
             }
             if let Some(percent) = task.reading_percent {
                 view.busy = ui.invoke_reading_archive(percent);
@@ -274,20 +281,32 @@ pub fn build(
                 let duration = match seconds {
                     0..=4 => ui.invoke_time_short().to_string(),
                     5..=59 => ui
-                        .invoke_time_seconds(seconds == 1, seconds.to_string().into())
+                        .invoke_time_seconds(
+                            i32::try_from(seconds).unwrap_or(i32::MAX),
+                            seconds.to_string().into(),
+                        )
                         .to_string(),
                     60..=3599 => {
                         let minutes = seconds.div_ceil(60);
-                        ui.invoke_time_minutes(minutes == 1, minutes.to_string().into())
-                            .to_string()
+                        ui.invoke_time_minutes(
+                            i32::try_from(minutes).unwrap_or(i32::MAX),
+                            minutes.to_string().into(),
+                        )
+                        .to_string()
                     }
                     _ => {
                         let hours = seconds / 3600;
                         let minutes = (seconds % 3600) / 60;
                         format!(
                             "{} {}",
-                            ui.invoke_time_hours(hours == 1, hours.to_string().into()),
-                            ui.invoke_time_minutes(minutes == 1, minutes.to_string().into())
+                            ui.invoke_time_hours(
+                                i32::try_from(hours).unwrap_or(i32::MAX),
+                                hours.to_string().into()
+                            ),
+                            ui.invoke_time_minutes(
+                                i32::try_from(minutes).unwrap_or(i32::MAX),
+                                minutes.to_string().into()
+                            )
                         )
                     }
                 };
@@ -523,7 +542,7 @@ impl App {
                     .to_string(),
             );
             let count = job.item_count();
-            let entries = ui.invoke_entry_count(text::count(count).into(), count == 1);
+            let entries = ui.invoke_entry_count(text::count(count).into(), plural_count(count));
             match loaded.left {
                 None => {
                     summary.push(human(job.storage.original_len()));
@@ -577,16 +596,14 @@ impl App {
             let job = job.lock().expect("plan thread panicked");
             let Some(job) = job.as_ref() else { return };
             let refusal = job.in_place_refusal().filter(|_| !keep);
-            let view = match session::plan(job, &out, resuming, keep_free, keep) {
+            let plan = session::plan(job, &out, resuming, keep_free, keep);
+            let keep_hint = if plan.is_ok() { refusal.clone() } else { None };
+            let view = match plan {
                 Ok(plan) => match refusal {
                     // Such as a solid RAR: it can only be extracted kept.
                     Some(why) => PlanView {
                         fits: false,
-                        verdict: sentence(&format!(
-                            "{why}. Turn off \"Remove the archive during extraction\" to \
-                             extract it and keep the archive"
-                        ))
-                        .into(),
+                        verdict: why.into(),
                         ..plan_view(&plan)
                     },
                     None => plan_view(&plan),
@@ -599,7 +616,12 @@ impl App {
             };
             post(move |app| {
                 if generation == app.generation.get() {
-                    app.ui().set_plan(view);
+                    let ui = app.ui();
+                    let mut view = view;
+                    if let Some(why) = keep_hint {
+                        view.verdict = sentence(&ui.invoke_keep_archive_hint(why.into())).into();
+                    }
+                    ui.set_plan(view);
                 }
             });
         });

@@ -66,7 +66,7 @@ component EntryList inherits VerticalLayout {
             height: root.row-height;
             accessible-role: list-item;
             accessible-label: row.path;
-            accessible-description: row.dir ? "Folder" : row.link ? "Link" : "File";
+            accessible-description: row.dir ? @tr("Folder") : row.link ? @tr("Link") : @tr("File");
             accessible-expandable: row.dir;
             accessible-expanded: row.expanded;
             accessible-item-selectable: true;
@@ -101,7 +101,7 @@ component EntryList inherits VerticalLayout {
                     horizontal-stretch: 1;
                 }
                 Text {
-                    text: row.size == "link" ? @tr("link") : row.size;
+                    text: row.link ? @tr("link") : row.size;
                     color: Theme.muted;
                     vertical-alignment: center;
                     horizontal-alignment: right;
@@ -190,6 +190,7 @@ export component MainWindow inherits Window {
     public function menu-added() -> string { return @tr("Context menu entries added."); }
     public function menu-removed() -> string { return @tr("Context menu entries removed."); }
     public function no-entries() -> string { return @tr("No entries remaining"); }
+    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive", reason); }
     public function checking-space() -> string { return @tr("Checking disk space…"); }
     public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
     public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
@@ -198,12 +199,11 @@ export component MainWindow inherits Window {
     public function paused-message() -> string { return @tr("Progress is saved. The extraction can be resumed now or later."); }
     public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
     public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
-    public function test-one() -> string { return @tr("Test passed: 1 entry verified."); }
     public function waiting-disk() -> string { return @tr("Waiting for disk"); }
 
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
     public function archive-kind(name: string) -> string { return @tr("{} archive", name); }
-    public function entry-count(number: string, one: bool) -> string { return one ? @tr("{} entry", number) : @tr("{} entries", number); }
+    public function entry-count(number: string, n: int) -> string { return @tr("{} entry" | "{} entries" % n, number); }
     public function remaining-summary(size: string, entries: string) -> string { return @tr("{} in {} remaining", size, entries); }
     public function uncompressed-summary(size: string) -> string { return @tr("{} uncompressed", size); }
 
@@ -229,17 +229,17 @@ export component MainWindow inherits Window {
     public function task-amounts(done: string, total: string) -> string { return @tr("{} of {}", done, total); }
     public function task-archive-left(size: string) -> string { return @tr("Archive remaining: {}", size); }
 
-    public function task-test-result(one: bool, count: string) -> string { return one ? @tr("Test passed: 1 entry verified.") : @tr("Test passed: {} entries verified.", count); }
+    public function task-test-result(n: int, count: string) -> string { return @tr("Test passed: 1 entry verified." | "Test passed: {} entries verified." % n, count); }
 
     public function task-rate(speed: string, time: string) -> string { return @tr("{}/s, {} remaining", speed, time); }
     public function time-short() -> string { return @tr("less than 5 seconds"); }
-    public function time-seconds(one: bool, n: string) -> string { return one ? @tr("{} second", n) : @tr("{} seconds", n); }
-    public function time-minutes(one: bool, n: string) -> string { return one ? @tr("{} minute", n) : @tr("{} minutes", n); }
-    public function time-hours(one: bool, n: string) -> string { return one ? @tr("{} hour", n) : @tr("{} hours", n); }
+    public function time-seconds(n: int, number: string) -> string { return @tr("{} second" | "{} seconds" % n, number); }
+    public function time-minutes(n: int, number: string) -> string { return @tr("{} minute" | "{} minutes" % n, number); }
+    public function time-hours(n: int, number: string) -> string { return @tr("{} hour" | "{} hours" % n, number); }
 
-    public function restore-held(one: bool, n: string) -> string { return one ? @tr("the 1 entry") : @tr("the {} entries", n); }
+    public function restore-held(n: int, number: string) -> string { return @tr("the 1 entry" | "the {} entries" % n, number); }
     public function restore-result(kept: bool, held: string, path: string) -> string { return kept ? @tr("Extraction progress discarded. The archive was not modified. Extracted files remain in {}.", path) : @tr("Archive restored. It contains {} not yet extracted. Extracted files remain in {}.", held, path); }
-    public function restore-aside(one: bool, n: string, path: string) -> string { return one ? @tr("1 replaced file remains in {}, since the file extracted at its path is no longer in the archive.", path) : @tr("{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive.", n, path); }
+    public function restore-aside(n: int, number: string, path: string) -> string { return @tr("1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive." | "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive." % n, number, path); }
 
     public function task-resumable-error(reason: string) -> string { return @tr("{} Progress is saved; the extraction can be resumed.", reason); }
 
@@ -249,7 +249,7 @@ export component MainWindow inherits Window {
     callback password-cancel();
     public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
     public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
-    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : left == 1 ? @tr("Do the same for the next file") : @tr("Do the same for the next {} files", count); }
+    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : @tr("Do the same for the next file" | "Do the same for the next {} files" % left, count); }
 
     callback replace-answer(int, bool);
     callback replace-cancel();

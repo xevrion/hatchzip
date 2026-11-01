@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+/// The settings switch, named after this system's file manager.
+pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Explorer;
+
 /// Explorer, through the per-user registry hive.
 pub const SHELL_MENU: bool = true;
 
@@ -12,5 +15,3 @@ pub fn config_dir() -> Option<PathBuf> {
 /// Explorer passes the files as arguments here, so there is nothing to
 /// listen for.
 pub fn forward_opened_files(_on_open: impl Fn(PathBuf) + 'static) {}
-
-pub const SHELL_MENU_NAME: &str = "explorer";

@@ -2,6 +2,14 @@
 //! provides the same items; nothing outside this module may use
 //! `cfg(target_os)`.
 
+// Each variant is used by a different platform module.
+#[allow(dead_code)]
+pub enum ShellMenuName {
+    Explorer,
+    Finder,
+    Files,
+}
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]

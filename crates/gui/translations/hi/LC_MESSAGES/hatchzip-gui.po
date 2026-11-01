@@ -17,7 +17,7 @@ msgid "Open…"
 msgstr "खोलें…"
 
 msgid "Quit"
-msgstr "बंद करें"
+msgstr "बाहर निकलें"
 
 msgid "Settings"
 msgstr "सेटिंग्स"
@@ -62,7 +62,7 @@ msgid "This archive is empty."
 msgstr "यह आर्काइव खाली है।"
 
 msgid "Extract to"
-msgstr "यहाँ एक्सट्रैक्ट करें"
+msgstr "एक्सट्रैक्ट करने का स्थान"
 
 msgid "Browse…"
 msgstr "ब्राउज़ करें…"
@@ -94,11 +94,11 @@ msgstr "एक्सट्रैक्शन फिर शुरू करें
 msgid "Finish"
 msgstr "पूरा करें"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz और विभाजित आर्काइव।"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, RAR, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, RAR और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz, RAR और विभाजित आर्काइव।"
 
 msgid "Opening {}…"
 msgstr "{} खोला जा रहा है…"
@@ -152,16 +152,15 @@ msgid "{} archive"
 msgstr "{} आर्काइव"
 
 msgid "{} entry"
-msgstr "{} प्रविष्टि"
-
-msgid "{} entries"
-msgstr "{} प्रविष्टियाँ"
+msgid_plural "{} entries"
+msgstr[0] "{} प्रविष्टि"
+msgstr[1] "{} प्रविष्टियाँ"
 
 msgid "{} in {} remaining"
-msgstr "{} शेष, कुल {}"
+msgstr "{0} शेष ({1})"
 
 msgid "{} uncompressed"
-msgstr "{} बिना संपीड़न के"
+msgstr "असंपीड़ित आकार: {}"
 
 msgid "Disk space"
 msgstr "डिस्क की जगह"
@@ -296,7 +295,9 @@ msgid "All entries were extracted. The archive was removed."
 msgstr "सभी प्रविष्टियाँ एक्सट्रैक्ट हो गईं। आर्काइव हटा दिया गया है।"
 
 msgid "Test passed: 1 entry verified."
-msgstr "जाँच सफल: 1 प्रविष्टि सत्यापित हुई।"
+msgid_plural "Test passed: {} entries verified."
+msgstr[0] "जाँच सफल: 1 प्रविष्टि सत्यापित हुई।"
+msgstr[1] "जाँच सफल: {} प्रविष्टियाँ सत्यापित हुईं।"
 
 msgid "'{}' already exists in {}."
 msgstr "'{}' पहले से {} में मौजूद है।"
@@ -308,10 +309,9 @@ msgid "Replace deletes the existing file when the extraction completes. Skip kee
 msgstr "एक्सट्रैक्शन पूरा होने पर बदलें मौजूदा फ़ाइल हटा देता है। छोड़ें उसे रखता है। दोनों रखें मौजूदा फ़ाइल रखता है और आर्काइव की प्रति नाम के बाद एक संख्या के साथ जोड़ता है।"
 
 msgid "Do the same for the next file"
-msgstr "अगली फ़ाइल के लिए भी यही करें"
-
-msgid "Do the same for the next {} files"
-msgstr "अगली {} फ़ाइलों के लिए भी यही करें"
+msgid_plural "Do the same for the next {} files"
+msgstr[0] "अगली फ़ाइल के लिए भी यही करें"
+msgstr[1] "अगली {} फ़ाइलों के लिए भी यही करें"
 
 msgid "Destination: {}"
 msgstr "गंतव्य: {}"
@@ -321,9 +321,6 @@ msgstr "{1} में से {0}"
 
 msgid "Archive remaining: {}"
 msgstr "आर्काइव शेष: {}"
-
-msgid "Test passed: {} entries verified."
-msgstr "जाँच सफल: {} प्रविष्टियाँ सत्यापित हुईं।"
 
 msgid "Waiting for disk"
 msgstr "डिस्क की प्रतीक्षा हो रही है"
@@ -335,40 +332,35 @@ msgid "less than 5 seconds"
 msgstr "5 सेकंड से कम"
 
 msgid "{} second"
-msgstr "{} सेकंड"
-
-msgid "{} seconds"
-msgstr "{} सेकंड"
+msgid_plural "{} seconds"
+msgstr[0] "{} सेकंड"
+msgstr[1] "{} सेकंड"
 
 msgid "{} minute"
-msgstr "{} मिनट"
-
-msgid "{} minutes"
-msgstr "{} मिनट"
+msgid_plural "{} minutes"
+msgstr[0] "{} मिनट"
+msgstr[1] "{} मिनट"
 
 msgid "{} hour"
-msgstr "{} घंटा"
-
-msgid "{} hours"
-msgstr "{} घंटे"
+msgid_plural "{} hours"
+msgstr[0] "{} घंटा"
+msgstr[1] "{} घंटे"
 
 msgid "the 1 entry"
-msgstr "1 प्रविष्टि"
-
-msgid "the {} entries"
-msgstr "{} प्रविष्टियाँ"
+msgid_plural "the {} entries"
+msgstr[0] "1 प्रविष्टि"
+msgstr[1] "{} प्रविष्टियाँ"
 
 msgid "Extraction progress discarded. The archive was not modified. Extracted files remain in {}."
 msgstr "एक्सट्रैक्शन की प्रगति हटा दी गई। आर्काइव नहीं बदला गया। एक्सट्रैक्ट की गई फ़ाइलें {} में बनी रहेंगी।"
 
 msgid "Archive restored. It contains {} not yet extracted. Extracted files remain in {}."
-msgstr "आर्काइव पुनर्स्थापित हुआ। इसमें अभी एक्सट्रैक्ट न हुई {} हैं। एक्सट्रैक्ट की गई फ़ाइलें {} में बनी रहेंगी।"
+msgstr "आर्काइव पुनर्स्थापित हुआ। अभी एक्सट्रैक्ट होनी बाकी: {}। एक्सट्रैक्ट की गई फ़ाइलें {} में बनी रहेंगी।"
 
-msgid "1 replaced file remains in {}, since the file extracted at its path is no longer in the archive."
-msgstr "1 बदली हुई फ़ाइल {} में बनी है, क्योंकि उसके स्थान पर एक्सट्रैक्ट की गई फ़ाइल अब आर्काइव में नहीं है।"
-
-msgid "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive."
-msgstr "{} बदली हुई फ़ाइलें {} में बनी हैं, क्योंकि उनके स्थानों पर एक्सट्रैक्ट की गई फ़ाइलें अब आर्काइव में नहीं हैं।"
+msgid "1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive."
+msgid_plural "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive."
+msgstr[0] "1 बदली हुई फ़ाइल {1} में बनी है, क्योंकि उसके स्थान पर एक्सट्रैक्ट की गई फ़ाइल अब आर्काइव में नहीं है।"
+msgstr[1] "{} बदली हुई फ़ाइलें {} में बनी हैं, क्योंकि उनके स्थानों पर एक्सट्रैक्ट की गई फ़ाइलें अब आर्काइव में नहीं हैं।"
 
 msgid "link"
 msgstr "लिंक"
@@ -376,3 +368,11 @@ msgstr "लिंक"
 msgid "{} Progress is saved; the extraction can be resumed."
 msgstr "{} प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
 
+msgid "Folder"
+msgstr "फ़ोल्डर"
+
+msgid "Link"
+msgstr "लिंक"
+
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
+msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें"
