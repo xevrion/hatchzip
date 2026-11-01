@@ -7,5 +7,5 @@ Exec=hatchzip-gui %f
 Icon=io.github.xevrion.hatchzip
 Terminal=false
 Categories=Utility;Archiving;Compression;
-MimeType=application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-xz-compressed-tar;application/vnd.rar;application/x-rar;application/x-rar-compressed;
+MimeType=application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;application/vnd.rar;application/x-rar;application/x-rar-compressed;
 Keywords=zip;7z;tar;unzip;extract;archive;split;

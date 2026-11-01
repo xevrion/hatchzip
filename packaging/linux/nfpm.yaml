@@ -25,7 +25,7 @@ description: |-
   the archive file as it goes, so it needs free space only for the files
   inside, not for the files and the archive. It checks that the extraction
   fits before changing anything and resumes after a crash. ZIP, 7z, tar,
-  tar.gz, tar.xz, RAR and split archives. Includes the hatchzip command (also as hz) and the
+  tar.gz, tar.bz2, tar.xz, RAR and split archives. Includes the hatchzip command (also as hz) and the
   HatchZip desktop app.
 vendor: HatchZip
 homepage: https://github.com/xevrion/hatchzip
