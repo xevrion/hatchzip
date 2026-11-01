@@ -93,6 +93,9 @@ Root: HKCU; Subkey: "Software\Classes\.7z\OpenWithProgids"; ValueType: string; V
 Root: HKCU; Subkey: "Software\Classes\.tar\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.tgz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.gz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.tbz2\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.tbz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.bz2\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.txz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.xz\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.001\OpenWithProgids"; ValueType: string; ValueName: "HatchZip.Archive"; ValueData: ""; Flags: uninsdeletevalue

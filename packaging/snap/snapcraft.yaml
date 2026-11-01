@@ -16,7 +16,7 @@ description: |
   - Checks that the extraction fits before it changes anything
   - Keeps a margin of free space the whole way through
   - Can be stopped or crash at any moment and continues where it left off
-  - Reads ZIP, 7z, tar, tar.gz, tar.xz and split archives
+  - Reads ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz and split archives
 
   The archive is gone when the extraction finishes, unless you choose to
   keep it. For an archive that cannot be downloaded again, HatchZip can
@@ -107,7 +107,7 @@ parts:
       # build can't open.
       desktop-file-edit \
         --set-key=MimeType \
-        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-xz-compressed-tar;' \
+        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;' \
         "$desktop"
 
       for icon in packaging/linux/icons/hicolor/*/apps/io.github.xevrion.hatchzip.*; do
