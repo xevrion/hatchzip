@@ -388,7 +388,9 @@ fn names_outside_ascii_are_refused_where_the_system_normalizes_names() {
 /// starts one, so there this has nothing to resume.
 #[test]
 fn a_run_with_names_outside_ascii_stops_where_the_system_normalizes_names() {
-    let files = kelvin_files();
+    let mut files = kelvin_files();
+    // Sorts between the two, so a run that crashes has both kinds left to do.
+    files.insert("a.txt".into(), b"other\n".to_vec());
     let tmp = TempDir::new().unwrap();
     if !session::case_sensitive(tmp.path()) {
         return;
@@ -412,6 +414,7 @@ fn a_run_with_names_outside_ascii_stops_where_the_system_normalizes_names() {
     let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
     let normalize = [("HATCHZIP_NORMALIZE_NAMES", "1")];
     for run in [
+        hatchzip(&["check", a], &normalize),
         extract(&archive, &out, &normalize),
         hatchzip(&["restore", a, "-o", o], &normalize),
     ] {
@@ -423,6 +426,50 @@ fn a_run_with_names_outside_ascii_stops_where_the_system_normalizes_names() {
     }
     assert_ok(&extract(&archive, &out, &[]));
     assert_tree(&out, &files);
+}
+
+/// A resume asks about the recorded folders before anything else, and a FIFO
+/// at one would keep a plain open waiting for a writer forever.
+#[cfg(unix)]
+#[test]
+fn a_fifo_where_a_folder_was_recorded_cannot_hang_a_resume() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = zip_of(tmp.path(), "case.zip", &case_files());
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success());
+    let recorded = out.join("game");
+    fs::rename(&recorded, tmp.path().join("aside")).unwrap();
+    let made = std::process::Command::new("mkfifo").arg(&recorded).status();
+    assert!(made.unwrap().success());
+    let mut run = std::process::Command::new(env!("CARGO_BIN_EXE_hatchzip"))
+        .args(["extract", "--keep-free", "0", "--yes", "-o"])
+        .args([&out, &archive])
+        .env("HATCHZIP_STATE_DIR", state_dir())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if let Some(status) = run.try_wait().unwrap() {
+            assert!(!status.success());
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    run.kill().unwrap();
+    panic!("the run hung on the FIFO");
 }
 
 /// The journal lists these folders and is rewritten at every commit, so

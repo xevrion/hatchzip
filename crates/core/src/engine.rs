@@ -113,9 +113,9 @@ pub struct Job {
     started: bool,
     /// Entries whose paths differ only in case. A filesystem that ignores
     /// case would put both in one place, so these depend on the destination:
-    /// see [`Job::check_case`]. Empty for a resumed run, which goes by what
-    /// its journal recorded when it began, since a tar no longer lists the
-    /// entries it has extracted.
+    /// see [`Job::check_case`]. A resumed run goes by what its journal
+    /// recorded when it began, since a tar no longer lists the entries it
+    /// has extracted.
     case_clashes: Box<CaseClashes>,
 }
 

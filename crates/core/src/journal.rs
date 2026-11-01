@@ -28,9 +28,10 @@ const VERSION: u32 = 3;
 /// other journal stays at version 3, so an older build can still finish it.
 const KEEP_VERSION: u32 = 4;
 /// An extraction that replaces existing files writes version 5, kept
-/// archive or not. Builds before `replace` existed refuse it: they would
-/// delete the person's files at the paths of entries left to do, and a
-/// restore would not put the replaced ones back.
+/// archive or not, unless a later version below takes over. Builds before
+/// `replace` existed refuse it: they would delete the person's files at the
+/// paths of entries left to do, and a restore would not put the replaced
+/// ones back.
 const REPLACE_VERSION: u32 = 5;
 /// One that keeps some existing files, or both copies of them, writes
 /// version 6. A build before that would finish it by deleting the files the
@@ -511,6 +512,7 @@ mod tests {
         }
         assert!(Journal::load(&write_with(&dir, 7, "")).is_err());
         assert!(Journal::load(&write_with(&dir, 3, r#","case_folders":["a"]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, r#","case_beyond_ascii":true"#)).is_err());
         assert!(Journal::load(&write_with(&dir, 7, r#","case_folders":["../a"]"#)).is_err());
 
         fs::remove_dir_all(&dir).unwrap();
