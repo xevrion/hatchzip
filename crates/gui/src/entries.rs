@@ -208,6 +208,7 @@ impl Entries {
                         human(n.size).into()
                     },
                     dir: n.dir,
+                    link: n.link,
                     expanded: n.expanded,
                     depth,
                 }
@@ -264,6 +265,7 @@ impl Model for EntriesModel {
                 human(n.size).into()
             },
             dir: n.dir,
+            link: n.link,
             expanded: n.expanded,
             depth,
         })
@@ -395,6 +397,10 @@ mod tests {
         ]);
         assert_eq!(tree.rows()[0].size.as_str(), human(10));
         assert_eq!(tree.rows()[2].size.as_str(), "link");
+        let model = EntriesModel::new(tree);
+        assert!(!model.row_data(0).unwrap().link);
+        assert!(!model.row_data(1).unwrap().link);
+        assert!(model.row_data(2).unwrap().link);
     }
 
     #[test]
