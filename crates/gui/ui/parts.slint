@@ -132,15 +132,18 @@ export component SpacePanel inherits VerticalLayout {
             value: root.plan.meter;
             bad: !root.plan.fits;
         }
+        // Wrapped messages contribute their full height to the scroll area.
         Text {
             text: root.plan.verdict;
             wrap: word-wrap;
+            height: self.preferred-height;
             font-weight: 600;
             color: root.plan.fits ? Palette.foreground : Theme.danger;
         }
         if root.plan.note != "": Text {
             text: root.plan.note;
             wrap: word-wrap;
+            height: self.preferred-height;
             color: Theme.muted;
             font-size: Theme.small-size;
         }

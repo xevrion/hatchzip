@@ -1,4 +1,4 @@
-import { Button, CheckBox, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
 import { Theme, Line, VLine, FolderIcon, FileIcon, DropIcon } from "theme.slint";
 import { Phase, PlanView, TaskView, SpacePanel, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt } from "parts.slint";
 
@@ -475,9 +475,17 @@ export component MainWindow inherits Window {
                 toggle(row, action) => { root.toggle-entry(row, action); }
             }
             VLine { }
-            SpacePanel {
+            // The plan can outgrow a small window; its content must not
+            // push the footer's controls below the window.
+            space-scroll := ScrollView {
                 width: 260px;
-                plan: root.plan;
+                horizontal-scrollbar-policy: always-off;
+                content-width: self.visible-width;
+                content-height: plan-panel.preferred-height;
+                plan-panel := SpacePanel {
+                    width: space-scroll.visible-width;
+                    plan: root.plan;
+                }
             }
         }
         Line { }
@@ -536,16 +544,6 @@ export component MainWindow inherits Window {
                     color: root.keep-free-valid ? Palette.foreground : Theme.danger;
                 }
                 Rectangle {
-                    width: 16px;
-                }
-                if root.mode == Mode.fresh: CheckBox {
-                    text: @tr("Verify archive before extracting");
-                    checked <=> root.verify-first;
-                    toggled => {
-                        root.verify-first-toggled();
-                    }
-                }
-                Rectangle {
                     horizontal-stretch: 1;
                 }
             }
@@ -556,15 +554,23 @@ export component MainWindow inherits Window {
                 Rectangle {
                     width: 112px;
                 }
-                CheckBox {
-                    text: @tr("Remove the archive during extraction");
-                    checked <=> root.remove-archive;
-                    toggled => {
-                        root.remove-archive-toggled();
-                    }
-                }
-                Rectangle {
+                VerticalLayout {
+                    spacing: 12px;
                     horizontal-stretch: 1;
+                    CheckBox {
+                        text: @tr("Verify archive before extracting");
+                        checked <=> root.verify-first;
+                        toggled => {
+                            root.verify-first-toggled();
+                        }
+                    }
+                    CheckBox {
+                        text: @tr("Remove the archive during extraction");
+                        checked <=> root.remove-archive;
+                        toggled => {
+                            root.remove-archive-toggled();
+                        }
+                    }
                 }
             }
 
