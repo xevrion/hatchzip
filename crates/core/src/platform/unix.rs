@@ -71,8 +71,8 @@ pub fn local_time(
     minute: u8,
     second: u8,
 ) -> Option<SystemTime> {
-    // SAFETY: `tm` is plain integers, for which all zeros is valid, and on
-    // some systems has more fields than these.
+    // SAFETY: `tm` is integers and a zone name pointer, which may be null,
+    // and on some systems has more fields than these.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     tm.tm_year = i32::from(year) - 1900;
     tm.tm_mon = i32::from(month) - 1;
@@ -83,10 +83,12 @@ pub fn local_time(
     // Have mktime work out whether daylight saving applied at that date.
     tm.tm_isdst = -1;
     // SAFETY: `tm` is valid and only used for this call.
-    match unsafe { libc::mktime(&mut tm) } {
-        -1 => None,
-        secs => crate::fsutil::from_epoch_secs(secs as i64),
+    let secs: libc::time_t = unsafe { libc::mktime(&mut tm) };
+    // A failure, since a ZIP time can't be the second before 1970.
+    if secs == -1 {
+        return None;
     }
+    crate::fsutil::from_epoch_secs(secs as i64)
 }
 
 /// How many names the file has on its filesystem.

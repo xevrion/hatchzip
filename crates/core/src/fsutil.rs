@@ -245,9 +245,10 @@ pub fn from_filetime(ticks: u64) -> Option<SystemTime> {
 mod tests {
     use super::*;
 
-    /// Whatever the zone here, a local time is within 14 hours of the same
-    /// clock reading in UTC. The exact offsets are tested end to end, where
-    /// a test can set the zone.
+    /// Only that the conversion works on this system at all: whatever the
+    /// zone here, a local time is within 14 hours of the same clock reading
+    /// in UTC, so reading it as UTC would pass too. The offsets are tested
+    /// end to end, where a test can set the zone, which is not on Windows.
     #[test]
     fn zip_times_are_read_in_a_time_zone() {
         let noon = UNIX_EPOCH + Duration::from_secs(1_592_222_400); // 2020-06-15 12:00:00 UTC

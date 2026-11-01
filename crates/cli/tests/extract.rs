@@ -605,7 +605,7 @@ fn reads_the_dos_time_in_the_local_zone() {
     let mut w = ZipWriter::new(Cursor::new(Vec::new()));
     for (name, month) in [("summer.txt", 6), ("winter.txt", 1)] {
         let noon = zip::DateTime::from_date_and_time(2020, month, 15, 12, 0, 0).unwrap();
-        let opts = zip::write::FullFileOptions::default().last_modified_time(noon);
+        let opts = SimpleFileOptions::default().last_modified_time(noon);
         w.start_file(name, opts).unwrap();
         w.write_all(b"a").unwrap();
     }

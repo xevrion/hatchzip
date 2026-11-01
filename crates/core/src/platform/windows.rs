@@ -239,7 +239,9 @@ pub fn local_time(
     second: u8,
 ) -> Option<std::time::SystemTime> {
     use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
-    use windows_sys::Win32::System::Time::{SystemTimeToFileTime, TzSpecificLocalTimeToSystemTime};
+    use windows_sys::Win32::System::Time::{
+        SystemTimeToFileTime, TzSpecificLocalTimeToSystemTimeEx,
+    };
 
     let local = SYSTEMTIME {
         wYear: year,
@@ -251,11 +253,14 @@ pub fn local_time(
         wSecond: second.into(),
         wMilliseconds: 0,
     };
-    let mut utc: SYSTEMTIME = unsafe { std::mem::zeroed() };
-    if unsafe { TzSpecificLocalTimeToSystemTime(std::ptr::null(), &local, &mut utc) } == 0 {
+    let mut utc = SYSTEMTIME::default();
+    // SAFETY: both pointers are to locals. A null zone means the active one,
+    // and the Ex variant uses its rules for that year, not only today's.
+    if unsafe { TzSpecificLocalTimeToSystemTimeEx(std::ptr::null(), &local, &mut utc) } == 0 {
         return None;
     }
-    let mut ticks: FILETIME = unsafe { std::mem::zeroed() };
+    let mut ticks = FILETIME::default();
+    // SAFETY: both pointers are to locals.
     if unsafe { SystemTimeToFileTime(&utc, &mut ticks) } == 0 {
         return None;
     }
