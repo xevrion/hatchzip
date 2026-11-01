@@ -20,7 +20,8 @@ use hatchzip_gui::args::{TaskArgs, TaskKind};
 use hatchzip_gui::backend::Drops;
 use hatchzip_gui::settings::Settings;
 use hatchzip_gui::{
-    Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window, task_window,
+    MainWindow, Mode, Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window,
+    task_window,
 };
 use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
 use slint::language::ColorScheme;
@@ -264,19 +265,21 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         Settings::load_from(&settings_file).keep_free == 0
     });
 
-    ui.invoke_test();
+    ui.window().set_size(LogicalSize::new(640.0, 440.0));
+    click_control(&ui, "Test");
     let w = ui.as_weak();
     wait_until("the test", move || {
         w.unwrap().get_task().phase == Phase::Done
     });
     assert!(ui.get_task().message == "Test passed: 35 entries verified.");
+    inside_window(&ui, "Back");
     shot(ui.window(), &format!("{tag}-4-tested"));
     ui.invoke_back();
     assert_eq!(ui.get_task().phase, Phase::Idle);
 
     ui.set_verify_first(true);
     ui.invoke_verify_first_toggled();
-    ui.invoke_extract();
+    click_control(&ui, "Extract");
     let w = ui.as_weak();
     wait_until("the extraction", move || {
         w.unwrap().get_task().phase == Phase::Done
@@ -296,6 +299,8 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         ui.get_task().detail,
         format!("Destination: {}", out.display())
     );
+    inside_window(&ui, "Open folder");
+    inside_window(&ui, "Open another archive…");
     shot(ui.window(), &format!("{tag}-5-done"));
 
     ui.invoke_about();
@@ -916,6 +921,169 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
     ui.hide().unwrap();
 }
 
+fn inside_window(ui: &MainWindow, label: &str) -> ElementHandle {
+    let _ = ui.window().take_snapshot().unwrap();
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .next()
+        .unwrap_or_else(|| panic!("missing control: {label}"));
+    let p = element.absolute_position();
+    let s = element.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        s.width > 0.0
+            && s.height > 0.0
+            && p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "{label}: position {p:?}, size {s:?}, window {window:?}"
+    );
+    element
+}
+
+fn click_control(ui: &MainWindow, label: &str) {
+    let button = inside_window(ui, label);
+    let p = button.absolute_position();
+    let s = button.size();
+    let position = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position,
+        button: PointerEventButton::Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position,
+        button: PointerEventButton::Left,
+    });
+}
+
+fn scroll_plan(ui: &MainWindow, pane: &ElementHandle, delta: f32) {
+    let p = pane.absolute_position();
+    let s = pane.size();
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0),
+    });
+    pane.scroll(0.0, delta);
+    let _ = ui.window().take_snapshot().unwrap();
+}
+
+fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
+    let ui = MainWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.set_screen(Screen::Opened);
+    ui.set_archive_name("sample.zip".into());
+    ui.set_output("C:/Games/Northwind/destination".into());
+    let plan = PlanView {
+        ready: true,
+        fits: true,
+        free: "40 GB".into(),
+        in_place: "2 GB".into(),
+        normal: "8 GB".into(),
+        keep: "2 GB".into(),
+        after: "38 GB".into(),
+        verdict: "Sufficient disk space".into(),
+        note: "There is also enough space to keep the archive.".into(),
+        ..Default::default()
+    };
+    ui.set_plan(plan.clone());
+    let clicked = Rc::new(Cell::new(false));
+    let tested = clicked.clone();
+    ui.on_test(move || tested.set(true));
+    ui.show().unwrap();
+    for (size, width, height) in [("minimum", 640.0, 440.0), ("normal", 980.0, 660.0)] {
+        ui.window().set_size(LogicalSize::new(width, height));
+        ui.set_task(TaskView::default());
+        ui.set_mode(Mode::Fresh);
+        let _ = ui.window().take_snapshot().unwrap();
+        for label in [
+            "Test",
+            "Extract",
+            "Browse…",
+            "Verify archive before extracting",
+            "Remove the archive during extraction",
+        ] {
+            inside_window(&ui, label);
+        }
+        clicked.set(false);
+        click_control(&ui, "Test");
+        assert!(
+            clicked.get(),
+            "the visible Test button must receive a click"
+        );
+        shot(ui.window(), &format!("{tag}-{size}-opened"));
+        let pane = ElementHandle::find_by_element_id(&ui, "MainWindow::space-scroll")
+            .next()
+            .unwrap();
+        scroll_plan(&ui, &pane, -1000.0);
+        let verdict = ElementHandle::find_by_accessible_label(&ui, "Sufficient disk space")
+            .next()
+            .expect("scrolling reveals the plan verdict");
+        assert!(verdict.absolute_position().y >= pane.absolute_position().y - 0.5);
+        assert!(
+            verdict.absolute_position().y + verdict.size().height
+                <= pane.absolute_position().y + pane.size().height + 0.5
+        );
+        inside_window(&ui, "Extract");
+        shot(ui.window(), &format!("{tag}-{size}-plan-scrolled"));
+
+        // A longer plan must stay scrollable without displacing the actions.
+        let long_note = "A longer disk-space explanation. ".repeat(20);
+        ui.set_plan(PlanView {
+            note: long_note.as_str().into(),
+            ..plan.clone()
+        });
+        inside_window(&ui, "Extract");
+        scroll_plan(&ui, &pane, -10000.0);
+        let note = ElementHandle::find_by_accessible_label(&ui, &long_note)
+            .next()
+            .unwrap();
+        shot(ui.window(), &format!("{tag}-{size}-long-plan"));
+        assert!(
+            note.absolute_position().y + note.size().height
+                <= pane.absolute_position().y + pane.size().height + 0.5,
+            "note {:?} {:?}; pane {:?} {:?}",
+            note.absolute_position(),
+            note.size(),
+            pane.absolute_position(),
+            pane.size()
+        );
+        inside_window(&ui, "Test");
+        ui.set_plan(plan.clone());
+        for (mode, labels) in [
+            (Mode::Resume, vec!["Resume extraction", "Restore archive"]),
+            (Mode::Orphan, vec!["Finish"]),
+        ] {
+            ui.set_mode(mode);
+            for label in labels {
+                inside_window(&ui, label);
+            }
+        }
+        ui.set_mode(Mode::Fresh);
+        for (phase, label, can_retry, can_open_folder) in [
+            (Phase::Working, "Pause", false, false),
+            (Phase::Paused, "Resume", false, false),
+            (Phase::Failed, "Retry", true, false),
+            (Phase::NoSpace, "Check again", true, false),
+            (Phase::Done, "Open folder", false, true),
+        ] {
+            ui.set_task(TaskView {
+                phase,
+                can_retry,
+                can_open_folder,
+                heading: "Extraction progress".into(),
+                amounts: "1 GB of 2 GB".into(),
+                rate: "100 MB/s".into(),
+                archive_left: "1 GB remaining".into(),
+                message: "Progress is saved; the extraction can be resumed.".into(),
+                ..Default::default()
+            });
+            inside_window(&ui, label);
+        }
+    }
+    ui.hide().unwrap();
+}
+
 #[test]
 fn windows_end_to_end() {
     let data = tempfile::tempdir().unwrap();
@@ -932,6 +1100,7 @@ fn windows_end_to_end() {
     .unwrap();
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
+        minimum_layout_flow(scheme, tag);
         main_window_flow(scheme, tag);
         keep_flow(scheme, tag);
         task_window_flow(scheme, tag);
