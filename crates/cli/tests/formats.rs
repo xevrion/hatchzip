@@ -400,6 +400,11 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
         ),
         ("game.tar.bz2", &b"BZh9pretend bzip2"[..], "bzip2"),
         (
+            "zeros.tar.bz2",
+            &[0; 32][..],
+            "does not start with a bzip2 stream",
+        ),
+        (
             "game.tar.gz",
             &b"\x1F\x8B\x08\x00pretend gzip"[..],
             "compressed",

@@ -39,6 +39,8 @@ const fn magic_pairs() -> [u64; 1024] {
 /// Trial decodes allowed per block before it is refused as damaged.
 const MAX_CANDIDATES: u32 = 64;
 
+const NO_STREAM: &str = "the file does not start with a bzip2 stream; the archive is damaged and was not changed. Download it again";
+
 fn find_magic(bytes: &[u8], base: u64, from_bit: u64) -> Option<(u64, u64)> {
     let mut next = from_bit.max(base * 8);
     if bytes.len() < 6 {
@@ -391,7 +393,13 @@ impl<R: Read + Seek> Bzip2<R> {
     }
 
     fn header(&mut self) -> Result<bool> {
+        // The end of the file or zero padding only ends an archive after a
+        // stream, or an empty or zeroed file would pass as an empty archive.
+        let none_yet = self.input.bit == 0;
         if self.input.bit == self.input.end * 8 {
+            if none_yet {
+                bail!(NO_STREAM);
+            }
             return Ok(false);
         }
         let at = self.input.bit / 8;
@@ -400,6 +408,9 @@ impl<R: Read + Seek> Bzip2<R> {
         self.input.discard_before(at);
         let first = self.input.take(8)?;
         if first == 0 {
+            if none_yet {
+                bail!(NO_STREAM);
+            }
             // Check zero padding a chunk at a time and drop each one, so a
             // long padded tail costs no more memory than one chunk.
             while self.input.bit < self.input.end * 8 {
@@ -416,6 +427,9 @@ impl<R: Read + Seek> Bzip2<R> {
             return Ok(false);
         }
         if first != u64::from(b'B') || self.input.take(16)? != 0x5a68 {
+            if none_yet {
+                bail!(NO_STREAM);
+            }
             bail!(
                 "unexpected data follows the compressed data at byte {at}; the archive is damaged and was not changed. Download it again"
             );
@@ -855,6 +869,17 @@ mod tests {
             decode(&mut decoder(&bytes, &BzPoint::start()), 65536).unwrap(),
             zeros
         );
+    }
+
+    #[test]
+    fn a_file_without_a_first_stream_is_refused() {
+        for bytes in [&[][..], &[0; 32][..], &b"PK\x03\x04 not bzip2"[..]] {
+            let err = decode(&mut decoder(bytes, &BzPoint::start()), 65536).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("does not start with a bzip2 stream"),
+                "{err:#}"
+            );
+        }
     }
 
     #[test]
