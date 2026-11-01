@@ -30,4 +30,12 @@ mod tests {
     fn linux_temp_dirs_can_punch() {
         assert!(crate::fsutil::can_punch(&std::env::temp_dir()));
     }
+
+    /// Those filesystems keep names apart unless made not to, so a check
+    /// that says otherwise is broken, and the tests that extract names that
+    /// differ only in case would quietly test the refusal instead.
+    #[test]
+    fn linux_temp_dirs_keep_case_apart() {
+        assert!(super::case_sensitive(&std::env::temp_dir()));
+    }
 }

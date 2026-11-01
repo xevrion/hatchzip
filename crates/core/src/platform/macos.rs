@@ -20,6 +20,16 @@ pub fn sync_batch(_output: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Whether `dir` is known to keep apart names that differ only in case.
+pub fn case_sensitive(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+
+    let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else {
+        return false;
+    };
+    unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+}
+
 fn block_size(file: &File) -> io::Result<u64> {
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstatfs(file.as_raw_fd(), &mut st) } != 0 {

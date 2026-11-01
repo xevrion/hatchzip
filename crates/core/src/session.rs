@@ -30,6 +30,12 @@ pub enum State {
     Orphan(Journal),
 }
 
+/// Whether names that differ only in case can both exist in `dir`, as far as
+/// HatchZip knows.
+pub fn case_sensitive(dir: &Path) -> bool {
+    crate::platform::case_sensitive(dir)
+}
+
 /// `writable` is false for anything that only looks, so it works on
 /// read-only media and never takes the lock. For a fresh extraction the
 /// output folder may already hold other files, but no folder where the
@@ -82,6 +88,9 @@ pub fn open(
         }
         let job = Job::resume(&journal, tail, writable, password, reads.clone())?;
         check_no_links_on_the_way(&job, &journal.output)?;
+        if writable {
+            job.check_case(&journal.output)?;
+        }
         return Ok(State::Resume(job, journal));
     }
     let job = Job::open(primary, writable, password, reads.clone())?;
@@ -97,6 +106,7 @@ pub fn open(
     if writable {
         check_no_links_on_the_way(&job, &output)?;
         check_collisions(&job, &output)?;
+        job.check_case(&output)?;
     }
     Ok(State::Fresh(job, output))
 }
@@ -393,6 +403,7 @@ pub fn retarget(job: &Job, out: &Path) -> Result<PathBuf> {
     check_path_lengths(job, &out)?;
     check_no_links_on_the_way(job, &out)?;
     check_collisions(job, &out)?;
+    job.check_case(&out)?;
     Ok(out)
 }
 
@@ -522,6 +533,7 @@ pub fn plan(
     keep_free: u64,
     keep_archive: bool,
 ) -> Result<SpacePlan> {
+    job.check_case(out)?;
     let reclaims = fsutil::same_filesystem(job.storage.primary(), out);
     let stale: u64 =
         job.uncommitted(out).iter().map(|(_, n)| n).sum::<u64>() + job.past_resume_point(out);
@@ -579,6 +591,7 @@ pub fn begin(
     replace: Option<&crate::replace::Choices>,
 ) -> Result<Journal> {
     // Front ends ask earlier; the folder may have changed since.
+    job.check_case(&output)?;
     let found = existing(job, &output)?;
     if let Some(first) = found.first()
         && replace.is_none()
