@@ -63,6 +63,7 @@ Debug builds read these environment variables. Release builds ignore them.
 | `HATCHZIP_CRASH_AFTER=<n>` | Let that point pass `n` times before aborting |
 | `HATCHZIP_STREAM_STEP=<bytes>` | Make a resume point every `<bytes>` of output instead of 256 MiB, and stream every file of at least twice that, even when it would fit whole |
 | `HATCHZIP_NO_PUNCH=1` | Act as if the filesystem couldn't punch holes, as on FAT32 and exFAT |
+| `HATCHZIP_IGNORE_CASE=1` | Act as if no folder were known to keep apart names that differ only in case |
 
 ### Testing against a nearly full disk
 

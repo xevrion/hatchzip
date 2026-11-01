@@ -31,11 +31,13 @@ mod tests {
         assert!(crate::fsutil::can_punch(&std::env::temp_dir()));
     }
 
-    /// Those filesystems keep names apart unless made not to, so a check
-    /// that says otherwise is broken, and the tests that extract names that
-    /// differ only in case would quietly test the refusal instead.
+    /// CI runs on ext4, so there a no would be a bug, and the tests that
+    /// extract names that differ only in case would quietly test the refusal
+    /// instead. A build root on overlayfs or ZFS is rightly unknown.
     #[test]
-    fn linux_temp_dirs_keep_case_apart() {
-        assert!(super::case_sensitive(&std::env::temp_dir()));
+    fn ci_temp_dirs_keep_case_apart() {
+        if std::env::var_os("HATCHZIP_EXPECT_PUNCH").is_some() {
+            assert!(super::case_sensitive(&std::env::temp_dir()));
+        }
     }
 }

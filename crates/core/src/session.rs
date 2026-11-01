@@ -30,6 +30,26 @@ pub enum State {
     Orphan(Journal),
 }
 
+/// A run recorded where its archive has names that differ only in case, so
+/// that this can ask again: the output folder can have moved to a filesystem
+/// that ignores case, and a tar no longer lists the entries it has extracted.
+/// There, an entry left to do resolves to its twin that is already out, which
+/// a resume would overwrite and restore would delete as its own.
+pub(crate) fn check_recorded_case(journal: &Journal) -> Result<()> {
+    let folders = journal.case_folders.iter().map(PathBuf::as_path);
+    if let Some((_, nearest)) =
+        crate::engine::first_not_apart(&journal.output, folders, crate::engine::keeps_case_apart)
+    {
+        bail!(
+            "this extraction has names that differ only in case, and {} is not known to keep \
+             such names apart, so going on here could lose files. Move the output folder back \
+             to a case-sensitive filesystem and run the command again",
+            nearest.display()
+        );
+    }
+    Ok(())
+}
+
 /// Whether names that differ only in case can both exist in `dir`, as far as
 /// HatchZip knows.
 pub fn case_sensitive(dir: &Path) -> bool {
@@ -57,6 +77,9 @@ pub fn open(
         // Only a writable open deletes or writes anything in the folder.
         if writable || output.is_some() {
             check_output(&journal, primary, output.as_deref(), "extract")?;
+        }
+        if writable {
+            check_recorded_case(&journal)?;
         }
         if journal.restoring.is_some() {
             if !writable {
@@ -88,9 +111,6 @@ pub fn open(
         }
         let job = Job::resume(&journal, tail, writable, password, reads.clone())?;
         check_no_links_on_the_way(&job, &journal.output)?;
-        if writable {
-            job.check_case(&journal.output)?;
-        }
         return Ok(State::Resume(job, journal));
     }
     let job = Job::open(primary, writable, password, reads.clone())?;
@@ -643,6 +663,7 @@ pub fn begin(
         total_size: job.remaining_size(),
         keep: keep_archive,
         replace,
+        case_folders: job.case_folders(),
     };
     Journal::create(paths, &job.storage, plan)
 }

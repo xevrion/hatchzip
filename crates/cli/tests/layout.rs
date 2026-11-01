@@ -175,10 +175,11 @@ fn case_builders() -> Vec<(&'static str, Build)> {
 /// Two files in every format, as a Linux source tree has them.
 #[test]
 fn names_differing_only_in_case_depend_on_the_destination() {
-    for (_, build) in case_builders() {
+    for (name, build) in case_builders() {
         let files = case_files();
         let tmp = TempDir::new().unwrap();
         let archive = build(tmp.path(), &files);
+        eprintln!("{name}");
         assert_extracts_where_case_is_kept(&archive, |out| assert_tree(out, &files));
     }
 }
@@ -206,7 +207,7 @@ fn keeping_and_resuming_names_differing_only_in_case() {
     if !session::case_sensitive(tmp.path()) {
         return;
     }
-    for (_, build) in case_builders() {
+    for (name, build) in case_builders() {
         let tmp = TempDir::new().unwrap();
         let archive = build(tmp.path(), &files);
         let kept = tmp.path().join("kept");
@@ -230,8 +231,9 @@ fn keeping_and_resuming_names_differing_only_in_case() {
                 ("HATCHZIP_CRASH_AFTER", "1"),
             ],
         );
-        // A small enough `.tar.gz` is one unit, with no point to crash at.
-        if !crashed.status.success() {
+        // A `.tar.gz` this small is one unit, with no point to crash at.
+        if name != "tar.gz" {
+            assert!(!crashed.status.success(), "{name} should have crashed");
             assert_ok(&extract(&archive, &out, &[]));
         }
         assert_tree(&out, &files);
@@ -239,9 +241,118 @@ fn keeping_and_resuming_names_differing_only_in_case() {
     }
 }
 
+/// Every file below `dir`, for showing that a refusal left them alone.
+fn files_below(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            found.extend(files_below(&path));
+        } else {
+            found.push((path.clone(), fs::read(&path).unwrap()));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Crashes a run after its first batch, then has it find a folder that may
+/// ignore case, as if the output had moved to another disk. An entry left to
+/// do would resolve to its twin that is already out, so a resume and a
+/// restore must both stop before they touch anything, and a tar no longer
+/// lists that twin, so only the journal can say so. Back on a disk that keeps
+/// case, the run finishes.
+fn assert_refused_where_case_may_be_ignored(archive: &Path, finished: impl Fn(&Path)) {
+    let out = archive.with_file_name("out");
+    let crashed = extract(
+        archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success(), "it should have crashed");
+    let (before, written) = (snapshot(archive), files_below(&out));
+    let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+    let ignore = [("HATCHZIP_IGNORE_CASE", "1")];
+    for run in [
+        extract(archive, &out, &ignore),
+        hatchzip(&["restore", a, "-o", o], &ignore),
+    ] {
+        assert_eq!(run.status.code(), Some(1), "{run:?}");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains("differ only in case"), "{stderr}");
+        assert_unchanged(&before);
+        assert_eq!(files_below(&out), written);
+    }
+    assert_ok(&extract(archive, &out, &[]));
+    finished(&out);
+    assert_consumed(archive);
+}
+
+#[test]
+fn a_resume_or_restore_where_case_may_be_ignored_is_refused() {
+    let files = case_files();
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    for (name, build) in case_builders() {
+        // A `.tar.gz` this small has no point to crash at.
+        if name != "tar.gz" {
+            let tmp = TempDir::new().unwrap();
+            let archive = build(tmp.path(), &files);
+            eprintln!("{name}");
+            assert_refused_where_case_may_be_ignored(&archive, |out| assert_tree(out, &files));
+        }
+    }
+}
+
+/// A file and a folder clash too, and only a fresh archive lists both.
+#[test]
+fn a_resume_of_a_file_differing_only_in_case_from_a_folder_is_refused() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let bytes = tar_bytes(&[
+        Tar::File("D", b"file\n"),
+        Tar::File("d/inner.txt", b"inner\n"),
+    ]);
+    let archive = write(tmp.path(), "case.tar", bytes);
+    assert_refused_where_case_may_be_ignored(&archive, |out| {
+        assert_eq!(fs::read(out.join("D")).unwrap(), b"file\n");
+    });
+}
+
+/// An older build never asks, so it must refuse to touch such a run.
+#[test]
+fn a_run_with_names_differing_only_in_case_records_their_folders() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = zip_of(tmp.path(), "case.zip", &case_files());
+    let crashed = extract(
+        &archive,
+        &tmp.path().join("out"),
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success());
+    let journal: serde_json::Value =
+        serde_json::from_slice(&fs::read(&side_files(&archive)[0]).unwrap()).unwrap();
+    assert_eq!(journal["version"], 7);
+    assert_eq!(journal["case_folders"], serde_json::json!(["game"]));
+}
+
 /// A case-insensitive filesystem would put both in one place: a link where
 /// the other entry needs a folder.
-#[cfg(unix)]
 #[test]
 fn zip_link_differing_only_in_case_depends_on_the_destination() {
     let tmp = TempDir::new().unwrap();
@@ -280,6 +391,8 @@ fn folders_differing_only_in_case_extract_everywhere() {
     let archive = write(tmp.path(), "case.tar", bytes);
     let out = tmp.path().join("out");
     assert_ok(&extract(&archive, &out, &[]));
+    assert_eq!(fs::read(out.join("D/a.txt")).unwrap(), b"a\n");
+    assert_eq!(fs::read(out.join("d/b.txt")).unwrap(), b"b\n");
     assert_consumed(&archive);
 }
 

@@ -27,8 +27,7 @@
 //! truncates, punches or deletes: its storage is protected, and the run
 //! frees nothing, exactly like an output on another disk.
 
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -114,43 +113,56 @@ pub struct Job {
     started: bool,
     /// Entries whose paths differ only in case. A filesystem that ignores
     /// case would put both in one place, so these depend on the destination:
-    /// see [`Job::check_case`].
-    case_clashes: Vec<(PathBuf, PathBuf)>,
+    /// see [`Job::check_case`]. Empty for a resumed run, which goes by what
+    /// its journal recorded when it began, since a tar no longer lists the
+    /// entries it has extracted.
+    case_clashes: Box<CaseClashes>,
 }
 
-/// The entries in `units` whose paths are the same ignoring case, in pairs
-/// that cover every folder where two of them meet: sorted, a path shares the
-/// most with its neighbours.
-fn case_clashes(units: &[Unit]) -> Vec<(PathBuf, PathBuf)> {
-    let mut first: HashMap<String, &Path> = HashMap::new();
-    let mut groups: HashMap<String, Vec<&Path>> = HashMap::new();
-    for item in units.iter().flat_map(|u| &u.items) {
-        if item.kind == Kind::Dir {
-            continue;
-        }
-        let key = item.path.to_string_lossy().to_lowercase();
-        match first.entry(key) {
-            Entry::Vacant(e) => {
-                e.insert(&item.path);
+/// How many folders of one archive may hold names that differ only in case.
+/// A run lists them in its journal, which is rewritten at every commit, and a
+/// real tree has a handful.
+const MAX_CASE_FOLDERS: usize = 1000;
+
+/// The entries of a fresh archive whose paths differ only in case.
+#[derive(Default)]
+struct CaseClashes {
+    /// One pair for each folder where such names meet, as a path inside the
+    /// output folder.
+    met_in: BTreeMap<PathBuf, (PathBuf, PathBuf)>,
+    /// A pair this system may make one file wherever it lands.
+    merged: Option<(PathBuf, PathBuf)>,
+}
+
+impl CaseClashes {
+    /// `names` is every file, link and folder, sorted: the path with case
+    /// folded, the path, and whether it is a file or link.
+    fn of(names: &[(String, &Path, bool)]) -> Self {
+        let mut clashes = Self::default();
+        for group in names.chunk_by(|a, b| a.0 == b.0) {
+            // Folders alone just merge on a filesystem that ignores case.
+            if !group.iter().any(|n| n.2) {
+                continue;
             }
-            Entry::Occupied(e) if *e.get() != item.path => {
-                let group = groups.entry(e.key().clone()).or_default();
-                group.push(e.get());
-                group.push(&item.path);
+            // Sorted, a path has the most in common with its neighbours, so
+            // these pairs reach every folder where two of the paths meet.
+            for pair in group.windows(2) {
+                let (a, b) = (pair[0].1, pair[1].1);
+                clashes
+                    .met_in
+                    .entry(meeting_folder(a, b))
+                    .or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
+                if platform::NORMALIZES_NAMES
+                    && !(a.to_string_lossy().is_ascii() && b.to_string_lossy().is_ascii())
+                {
+                    clashes
+                        .merged
+                        .get_or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
+                }
             }
-            // The same path twice is refused for what it is.
-            Entry::Occupied(_) => {}
         }
+        clashes
     }
-    let mut pairs = Vec::new();
-    for mut group in groups.into_values() {
-        group.sort_unstable();
-        group.dedup();
-        for pair in group.windows(2) {
-            pairs.push((pair[0].to_path_buf(), pair[1].to_path_buf()));
-        }
-    }
-    pairs
 }
 
 /// The folder holding the first names that differ between `a` and `b`, as a
@@ -164,6 +176,43 @@ fn meeting_folder(a: &Path, b: &Path) -> PathBuf {
         .collect()
 }
 
+/// Whether `dir` is known to keep apart names that differ only in case. A
+/// debug build can be told it isn't, so that tests reach the refusals on a
+/// disk that does.
+pub(crate) fn keeps_case_apart(dir: &Path) -> bool {
+    test_knob("HATCHZIP_IGNORE_CASE").is_none() && platform::case_sensitive(dir)
+}
+
+/// The first of `folders`, paths inside `out`, whose names `apart` can't
+/// vouch for, with the folder it asked. A folder that doesn't exist yet takes
+/// after the nearest one above it that does, which can be a mount of its own.
+pub(crate) fn first_not_apart<'a>(
+    out: &Path,
+    folders: impl IntoIterator<Item = &'a Path>,
+    apart: impl Fn(&Path) -> bool,
+) -> Option<(&'a Path, PathBuf)> {
+    let mut known = HashMap::new();
+    for folder in folders {
+        let nearest = if folder.as_os_str().is_empty() {
+            fsutil::existing_ancestor(out)
+        } else {
+            fsutil::existing_ancestor(&out.join(folder))
+        };
+        let ok = match known.get(&nearest) {
+            Some(ok) => *ok,
+            None => {
+                let ok = apart(&nearest);
+                known.insert(nearest.clone(), ok);
+                ok
+            }
+        };
+        if !ok {
+            return Some((folder, nearest));
+        }
+    }
+    None
+}
+
 impl Job {
     /// `password` is only needed for encrypted archives. A missing one shows
     /// up as [`archive::PasswordNeeded`], from here or from
@@ -175,7 +224,7 @@ impl Job {
         reads: Arc<Reads>,
     ) -> Result<Self> {
         let mut job = Self::open_as_is(path, writable, password, reads)?;
-        job.check_layout()?;
+        job.case_clashes = Box::new(job.check_layout()?);
         Ok(job)
     }
 
@@ -264,9 +313,6 @@ impl Job {
 
     fn build(storage: Arc<Storage>, opened: archive::Opened, top: u64) -> Result<Self> {
         let mut units = opened.units;
-        // Before the extracted units go: where the index still lists them,
-        // the file a resume is about to write may clash with one of those.
-        let case_clashes = case_clashes(&units);
         // Units from `top` up were extracted by an earlier run. Ones that
         // start at or past the end of the file never existed, and dropping
         // them quietly would lose their files with the archive.
@@ -328,37 +374,50 @@ impl Job {
             punch: OnceLock::new(),
             resume: None,
             started: false,
-            case_clashes,
+            case_clashes: Box::default(),
         })
     }
 
     /// Refuses entries that differ only in case, unless the folder where
     /// their names meet is known to keep them apart. Anywhere else they
-    /// would be one file, and would race inside a parallel batch. That folder
-    /// may not exist yet, and takes after the nearest one above it that does,
-    /// which may be on another filesystem than `out`.
-    ///
-    /// Nothing about this is kept: a resume decides again, since the output
-    /// folder can have moved to another filesystem since the run started.
-    pub fn check_case(&self, out: &Path) -> Result<()> {
-        let mut known = HashMap::new();
-        for (a, b) in &self.case_clashes {
-            let folder = fsutil::existing_ancestor(&out.join(meeting_folder(a, b)));
-            let apart = *known
-                .entry(folder.clone())
-                .or_insert_with(|| platform::case_sensitive(&folder));
-            if !apart {
-                bail!(
-                    "'{}' and '{}' differ only in case, and {} is not known to keep such names \
-                     apart; extraction refused. Choose a destination on a case-sensitive \
-                     filesystem",
-                    a.display(),
-                    b.display(),
-                    folder.display()
-                );
-            }
+    /// would be one file, and would race inside a parallel batch.
+    pub(crate) fn check_case(&self, out: &Path) -> Result<()> {
+        if let Some((a, b)) = &self.case_clashes.merged {
+            bail!(
+                "'{}' and '{}' differ only in case, and with characters outside ASCII this \
+                 system may treat them as one file even on a case-sensitive volume; extraction \
+                 refused. Extract this archive with another program",
+                a.display(),
+                b.display()
+            );
+        }
+        let met_in = &self.case_clashes.met_in;
+        if met_in.len() > MAX_CASE_FOLDERS {
+            bail!(
+                "this archive has names that differ only in case in {} folders, more than \
+                 HatchZip can keep track of; extraction refused. Extract this archive with \
+                 another program",
+                met_in.len()
+            );
+        }
+        let folders = met_in.keys().map(PathBuf::as_path);
+        if let Some((met, nearest)) = first_not_apart(out, folders, keeps_case_apart) {
+            let (a, b) = &met_in[met];
+            bail!(
+                "'{}' and '{}' differ only in case, and {} is not known to keep such names \
+                 apart; extraction refused. Extract to a folder on a case-sensitive filesystem, \
+                 or with another program",
+                a.display(),
+                b.display(),
+                nearest.display()
+            );
         }
         Ok(())
+    }
+
+    /// The folders a run has to record: see [`Journal::case_folders`].
+    pub(crate) fn case_folders(&self) -> Vec<PathBuf> {
+        self.case_clashes.met_in.keys().cloned().collect()
     }
 
     /// Refuses entries that can't all be created where the archive puts
@@ -366,14 +425,14 @@ impl Job {
     /// which includes any entry inside a link, and a hard link to anything
     /// but a file in the archive. Links are only made at the very end, once
     /// the archive is gone, so without this such an archive fails after it
-    /// has been consumed. The same clash in paths that differ only in case
-    /// depends on the destination, so it is noted for [`Job::check_case`].
-    /// Names ending in [`PART_SUFFIX`] are compared ignoring case everywhere.
+    /// has been consumed. Paths that differ only in case depend on the
+    /// destination, so they are returned for [`Job::check_case`]. Names
+    /// ending in [`PART_SUFFIX`] are compared ignoring case everywhere.
     ///
     /// Only a fresh archive is checked: a resumed run no longer lists the
     /// entries it has extracted, and one an older release started on has to
     /// stay resumable and restorable.
-    fn check_layout(&mut self) -> Result<()> {
+    fn check_layout(&self) -> Result<CaseClashes> {
         let key = |p: &Path| p.to_string_lossy().to_lowercase();
         let items = || self.units.iter().flat_map(|u| &u.items);
         // Every file is first written under its name plus the suffix. An
@@ -391,25 +450,20 @@ impl Job {
                 item.path.display()
             );
         }
-        // Every folder the extraction creates, with the entry that needs it:
-        // the folder's own entry if it has one, else the first entry inside.
-        let mut folders: HashMap<&Path, (&Path, bool)> = HashMap::new();
+        // Every folder the extraction creates, with the first entry inside
+        // that needs it, or `None` if it has an entry of its own.
+        let mut folders: HashMap<&Path, Option<&Path>> = HashMap::new();
         for item in items() {
             if item.kind == Kind::Dir {
-                folders.insert(&item.path, (&item.path, true));
+                folders.insert(&item.path, None);
             }
             for parent in item.path.ancestors().skip(1) {
                 if parent.as_os_str().is_empty() {
                     break;
                 }
-                folders.entry(parent).or_insert((&item.path, false));
+                folders.entry(parent).or_insert(Some(&item.path));
             }
         }
-        let mut folded: HashMap<String, Vec<&Path>> = HashMap::new();
-        for folder in folders.keys() {
-            folded.entry(key(folder)).or_default().push(folder);
-        }
-        let mut clashes = Vec::new();
         let files: HashSet<&Path> = items()
             .filter(|i| i.kind == Kind::File)
             .map(|i| i.path.as_path())
@@ -422,20 +476,17 @@ impl Job {
                 Kind::HardLink(_) => "a hard link",
             };
             match folders.get(item.path.as_path()) {
-                Some((_, true)) => bail!(
+                Some(None) => bail!(
                     "'{}' is both {what} and a folder in the archive; extraction refused",
                     item.path.display()
                 ),
-                Some((inside, false)) => bail!(
+                Some(Some(inside)) => bail!(
                     "'{}' is {what}, but '{}' requires a folder at that location; extraction \
                      refused",
                     item.path.display(),
                     inside.display()
                 ),
                 None => {}
-            }
-            for folder in folded.get(&key(&item.path)).into_iter().flatten() {
-                clashes.push((item.path.clone(), folder.to_path_buf()));
             }
             if let Kind::HardLink(target) = &item.kind
                 && !files.contains(target.as_path())
@@ -448,8 +499,13 @@ impl Job {
                 );
             }
         }
-        self.case_clashes.extend(clashes);
-        Ok(())
+        let mut names: Vec<(String, &Path, bool)> = items()
+            .filter(|i| i.kind != Kind::Dir)
+            .map(|i| (key(&i.path), i.path.as_path(), true))
+            .chain(folders.keys().map(|f| (key(f), *f, false)))
+            .collect();
+        names.sort_unstable();
+        Ok(CaseClashes::of(&names))
     }
 
     /// `Some(granule)` if holes punched in the archive give its space back,
@@ -2076,20 +2132,80 @@ mod tests {
         }
     }
 
+    fn clashes(paths: &[&'static str]) -> CaseClashes {
+        let mut names: Vec<(String, &Path, bool)> = paths
+            .iter()
+            .map(|p| (p.to_lowercase(), Path::new(*p), true))
+            .collect();
+        names.sort_unstable();
+        CaseClashes::of(&names)
+    }
+
     /// Three that clash have to name every folder where any two meet, here
     /// `x` as well as the top, or a casefolded `x` would go unnoticed.
     #[test]
     fn clashes_cover_every_folder_where_names_meet() {
-        let units: Vec<Unit> = ["X/a/f", "x/A/f", "x/a/f", "x/a/f", "other", "OTHER2"]
+        let met = clashes(&["X/a/f", "x/A/f", "x/a/f", "other", "OTHER2"]).met_in;
+        assert_eq!(
+            met.keys().collect::<Vec<_>>(),
+            [Path::new(""), Path::new("x")]
+        );
+    }
+
+    /// A file against thousands of folders is a pair for each neighbour, not
+    /// one for each combination, or a small archive could exhaust memory.
+    #[test]
+    fn clashes_stay_linear_in_the_names() {
+        let paths: Vec<String> = (0..4096u32)
+            .map(|bits| {
+                (0..12)
+                    .map(|i| if bits >> i & 1 == 1 { 'A' } else { 'a' })
+                    .collect()
+            })
+            .collect();
+        let mut names: Vec<(String, &Path, bool)> = paths
             .iter()
             .enumerate()
-            .map(|(i, name)| unit(i as u64, name, 1))
+            .map(|(i, p)| (p.to_lowercase(), Path::new(p), i % 2 == 0))
             .collect();
-        let met: HashSet<PathBuf> = case_clashes(&units)
-            .iter()
-            .map(|(a, b)| meeting_folder(a, b))
-            .collect();
-        assert_eq!(met, HashSet::from([PathBuf::new(), PathBuf::from("x")]));
+        names.sort_unstable();
+        assert_eq!(CaseClashes::of(&names).met_in.len(), 1);
+    }
+
+    /// U+212A KELVIN SIGN lowercases to `k`, and APFS takes it for `K` even
+    /// on a case-sensitive volume.
+    #[test]
+    fn names_beyond_ascii_stay_refused_where_the_system_normalizes_them() {
+        let kelvin = clashes(&["K.txt", "\u{212a}.txt"]);
+        assert_eq!(kelvin.merged.is_some(), platform::NORMALIZES_NAMES);
+        assert!(clashes(&["Makefile", "makefile"]).merged.is_none());
+    }
+
+    /// The folder asked is the one that exists nearest to where the names
+    /// meet, not the output folder, which an earlier check would have passed.
+    #[test]
+    fn the_nearest_existing_folder_decides() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let out = tmp.path().join("out");
+        fs::create_dir_all(out.join("mounted")).unwrap();
+        let asked = std::cell::RefCell::new(Vec::new());
+        let result = first_not_apart(
+            &out,
+            [
+                Path::new(""),
+                Path::new("new/deep"),
+                Path::new("mounted/new"),
+            ],
+            |dir| {
+                asked.borrow_mut().push(dir.to_path_buf());
+                dir != out.join("mounted")
+            },
+        );
+        assert_eq!(
+            result,
+            Some((Path::new("mounted/new"), out.join("mounted")))
+        );
+        assert_eq!(*asked.borrow(), [out.clone(), out.join("mounted")]);
     }
 
     fn unit(start: u64, name: &str, size: u64) -> Unit {

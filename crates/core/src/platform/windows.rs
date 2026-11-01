@@ -228,6 +228,10 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok((u64::from(high) << 32) | u64::from(low))
 }
 
+/// Whether this system can treat different names as one file on a case-sensitive
+/// filesystem. Moot here, since no folder counts as one.
+pub const NORMALIZES_NAMES: bool = false;
+
 /// Whether `dir` is known to keep apart names that differ only in case. NTFS
 /// can, folder by folder, but that isn't checked, so the answer is no.
 pub fn case_sensitive(_dir: &Path) -> bool {

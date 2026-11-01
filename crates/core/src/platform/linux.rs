@@ -72,6 +72,10 @@ pub fn punch_granule(dir: &Path) -> u64 {
     }
 }
 
+/// Whether this system can treat different names as one file on a case-sensitive
+/// filesystem. Linux leaves names as they are.
+pub const NORMALIZES_NAMES: bool = false;
+
 /// Whether `dir` is known to keep apart names that differ only in case. What
 /// isn't known counts as not: only btrfs always does, and the rest can be
 /// asked. A filesystem this doesn't list can ignore case on its own terms,
@@ -105,6 +109,7 @@ fn folder_ignores_case(dir: &File) -> Option<bool> {
     const FS_CASEFOLD_FL: libc::c_uint = 0x4000_0000;
 
     let mut flags: libc::c_uint = 0;
+    // SAFETY: the kernel writes an int here, whatever the size in the number.
     let got = unsafe { libc::ioctl(dir.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
     (got == 0).then_some(flags & FS_CASEFOLD_FL != 0)
 }
@@ -125,6 +130,8 @@ fn xfs_ignores_case(any: &File) -> Option<bool> {
     const FSGEOMETRY_V1: libc::Ioctl = libc::_IOR::<Geometry>('X' as u32, 100);
     const FLAGS_DIRV2CI: u32 = 1 << 12;
 
+    // SAFETY: all integers. The size the kernel writes is in the number, and
+    // the layout above follows `xfs_fs.h`.
     let mut geometry: Geometry = unsafe { std::mem::zeroed() };
     let got = unsafe { libc::ioctl(any.as_raw_fd(), FSGEOMETRY_V1, &mut geometry) };
     (got == 0).then_some(geometry.flags & FLAGS_DIRV2CI != 0)

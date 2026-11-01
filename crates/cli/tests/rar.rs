@@ -1392,7 +1392,9 @@ fn names_differing_only_in_case_depend_on_the_destination() {
     let out = tmp.path().join("out");
     if hatchzip_core::session::case_sensitive(tmp.path()) {
         assert_ok(&extract(&archive, &out, &[]));
-        assert_eq!(fs::read(out.join("game/D.PAK")).unwrap(), b"other\n");
+        let mut files = small();
+        files.insert("game/D.PAK".into(), b"other\n".to_vec());
+        assert_tree(&out, &files);
         return;
     }
     let before = snapshot_dir(tmp.path());
