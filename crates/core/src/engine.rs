@@ -1755,14 +1755,8 @@ impl Run<'_> {
         Ok((!interrupted).then_some(links))
     }
 
-    fn finish(self, out: &Path) -> Result<()> {
-        make_final_links(&self.journal.links, out)?;
-        // Before the journal goes, so a crash in between deletes the rest
-        // on resume rather than leaving it.
-        if let Some(r) = &self.journal.replace {
-            replace::settle(out, r)?;
-            replace::remove(out)?;
-        }
+    fn finish(mut self, out: &Path) -> Result<()> {
+        make_links_and_settle(&mut self.journal, &self.paths, out)?;
         // Last, since every file, link and put-back file changes its
         // folder's time.
         set_folders(&self.journal, &self.paths, out)?;
@@ -1858,13 +1852,10 @@ fn remove_after_extract(batch: &[Unit], out: &Path) {
 
 /// A run that crashed after deleting the archive but before cleaning up only
 /// has its links and side files left to deal with.
-pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
-    make_final_links(&journal.links, &journal.output)?;
-    if let Some(r) = &journal.replace {
-        replace::settle(&journal.output, r)?;
-        replace::remove(&journal.output)?;
-    }
-    set_folders(journal, paths, &journal.output)?;
+pub fn finish_orphaned(journal: &mut Journal, paths: &Paths) -> Result<()> {
+    let out = journal.output.clone();
+    make_links_and_settle(journal, paths, &out)?;
+    set_folders(journal, paths, &out)?;
     // The final commit was interrupted before the archive was removed, and
     // all of it is free to go now. A kept archive stays.
     if journal.done && !journal.keep {
@@ -1880,6 +1871,28 @@ pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
     paths.remove()
 }
 
+/// Makes the links and puts the replaced files back, unless an earlier run
+/// got past them. With folders still to set, the journal then says only
+/// they are left, so a resume never makes a link again inside a folder
+/// whose mode no longer lets it.
+fn make_links_and_settle(journal: &mut Journal, paths: &Paths, out: &Path) -> Result<()> {
+    if journal.folders_left {
+        return Ok(());
+    }
+    make_final_links(&journal.links, out)?;
+    // Before the journal goes, so a crash in between deletes the rest on
+    // resume rather than leaving it.
+    if let Some(r) = &journal.replace {
+        replace::settle(out, r)?;
+        replace::remove(out)?;
+    }
+    if journal.folders.is_some() {
+        journal.folders_left = true;
+        journal.save(paths)?;
+    }
+    Ok(())
+}
+
 /// Sets the saved folders' permissions and times. The journal stays until
 /// they are set, so a crash before the end sets them again on resume.
 fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<()> {
@@ -1888,7 +1901,9 @@ fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<()> {
     };
     crash_point("before-folders");
     let list = folders::load(&paths.folders, saved)?;
-    folders::apply(&list, out)
+    folders::apply(&list, out)?;
+    crash_point("after-folders");
+    Ok(())
 }
 
 /// The last step of a run, when every file is extracted and the archive is

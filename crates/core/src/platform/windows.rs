@@ -79,6 +79,11 @@ pub fn open_folder_no_follow(path: &Path) -> io::Result<File> {
     Ok(dir)
 }
 
+/// Windows has no folder mode to lock the owner out of a folder.
+pub fn unlock_folder(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
 /// Why Windows can't create a file or folder with this name, if it can't.
 /// Checked for every entry before the archive is touched, so a name made on
 /// another system fails up front instead of halfway through a run.

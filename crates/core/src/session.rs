@@ -705,6 +705,7 @@ pub fn begin(
             keep: only_found(&c.keep),
             both: only_found(&c.both),
         });
+    let folders = crate::folders::of(&job.units, &output);
     let plan = Plan {
         format: job.format_name,
         tail_start: job.tail_start,
@@ -714,7 +715,7 @@ pub fn begin(
         replace,
         case_folders: job.case_folders(),
         case_beyond_ascii: job.case_beyond_ascii(),
-        folders: crate::folders::of(&job.units),
+        folders,
     };
     Journal::create(paths, &job.storage, plan)
 }

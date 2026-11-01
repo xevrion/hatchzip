@@ -135,6 +135,12 @@ pub struct Journal {
     /// every file and link is made; see [`crate::folders`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folders: Option<crate::folders::Saved>,
+    /// Every link is made and every put-back file settled: only the folders
+    /// and the cleanup are left, and a resume does just that. Making a link
+    /// again would need write permission on its folder, which the folder's
+    /// own mode may have taken away by then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub folders_left: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -268,6 +274,7 @@ impl Journal {
             case_folders: plan.case_folders,
             case_beyond_ascii: plan.case_beyond_ascii,
             folders,
+            folders_left: false,
         };
         journal.save(paths)?;
         Ok(journal)
@@ -306,6 +313,7 @@ impl Journal {
         let folders = version == FOLDERS_VERSION;
         let replaces = version == REPLACE_VERSION || version == CHOOSE_VERSION;
         if journal.folders.is_some() != folders
+            || (journal.folders_left && !folders)
             || (case && journal.case_folders.is_empty())
             || (!case && !folders && !journal.case_folders.is_empty())
             || (journal.case_beyond_ascii && journal.case_folders.is_empty())
@@ -349,6 +357,11 @@ impl Journal {
         {
             bail!("{} does not match its journal", paths.tail.display());
         }
+        // Read at the very end, so checked now: a resume past a missing or
+        // damaged list would free the rest of the archive and only then fail.
+        if let Some(saved) = journal.folders {
+            crate::folders::load(&paths.folders, saved)?;
+        }
         let tail = Arc::new(Tail {
             start: journal.tail_start,
             bytes: tail,
@@ -367,14 +380,21 @@ impl Journal {
     /// is checked by [`crate::session::check_output`].
     fn check_bound(&self, paths: &Paths) -> Result<()> {
         let foreign = || {
+            let files = match self.folders {
+                Some(_) => format!(
+                    "{}, {} and {}",
+                    paths.journal.display(),
+                    paths.tail.display(),
+                    paths.folders.display()
+                ),
+                None => format!("{} and {}", paths.journal.display(), paths.tail.display()),
+            };
             anyhow!(
                 "{} does not belong to {}, so it was not used and nothing was modified. If the \
                  archive was moved during an extraction, move it back to resume; otherwise \
-                 delete {} and {}",
+                 delete {files}",
                 paths.journal.display(),
                 paths.archive.display(),
-                paths.journal.display(),
-                paths.tail.display()
             )
         };
         if self.parts.is_empty() {
@@ -560,7 +580,18 @@ mod tests {
             std::env::temp_dir().join(format!("hatchzip-journal-folders-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
-        let folders = r#","folders":{"count":1,"crc":7}"#;
+        let list = [crate::folders::Folder {
+            path: PathBuf::from("docs"),
+            mode: Some(0o750),
+            mtime: None,
+        }];
+        let saved = crate::folders::save(&dir.join("game.zip.hatchzip-folders"), &list)
+            .unwrap()
+            .unwrap();
+        let folders = &format!(
+            r#","folders":{{"count":{},"crc":{}}}"#,
+            saved.count, saved.crc
+        );
         let (journal, _) = Journal::load(&write_with(&dir, 8, folders)).unwrap();
         assert_eq!(journal.version, FOLDERS_VERSION);
         let kept = format!(r#","keep":true,"replace":{{"moved":true,"keep":["a.txt"]}}{folders}"#);
@@ -584,6 +615,12 @@ mod tests {
         assert!(Journal::load(&write_with(&dir, 8, &ascii)).is_err());
         let outside = format!(r#","case_folders":["../a"]{folders}"#);
         assert!(Journal::load(&write_with(&dir, 8, &outside)).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, r#","folders_left":true"#)).is_err());
+
+        // The list is checked with the journal, not when it is read at the
+        // very end.
+        fs::write(dir.join("game.zip.hatchzip-folders"), b"[]").unwrap();
+        assert!(Journal::load(&write_with(&dir, 8, folders)).is_err());
 
         fs::remove_dir_all(&dir).unwrap();
     }

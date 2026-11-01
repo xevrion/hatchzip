@@ -165,6 +165,107 @@ fn a_read_only_folder_still_gets_its_files() {
     fs::set_permissions(out.join("locked"), fs::Permissions::from_mode(0o700)).unwrap();
 }
 
+/// A crash once the folders are set leaves only them to do. The resume makes
+/// no link again inside a folder that no longer takes new entries, and opens
+/// folders it already set that it can't read or look into.
+#[cfg(unix)]
+#[test]
+fn a_crash_after_the_folders_are_set_resumes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().unwrap();
+    let mut b = tar::Builder::new(Vec::new());
+    let folder = |b: &mut tar::Builder<Vec<u8>>, path: &str, mode: u32| {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Directory);
+        h.set_mode(mode);
+        h.set_mtime(1_000_000_000);
+        h.set_size(0);
+        b.append_data(&mut h, path, std::io::empty()).unwrap();
+    };
+    let file = |b: &mut tar::Builder<Vec<u8>>, path: &str| {
+        let mut h = tar::Header::new_gnu();
+        h.set_size(4);
+        h.set_mode(0o644);
+        b.append_data(&mut h, path, &b"data"[..]).unwrap();
+    };
+    folder(&mut b, "ro", 0o555);
+    file(&mut b, "ro/a.txt");
+    let mut h = tar::Header::new_gnu();
+    h.set_entry_type(tar::EntryType::Symlink);
+    h.set_size(0);
+    b.append_link(&mut h, "ro/l", "a.txt").unwrap();
+    folder(&mut b, "noread", 0o311);
+    file(&mut b, "noread/b.txt");
+    folder(&mut b, "nosearch", 0o600);
+    folder(&mut b, "nosearch/inner", 0o700);
+    file(&mut b, "nosearch/inner/c.txt");
+    let archive = tmp.path().join("modes.tar");
+    fs::write(&archive, b.into_inner().unwrap()).unwrap();
+    let out = tmp.path().join("out");
+
+    let crashed = extract(&archive, &out, &[("HATCHZIP_CRASH_AT", "after-folders")]);
+    assert!(!crashed.status.success(), "should have crashed");
+    assert!(folders_file(&archive).exists());
+
+    assert_ok(&extract(&archive, &out, &[]));
+    for (path, mode) in [("ro", 0o555), ("noread", 0o311), ("nosearch", 0o600)] {
+        assert_mode(&out.join(path), mode);
+        assert_eq!(modified(&out.join(path)), when(), "{path}");
+        fs::set_permissions(out.join(path), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    assert_mode(&out.join("nosearch/inner"), 0o700);
+    assert_eq!(fs::read_link(out.join("ro/l")).unwrap(), Path::new("a.txt"));
+    assert_eq!(fs::read(out.join("nosearch/inner/c.txt")).unwrap(), b"data");
+    assert_no_side_files(&archive);
+}
+
+/// A folder that was in the output before the extraction may belong to
+/// someone else, and is left as it was, like an existing file.
+#[cfg(unix)]
+#[test]
+fn a_folder_already_in_the_output_is_left_as_it_is() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().unwrap();
+    let archive = tar_with_folders(tmp.path(), None);
+    let out = tmp.path().join("out");
+    fs::create_dir_all(out.join("docs")).unwrap();
+    fs::set_permissions(out.join("docs"), fs::Permissions::from_mode(0o775)).unwrap();
+
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_mode(&out.join("docs"), 0o775);
+    assert_mode(&out.join("docs/old"), 0o700);
+    assert_eq!(modified(&out.join("docs/old")), when());
+    assert_consumed(&archive);
+}
+
+/// The saved folders are checked with the rest of the journal, so a resume
+/// with the file gone stops before it frees any more of the archive.
+#[test]
+fn a_missing_folders_file_stops_the_resume_before_anything_is_freed() {
+    let tmp = TempDir::new().unwrap();
+    let archive = tar_with_folders(tmp.path(), None);
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+        ],
+    );
+    assert!(!crashed.status.success(), "should have crashed");
+    fs::remove_file(folders_file(&archive)).unwrap();
+    let before = snapshot(&archive);
+
+    let resumed = extract(&archive, &out, &[]);
+    assert!(!resumed.status.success(), "should have refused");
+    let err = String::from_utf8_lossy(&resumed.stderr);
+    assert!(err.contains("hatchzip-folders"), "{err}");
+    assert_unchanged(&before);
+}
+
 /// The DOS time of a ZIP folder entry is read the way a file's is, so both
 /// end up the same.
 #[test]

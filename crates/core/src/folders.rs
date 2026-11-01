@@ -35,9 +35,11 @@ pub struct Saved {
     pub crc: u32,
 }
 
-/// The folder entries of `units` that carry a mode or a time. A folder listed
-/// twice takes its last entry in the archive, as a file does.
-pub fn of(units: &[Unit]) -> Vec<Folder> {
+/// The folder entries of `units` that carry a mode or a time and that this
+/// run creates in `out`. A folder already there is left as it is, like an
+/// existing file, and may belong to someone else. A folder listed twice
+/// takes its last entry in the archive, as a file does.
+pub fn of(units: &[Unit], out: &Path) -> Vec<Folder> {
     // A job holds its units last first.
     let mut in_order: Vec<&Unit> = units.iter().collect();
     in_order.sort_by_key(|u| u.start);
@@ -45,6 +47,13 @@ pub fn of(units: &[Unit]) -> Vec<Folder> {
     let mut at: HashMap<&Path, usize> = HashMap::new();
     for item in in_order.into_iter().flat_map(|u| &u.items) {
         if item.kind != Kind::Dir || (item.mode.is_none() && item.mtime.is_none()) {
+            continue;
+        }
+        let created = matches!(
+            fs::symlink_metadata(out.join(&item.path)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound
+        );
+        if !created {
             continue;
         }
         let folder = Folder {
@@ -98,31 +107,54 @@ pub fn load(path: &Path, saved: Saved) -> Result<Vec<Folder>> {
 /// one never touches its parent's time again. A folder that is gone is
 /// skipped; one reached through a link is refused.
 pub fn apply(folders: &[Folder], out: &Path) -> Result<()> {
+    let failed = |f: &Folder, e: anyhow::Error| {
+        anyhow!(
+            "every file is extracted, but the permissions and time of folder '{}' could not be \
+             set: {e:#}\nResolve the problem, then resume the extraction to set them",
+            f.path.display()
+        )
+    };
+    // A resume can find some of them set already, and a folder without read
+    // or search permission can be neither opened nor looked into. Opened up
+    // again shallowest first, each parent before what is inside it.
     let mut order: Vec<&Folder> = folders.iter().collect();
-    order.sort_by_key(|f| std::cmp::Reverse(f.path.components().count()));
+    order.sort_by_key(|f| f.path.components().count());
+    for f in &order {
+        unlock_one(f, out).map_err(|e| failed(f, e))?;
+    }
+    order.reverse();
     for f in order {
-        apply_one(f, out).map_err(|e| {
-            anyhow!(
-                "every file is extracted, but the permissions and time of folder '{}' could not \
-                 be set: {e:#}\nResolve the problem, then resume the extraction to set them",
-                f.path.display()
-            )
-        })?;
+        apply_one(f, out).map_err(|e| failed(f, e))?;
+    }
+    Ok(())
+}
+
+/// The folder's path in `out`, or `None` if it is gone. Never follows a
+/// link, the folder's own name included.
+fn reach(f: &Folder, out: &Path) -> Result<Option<PathBuf>> {
+    for p in f.path.ancestors().filter(|p| !p.as_os_str().is_empty()) {
+        match fs::symlink_metadata(out.join(p)) {
+            Ok(m) if m.is_symlink() => bail!("{} is a link", out.join(p).display()),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(Some(out.join(&f.path)))
+}
+
+fn unlock_one(f: &Folder, out: &Path) -> Result<()> {
+    if let Some(path) = reach(f, out)? {
+        platform::unlock_folder(&path)?;
     }
     Ok(())
 }
 
 fn apply_one(f: &Folder, out: &Path) -> Result<()> {
-    // Never follows a link, the folder's own name included.
-    for p in f.path.ancestors().filter(|p| !p.as_os_str().is_empty()) {
-        match fs::symlink_metadata(out.join(p)) {
-            Ok(m) if m.is_symlink() => bail!("{} is a link", out.join(p).display()),
-            Ok(_) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(e.into()),
-        }
-    }
-    let dir = platform::open_folder_no_follow(&out.join(&f.path))?;
+    let Some(path) = reach(f, out)? else {
+        return Ok(());
+    };
+    let dir = platform::open_folder_no_follow(&path)?;
     platform::apply_mode(&dir, f.mode)?;
     if let Some(t) = f.mtime.and_then(from_epoch) {
         dir.set_modified(t)?;

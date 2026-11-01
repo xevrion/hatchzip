@@ -274,8 +274,8 @@ fn extract(
     // choice, and moves next to the archive once its contents allow.
     let output = if here { None } else { output };
     let (job, journal) = match open(&primary, &paths, output, true, secret, counters, send)? {
-        State::Orphan(journal) => {
-            engine::finish_orphaned(&journal, &paths)?;
+        State::Orphan(mut journal) => {
+            engine::finish_orphaned(&mut journal, &paths)?;
             send(Update::Extracted {
                 output: journal.output,
                 keep: journal.keep,

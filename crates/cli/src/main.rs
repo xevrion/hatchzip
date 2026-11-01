@@ -718,8 +718,8 @@ fn extract(
     }
     let (state, paths) = open(archive, output, true, secret)?;
     let (job, journal) = match state {
-        State::Orphan(journal) => {
-            engine::finish_orphaned(&journal, &paths)?;
+        State::Orphan(mut journal) => {
+            engine::finish_orphaned(&mut journal, &paths)?;
             if journal.keep {
                 say!("This extraction was started with --keep-archive; the archive is kept.");
             }

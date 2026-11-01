@@ -161,9 +161,9 @@ fn an_interrupted_run_resumes_and_still_keeps_the_archive() {
                 assert_unchanged(&before);
                 let j = journal(&archive);
                 assert_eq!(j["keep"], true, "{what}");
-                // Saved folder entries take version 7, which older builds
+                // Saved folder entries take version 8, which older builds
                 // refuse as well.
-                let version = if j["folders"].is_null() { 4 } else { 7 };
+                let version = if j["folders"].is_null() { 4 } else { 8 };
                 assert_eq!(j["version"], version, "{what}");
 
                 let resumed = extract(&archive, &out, &[STEP]);
