@@ -59,7 +59,7 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
     assert!(
         std::fs::read_to_string(&nemo)
             .unwrap()
-            .contains("Extensions=zip;7z;tar;tgz;gz;001;")
+            .contains("Extensions=zip;7z;tar;tgz;gz;txz;xz;001;")
     );
     let nemo = tmp
         .path()

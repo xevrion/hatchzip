@@ -68,7 +68,7 @@ modules:
       - >-
         desktop-file-edit
         --set-key=MimeType
-        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;'
+        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-xz-compressed-tar;'
         /app/share/applications/io.github.xevrion.hatchzip.desktop
       - install -Dm644 -t /app/share/metainfo io.github.xevrion.hatchzip.metainfo.xml
       - |

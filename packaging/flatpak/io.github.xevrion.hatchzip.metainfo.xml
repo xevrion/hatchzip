@@ -26,7 +26,7 @@
       <li>Checks that the extraction fits before it changes anything</li>
       <li>Keeps a margin of free space the whole way through</li>
       <li>Can be stopped or crash at any moment and continues where it left off</li>
-      <li>Reads ZIP, 7z, tar, tar.gz and split archives</li>
+      <li>Reads ZIP, 7z, tar, tar.gz, tar.xz and split archives</li>
     </ul>
     <p>
       The archive is gone when the extraction finishes, unless you choose to
@@ -83,6 +83,7 @@
     <mediatype>application/x-7z-compressed</mediatype>
     <mediatype>application/x-tar</mediatype>
     <mediatype>application/x-compressed-tar</mediatype>
+    <mediatype>application/x-xz-compressed-tar</mediatype>
   </provides>
 
   <supports>
