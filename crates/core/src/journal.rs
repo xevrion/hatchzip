@@ -21,7 +21,8 @@ use crate::fsutil;
 /// as is. Older HatchZip builds refuse version 3, which matters: they would
 /// delete a half-extracted file whose archive bytes are already freed.
 const VERSION: u32 = 3;
-/// An extraction that keeps the archive writes version 4, and only it does.
+/// An extraction that keeps the archive writes version 4, unless a later
+/// version below takes over.
 /// Builds before `keep` existed refuse it, which matters just as much: they
 /// would resume it in place and truncate the archive the user kept. Every
 /// other journal stays at version 3, so an older build can still finish it.
@@ -119,6 +120,11 @@ pub struct Journal {
     /// answer from when the run began; see [`crate::session::check_recorded_case`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub case_folders: Vec<PathBuf>,
+    /// Some of those names go outside ASCII, so a system that normalizes
+    /// names may take them for one file, whatever its filesystem says about
+    /// case. Asked again for the same reason.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub case_beyond_ascii: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -192,6 +198,7 @@ pub struct Plan {
     /// and what to do with each once it completes.
     pub replace: Option<Replace>,
     pub case_folders: Vec<PathBuf>,
+    pub case_beyond_ascii: bool,
 }
 
 fn version_for(keep: bool, replace: Option<&Replace>, case_folders: &[PathBuf]) -> u32 {
@@ -231,6 +238,7 @@ impl Journal {
             keep: plan.keep,
             replace: plan.replace,
             case_folders: plan.case_folders,
+            case_beyond_ascii: plan.case_beyond_ascii,
         };
         journal.save(paths)?;
         Ok(journal)
@@ -267,6 +275,7 @@ impl Journal {
         let case = version == CASE_VERSION;
         let replaces = version == REPLACE_VERSION || version == CHOOSE_VERSION;
         if journal.case_folders.is_empty() == case
+            || (journal.case_beyond_ascii && !case)
             || (!case
                 && (journal.replace.is_some() != replaces
                     || journal.replace.as_ref().is_some_and(Replace::chose)

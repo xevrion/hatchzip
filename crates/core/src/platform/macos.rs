@@ -29,7 +29,14 @@ pub const NORMALIZES_NAMES: bool = true;
 /// APFS and HFS+ are taken at their word: a network or FUSE volume reports
 /// what its server claims.
 pub fn case_sensitive(dir: &Path) -> bool {
-    let Ok(f) = File::open(dir) else {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    // Folders only: opening a FIFO found here would wait for a writer.
+    let Ok(f) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(dir)
+    else {
         return false;
     };
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };

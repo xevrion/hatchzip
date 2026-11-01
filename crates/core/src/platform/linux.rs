@@ -81,13 +81,20 @@ pub const NORMALIZES_NAMES: bool = false;
 /// asked. A filesystem this doesn't list can ignore case on its own terms,
 /// such as a ZFS dataset.
 pub fn case_sensitive(dir: &Path) -> bool {
+    use std::os::unix::fs::OpenOptionsExt;
+
     const EXT: u32 = 0xEF53;
     const F2FS: u32 = 0xF2F5_2010;
     const TMPFS: u32 = 0x0102_1994;
     const BCACHEFS: u32 = 0xCA45_1A4E;
     const XFS: u32 = 0x5846_5342;
 
-    let Ok(f) = File::open(dir) else {
+    // Folders only: opening a FIFO found here would wait for a writer.
+    let Ok(f) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(dir)
+    else {
         return false;
     };
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };

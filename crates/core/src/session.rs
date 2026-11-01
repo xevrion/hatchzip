@@ -30,24 +30,14 @@ pub enum State {
     Orphan(Journal),
 }
 
-/// A run recorded where its archive has names that differ only in case, so
-/// that this can ask again: the output folder can have moved to a filesystem
-/// that ignores case, and a tar no longer lists the entries it has extracted.
-/// There, an entry left to do resolves to its twin that is already out, which
-/// a resume would overwrite and restore would delete as its own.
+/// Asks again what a run recorded when it began: see
+/// [`crate::engine::check_case_record`].
 pub(crate) fn check_recorded_case(journal: &Journal) -> Result<()> {
-    let folders = journal.case_folders.iter().map(PathBuf::as_path);
-    if let Some((_, nearest)) =
-        crate::engine::first_not_apart(&journal.output, folders, crate::engine::keeps_case_apart)
-    {
-        bail!(
-            "this extraction has names that differ only in case, and {} is not known to keep \
-             such names apart, so going on here could lose files. Move the output folder back \
-             to a case-sensitive filesystem and run the command again",
-            nearest.display()
-        );
-    }
-    Ok(())
+    crate::engine::check_case_record(
+        &journal.output,
+        &journal.case_folders,
+        journal.case_beyond_ascii,
+    )
 }
 
 /// Whether names that differ only in case can both exist in `dir`, as far as
@@ -664,6 +654,7 @@ pub fn begin(
         keep: keep_archive,
         replace,
         case_folders: job.case_folders(),
+        case_beyond_ascii: job.case_beyond_ascii(),
     };
     Journal::create(paths, &job.storage, plan)
 }

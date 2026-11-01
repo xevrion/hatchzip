@@ -263,6 +263,16 @@ fn files_below(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 /// lists that twin, so only the journal can say so. Back on a disk that keeps
 /// case, the run finishes.
 fn assert_refused_where_case_may_be_ignored(archive: &Path, finished: impl Fn(&Path)) {
+    assert_refused_where_case_may_be_ignored_from(archive, 1, finished);
+}
+
+/// `check` exits with `check_status`: 0 when only the cleanup is left, since
+/// there is nothing to plan or list, though a run is still refused.
+fn assert_refused_where_case_may_be_ignored_from(
+    archive: &Path,
+    check_status: i32,
+    finished: impl Fn(&Path),
+) {
     let out = archive.with_file_name("out");
     let crashed = extract(
         archive,
@@ -277,6 +287,8 @@ fn assert_refused_where_case_may_be_ignored(archive: &Path, finished: impl Fn(&P
     let (before, written) = (snapshot(archive), files_below(&out));
     let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
     let ignore = [("HATCHZIP_IGNORE_CASE", "1")];
+    let check = hatchzip(&["check", a], &ignore);
+    assert_eq!(check.status.code(), Some(check_status), "{check:?}");
     for run in [
         extract(archive, &out, &ignore),
         hatchzip(&["restore", a, "-o", o], &ignore),
@@ -286,6 +298,10 @@ fn assert_refused_where_case_may_be_ignored(archive: &Path, finished: impl Fn(&P
         assert!(stderr.contains("differ only in case"), "{stderr}");
         assert_unchanged(&before);
         assert_eq!(files_below(&out), written);
+    }
+    // Only looking stays possible, while there is something to look at.
+    if check_status != 0 {
+        assert_ok(&hatchzip(&["list", a], &ignore));
     }
     assert_ok(&extract(archive, &out, &[]));
     finished(&out);
@@ -310,21 +326,120 @@ fn a_resume_or_restore_where_case_may_be_ignored_is_refused() {
     }
 }
 
-/// A file and a folder clash too, and only a fresh archive lists both.
+/// A file and a folder clash too, and only a fresh archive lists both. With
+/// two entries the crash leaves only the cleanup to do, with no archive to
+/// list anything, and with a third there is a resume.
 #[test]
-fn a_resume_of_a_file_differing_only_in_case_from_a_folder_is_refused() {
+fn a_run_with_a_file_differing_only_in_case_from_a_folder_is_refused() {
     let tmp = TempDir::new().unwrap();
     if !session::case_sensitive(tmp.path()) {
         return;
     }
-    let bytes = tar_bytes(&[
+    let (first, second) = (
         Tar::File("D", b"file\n"),
         Tar::File("d/inner.txt", b"inner\n"),
-    ]);
-    let archive = write(tmp.path(), "case.tar", bytes);
-    assert_refused_where_case_may_be_ignored(&archive, |out| {
-        assert_eq!(fs::read(out.join("D")).unwrap(), b"file\n");
-    });
+    );
+    for (bytes, check_status) in [
+        (tar_bytes(&[first, second]), 0),
+        (
+            tar_bytes(&[
+                Tar::File("before.txt", b"before\n"),
+                Tar::File("D", b"file\n"),
+                Tar::File("d/inner.txt", b"inner\n"),
+            ]),
+            1,
+        ),
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let archive = write(tmp.path(), "case.tar", bytes);
+        assert_refused_where_case_may_be_ignored_from(&archive, check_status, |out| {
+            assert_eq!(fs::read(out.join("D")).unwrap(), b"file\n");
+        });
+    }
+}
+
+fn kelvin_files() -> Files {
+    let mut files = Files::new();
+    files.insert("K.txt".into(), b"ascii\n".to_vec());
+    files.insert("\u{212a}.txt".into(), b"kelvin\n".to_vec());
+    files
+}
+
+/// U+212A KELVIN SIGN lowercases to `k`, and where the system normalizes
+/// names it is `K`, whatever the filesystem says about case.
+#[test]
+fn names_outside_ascii_are_refused_where_the_system_normalizes_names() {
+    let tmp = TempDir::new().unwrap();
+    let archive = zip_of(tmp.path(), "case.zip", &kelvin_files());
+    let before = snapshot(&archive);
+    let run = extract(
+        &archive,
+        &tmp.path().join("out"),
+        &[("HATCHZIP_NORMALIZE_NAMES", "1")],
+    );
+    assert_eq!(run.status.code(), Some(1), "{run:?}");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("outside ASCII"), "{stderr}");
+    assert_unchanged(&before);
+}
+
+/// A run can start where names aren't normalized and go on where they are,
+/// so it records that it has such names. A system that normalizes them never
+/// starts one, so there this has nothing to resume.
+#[test]
+fn a_run_with_names_outside_ascii_stops_where_the_system_normalizes_names() {
+    let files = kelvin_files();
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = tar_of(tmp.path(), "case.tar", &files);
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    if !side_files(&archive)[0].exists() {
+        assert!(!crashed.status.success());
+        return;
+    }
+    let (before, written) = (snapshot(&archive), files_below(&out));
+    let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+    let normalize = [("HATCHZIP_NORMALIZE_NAMES", "1")];
+    for run in [
+        extract(&archive, &out, &normalize),
+        hatchzip(&["restore", a, "-o", o], &normalize),
+    ] {
+        assert_eq!(run.status.code(), Some(1), "{run:?}");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains("outside ASCII"), "{stderr}");
+        assert_unchanged(&before);
+        assert_eq!(files_below(&out), written);
+    }
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_tree(&out, &files);
+}
+
+/// The journal lists these folders and is rewritten at every commit, so
+/// their number has a limit. Nothing is written by looking.
+#[test]
+fn too_many_folders_with_names_differing_only_in_case_are_refused() {
+    let tmp = TempDir::new().unwrap();
+    let names: Vec<(String, String)> = (0..1001)
+        .map(|i| (format!("d{i}/A"), format!("d{i}/a")))
+        .collect();
+    let entries: Vec<Tar> = names
+        .iter()
+        .flat_map(|(a, b)| [Tar::File(a, b"a\n"), Tar::File(b, b"b\n")])
+        .collect();
+    let archive = write(tmp.path(), "case.tar", tar_bytes(&entries));
+    assert_ok(&hatchzip(&["list", archive.to_str().unwrap()], &[]));
+    assert_refused(&archive, "more than HatchZip can keep track of");
 }
 
 /// An older build never asks, so it must refuse to touch such a run.

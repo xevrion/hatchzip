@@ -130,8 +130,12 @@ struct CaseClashes {
     /// One pair for each folder where such names meet, as a path inside the
     /// output folder.
     met_in: BTreeMap<PathBuf, (PathBuf, PathBuf)>,
-    /// A pair this system may make one file wherever it lands.
-    merged: Option<(PathBuf, PathBuf)>,
+    /// A pair outside plain ASCII, which a system that normalizes names may
+    /// make one file wherever it lands.
+    beyond_ascii: Option<(PathBuf, PathBuf)>,
+    /// A resumed run has no list of its own, only what its journal recorded.
+    recorded: Vec<PathBuf>,
+    recorded_beyond_ascii: bool,
 }
 
 impl CaseClashes {
@@ -152,11 +156,9 @@ impl CaseClashes {
                     .met_in
                     .entry(meeting_folder(a, b))
                     .or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
-                if platform::NORMALIZES_NAMES
-                    && !(a.to_string_lossy().is_ascii() && b.to_string_lossy().is_ascii())
-                {
+                if !(a.to_string_lossy().is_ascii() && b.to_string_lossy().is_ascii()) {
                     clashes
-                        .merged
+                        .beyond_ascii
                         .get_or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
                 }
             }
@@ -179,14 +181,45 @@ fn meeting_folder(a: &Path, b: &Path) -> PathBuf {
 /// Whether `dir` is known to keep apart names that differ only in case. A
 /// debug build can be told it isn't, so that tests reach the refusals on a
 /// disk that does.
-pub(crate) fn keeps_case_apart(dir: &Path) -> bool {
+fn keeps_case_apart(dir: &Path) -> bool {
     test_knob("HATCHZIP_IGNORE_CASE").is_none() && platform::case_sensitive(dir)
+}
+
+/// Whether this system can make one file of different names even where case
+/// is kept. Likewise, so that tests reach the refusal everywhere.
+fn normalizes_names() -> bool {
+    platform::NORMALIZES_NAMES || test_knob("HATCHZIP_NORMALIZE_NAMES").is_some()
+}
+
+/// What a run recorded when it began, asked again: the output folder can have
+/// moved to a filesystem that ignores case, or to a system that normalizes
+/// names, and a tar no longer lists the entries it has extracted. There, an
+/// entry left to do resolves to its twin that is already out, which a resume
+/// would overwrite and a restore would delete as its own.
+pub(crate) fn check_case_record(out: &Path, folders: &[PathBuf], beyond_ascii: bool) -> Result<()> {
+    if beyond_ascii && normalizes_names() {
+        bail!(
+            "this extraction has names that differ only in case with characters outside ASCII, \
+             which this system may treat as one file, so going on here could lose files. Go on \
+             where it started"
+        );
+    }
+    let folders = folders.iter().map(PathBuf::as_path);
+    if let Some((_, nearest)) = first_not_apart(out, folders, keeps_case_apart) {
+        bail!(
+            "this extraction has names that differ only in case, and {} is not known to keep \
+             such names apart, so going on here could lose files. Move the output folder back \
+             to a case-sensitive filesystem and run the command again",
+            nearest.display()
+        );
+    }
+    Ok(())
 }
 
 /// The first of `folders`, paths inside `out`, whose names `apart` can't
 /// vouch for, with the folder it asked. A folder that doesn't exist yet takes
 /// after the nearest one above it that does, which can be a mount of its own.
-pub(crate) fn first_not_apart<'a>(
+fn first_not_apart<'a>(
     out: &Path,
     folders: impl IntoIterator<Item = &'a Path>,
     apart: impl Fn(&Path) -> bool,
@@ -296,6 +329,8 @@ impl Job {
         let opened = archive::open(&storage, Some((&journal.format, tail, point)), password)?;
         let mut job = Self::build(storage, opened, journal.committed_len)?;
         job.started = journal.replace.as_ref().is_none_or(|r| r.moved);
+        job.case_clashes.recorded.clone_from(&journal.case_folders);
+        job.case_clashes.recorded_beyond_ascii = journal.case_beyond_ascii;
         if let Some(r) = &journal.resume {
             // Only the highest uncommitted unit is ever streamed, so a point
             // for any other one means the journal and archive disagree.
@@ -382,7 +417,9 @@ impl Job {
     /// their names meet is known to keep them apart. Anywhere else they
     /// would be one file, and would race inside a parallel batch.
     pub(crate) fn check_case(&self, out: &Path) -> Result<()> {
-        if let Some((a, b)) = &self.case_clashes.merged {
+        let clashes = &self.case_clashes;
+        check_case_record(out, &clashes.recorded, clashes.recorded_beyond_ascii)?;
+        if let Some((a, b)) = clashes.beyond_ascii.as_ref().filter(|_| normalizes_names()) {
             bail!(
                 "'{}' and '{}' differ only in case, and with characters outside ASCII this \
                  system may treat them as one file even on a case-sensitive volume; extraction \
@@ -391,7 +428,7 @@ impl Job {
                 b.display()
             );
         }
-        let met_in = &self.case_clashes.met_in;
+        let met_in = &clashes.met_in;
         if met_in.len() > MAX_CASE_FOLDERS {
             bail!(
                 "this archive has names that differ only in case in {} folders, more than \
@@ -415,9 +452,13 @@ impl Job {
         Ok(())
     }
 
-    /// The folders a run has to record: see [`Journal::case_folders`].
+    /// What a run has to record: see [`Journal::case_folders`].
     pub(crate) fn case_folders(&self) -> Vec<PathBuf> {
         self.case_clashes.met_in.keys().cloned().collect()
+    }
+
+    pub(crate) fn case_beyond_ascii(&self) -> bool {
+        self.case_clashes.beyond_ascii.is_some()
     }
 
     /// Refuses entries that can't all be created where the archive puts
@@ -2173,12 +2214,12 @@ mod tests {
     }
 
     /// U+212A KELVIN SIGN lowercases to `k`, and APFS takes it for `K` even
-    /// on a case-sensitive volume.
+    /// on a case-sensitive volume. Noted everywhere, since a run can go on
+    /// from one system on another.
     #[test]
-    fn names_beyond_ascii_stay_refused_where_the_system_normalizes_them() {
-        let kelvin = clashes(&["K.txt", "\u{212a}.txt"]);
-        assert_eq!(kelvin.merged.is_some(), platform::NORMALIZES_NAMES);
-        assert!(clashes(&["Makefile", "makefile"]).merged.is_none());
+    fn names_beyond_ascii_are_noted_on_every_system() {
+        assert!(clashes(&["K.txt", "\u{212a}.txt"]).beyond_ascii.is_some());
+        assert!(clashes(&["Makefile", "makefile"]).beyond_ascii.is_none());
     }
 
     /// The folder asked is the one that exists nearest to where the names
