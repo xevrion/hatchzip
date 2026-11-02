@@ -1,11 +1,9 @@
 # Bzip2 tar fixtures
 
-Created with GNU tar 1.35 and bzip2 1.0.8. Rebuild from the repository root:
+Created with GNU tar 1.35 and bzip2 1.0.8. Rebuild from the repository root, with `TAR_TOOL` and `BZIP2_TOOL` set when `tar` and `bzip2` on the path are other versions:
 
-```powershell
-$env:TAR_TOOL = 'C:/Users/Mahd2/Programming/Git/usr/bin/tar.exe'
-$env:BZIP2_TOOL = 'C:/Users/Mahd2/Programming/Git/mingw64/bin/bzip2.exe'
-python crates/cli/tests/fixtures/tarbz2/build.py
+```sh
+TAR_TOOL=<path to GNU tar> BZIP2_TOOL=<path to bzip2> python crates/cli/tests/fixtures/tarbz2/build.py
 ```
 
 `build.py` creates deterministic file contents, then runs `tar --format=gnu --mtime=@1700000000 --owner=0 --group=0 --numeric-owner -cf - <sorted file names> game/saves` and `bzip2 -1 -c` or `bzip2 -9 -c`. `game/saves` is the empty directory expected by the shared extraction assertions. The level fixtures have multiple blocks. `multi.tar.bz2` concatenates an empty stream and three independently compressed tar slices, at tar offsets 0, 777 and 1500777, using levels 9, 1 and 9. Split sets are made by the integration test, as for gzip.
