@@ -312,6 +312,52 @@ fn damaged_blocks_stream_crc_truncation_and_trailing_data_are_refused() {
     }
 }
 
+/// Damage past the resume point is found by the resumed scan, which starts
+/// from the journal's level and combined CRC. It stops before changing
+/// anything, keeps the journal and the half-written file, and once the
+/// archive is whole again it finishes.
+#[test]
+fn damage_found_on_resume_loses_no_progress() {
+    let files = files();
+    let tmp = TempDir::new().unwrap();
+    let archive = build(tmp.path(), "level1.tar.bz2");
+    let out = tmp.path().join("out");
+    let crash = stream_env(&[
+        ("HATCHZIP_CRASH_AT", "stream-after-punch"),
+        ("HATCHZIP_CRASH_AFTER", "4"),
+    ]);
+    assert!(!extract(&archive, &out, &crash).status.success());
+    let journal_before = fs::read(&side_files(&archive)[0]).unwrap();
+    assert_eq!(journal(&archive)["resume"]["stream"]["kind"], "bzip2");
+    let byte = resume_byte(&archive).unwrap() as usize;
+
+    let mut bytes = fs::read(&archive).unwrap();
+    let at = bytes.len() - 20_000;
+    assert!(at > byte);
+    let saved = bytes[at..at + 64].to_vec();
+    for b in &mut bytes[at..at + 64] {
+        *b ^= 0x5A;
+    }
+    fs::write(&archive, &bytes).unwrap();
+
+    let run = extract(&archive, &out, &stream_env(&[]));
+    assert_eq!(run.status.code(), Some(4), "reported as damaged");
+    assert_eq!(fs::read(&archive).unwrap(), bytes, "the archive changed");
+    assert_eq!(fs::read(&side_files(&archive)[0]).unwrap(), journal_before);
+    let part = journal(&archive)["resume"]["stream"]["at"]["file"]["path"]
+        .as_str()
+        .map(|p| out.join(format!("{p}.hatchzip-part")));
+    if let Some(part) = part {
+        assert!(part.exists(), "{} is gone", part.display());
+    }
+
+    bytes[at..at + 64].copy_from_slice(&saved);
+    fs::write(&archive, &bytes).unwrap();
+    assert_ok(&extract(&archive, &out, &stream_env(&[])));
+    assert_tree(&out, &files);
+    assert_consumed(&archive);
+}
+
 #[test]
 fn a_false_block_magic_inside_a_valid_block_is_ignored() {
     let bytes = fixture("false-magic.tar.bz2");
