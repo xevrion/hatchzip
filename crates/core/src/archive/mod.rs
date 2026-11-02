@@ -418,14 +418,7 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         // refused once the stream opens.
         return Ok(tarxz::NAME);
     }
-    let named_bzip2 = named_bzip2(
-        &storage
-            .primary()
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy(),
-    );
-    if starts(b"BZh") || named_bzip2 {
+    if starts(b"BZh") {
         let first = (|| -> Result<_> {
             let mut bz = tarbz2::Bzip2::new(
                 storage.reader(None),
@@ -443,11 +436,27 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
             }
             Ok((first, n))
         })()
-        .map_err(|e| anyhow::Error::new(Damaged(e)))
+        // A volume that can't be read is not damage in the stream.
+        .map_err(|e| {
+            if e.downcast_ref::<std::io::Error>().is_some() {
+                e
+            } else {
+                anyhow::Error::new(Damaged(e))
+            }
+        })
         .context(
             "checking the bzip2 archive (nothing was changed); if it is damaged, download it again",
         )?;
-        if is_tar(&first.0[..first.1]) || named_bzip2 {
+        // Like a .tar.gz, a stream that doesn't start with a ustar header is
+        // still taken as a tar when its own name says so.
+        let named = named_bzip2(
+            &storage
+                .primary()
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        if is_tar(&first.0[..first.1]) || named {
             return Ok(tarbz2::NAME);
         }
         bail!(
