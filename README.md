@@ -346,6 +346,12 @@ Pull requests and bug reports from people are held to the same rules, and are ve
   </picture>
 </a>
 
+## Sponsors
+
+HatchZip is free and open source, and it stays that way. Sponsorship pays for its maintenance, macOS signing, more formats and an outside security review; [hatchzip.dev/sponsor](https://hatchzip.dev/sponsor.html) has the details, including options for companies that embed `hatchzip-core`.
+
+Sponsor through [GitHub Sponsors](https://github.com/sponsors/xevrion) or [Buy Me a Coffee](https://buymeacoffee.com/xevrion). Sponsors from 10 USD a month are listed here, and companies from 100 USD a month with their logo.
+
 ## License
 
 HatchZip is licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
