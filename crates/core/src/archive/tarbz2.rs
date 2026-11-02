@@ -514,14 +514,16 @@ impl<R: Read + Seek> Bzip2<R> {
                     );
                 }
                 let offset = (start / 8 - self.input.base) as usize;
-                if let Some(out) = decode_block(
+                if decode_block(
                     &self.input.bytes[offset..],
                     (start % 8) as usize,
                     (candidate - start) as usize,
                     self.point.level,
                     crc,
-                ) {
-                    self.output = out;
+                    &mut self.output,
+                )
+                .is_some()
+                {
                     self.point.crc = self.point.crc.rotate_left(1) ^ crc;
                     self.input.bit = candidate;
                     self.point.bit = candidate;
@@ -546,7 +548,17 @@ impl<R: Read + Seek> Bzip2<R> {
 
 /// Shift whole words rather than rebuilding a block bit by bit. The final
 /// byte is masked because its unused bits belong to the following block.
-fn decode_block(bytes: &[u8], shift: usize, bits: usize, level: u8, crc: u32) -> Option<Vec<u8>> {
+/// The block is decoded into `out`, the decoder's own buffer, so a highly
+/// compressible block is never held twice; `out` is left empty on failure.
+fn decode_block(
+    bytes: &[u8],
+    shift: usize,
+    bits: usize,
+    level: u8,
+    crc: u32,
+    out: &mut Vec<u8>,
+) -> Option<()> {
+    out.clear();
     let len = bits.div_ceil(8);
     let mut data = vec![0; 4 + (bits + 80).div_ceil(8)];
     data[..4].copy_from_slice(&[b'B', b'Z', b'h', b'0' + level]);
@@ -581,12 +593,16 @@ fn decode_block(bytes: &[u8], shift: usize, bits: usize, level: u8, crc: u32) ->
         }
     }
     let mut decoder = bzip2::read::BzDecoder::new(data.as_slice());
-    let mut out = Vec::new();
     // The level caps a block's size before its first RLE stage is undone,
     // not its output: that stage expands five encoded bytes to 259 bytes.
     let limit = u64::from(level) * 100_000 * 52;
-    (&mut decoder).take(limit + 1).read_to_end(&mut out).ok()?;
-    (out.len() as u64 <= limit && decoder.total_in() == data.len() as u64).then_some(out)
+    let read = (&mut decoder).take(limit + 1).read_to_end(out);
+    if read.is_ok() && out.len() as u64 <= limit && decoder.total_in() == data.len() as u64 {
+        Some(())
+    } else {
+        out.clear();
+        None
+    }
 }
 
 /// Large reads serve both header fields and the byte scanner. `base` never
