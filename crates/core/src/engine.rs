@@ -148,22 +148,38 @@ impl CaseClashes {
             if !group.iter().any(|n| n.2) {
                 continue;
             }
-            // Sorted, a path has the most in common with its neighbours, so
-            // these pairs reach every folder where two of the paths meet.
-            for pair in group.windows(2) {
-                let (a, b) = (pair[0].1, pair[1].1);
-                clashes
-                    .met_in
-                    .entry(meeting_folder(a, b))
-                    .or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
-                if !(a.to_string_lossy().is_ascii() && b.to_string_lossy().is_ascii()) {
-                    clashes
-                        .beyond_ascii
-                        .get_or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
+            // A path shares the most components with the nearest file on
+            // either side. These pairs cover every meeting folder without
+            // imposing case separation between folders alone in a branch.
+            let mut previous_file = None;
+            for (_, path, is_file) in group {
+                if let Some(file) = previous_file {
+                    clashes.add_pair(file, path);
+                }
+                if *is_file {
+                    previous_file = Some(*path);
+                }
+            }
+            let mut next_file = None;
+            for (_, path, is_file) in group.iter().rev() {
+                if *is_file {
+                    next_file = Some(*path);
+                } else if let Some(file) = next_file {
+                    clashes.add_pair(path, file);
                 }
             }
         }
         clashes
+    }
+
+    fn add_pair(&mut self, a: &Path, b: &Path) {
+        self.met_in
+            .entry(meeting_folder(a, b))
+            .or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
+        if !(a.to_string_lossy().is_ascii() && b.to_string_lossy().is_ascii()) {
+            self.beyond_ascii
+                .get_or_insert_with(|| (a.to_path_buf(), b.to_path_buf()));
+        }
     }
 }
 
@@ -2194,6 +2210,58 @@ mod tests {
             met.keys().collect::<Vec<_>>(),
             [Path::new(""), Path::new("x")]
         );
+    }
+
+    /// A file in a separate case-sensitive branch does not stop folders
+    /// inside the other branch from merging on a case-insensitive mount.
+    #[test]
+    fn directory_aliases_need_no_case_separation_in_a_fileless_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("archive.bin");
+        fs::write(&path, [0u8; 64]).unwrap();
+        let storage = Arc::new(Storage::open(&path, false).unwrap());
+        let units = ["A/f", "a/F/one.txt", "a/f/two.txt"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| unit(i as u64, name, 1))
+            .collect();
+        let job = Job::build(storage, opened(units, 64), 64).unwrap();
+        let clashes = job.check_layout().unwrap();
+        assert_eq!(clashes.met_in.keys().collect::<Vec<_>>(), [Path::new("")]);
+    }
+
+    /// Folders between files must still meet the file on each side. Compare
+    /// every mixture of absent paths, folders and files with all real pairs
+    /// across three levels, including fileless branches between two files.
+    #[test]
+    fn case_folders_match_every_file_file_and_file_folder_pair() {
+        let paths = [
+            "A/B/C", "A/B/c", "A/b/C", "A/b/c", "a/B/C", "a/B/c", "a/b/C", "a/b/c",
+        ];
+        for mut choices in 0..3usize.pow(paths.len() as u32) {
+            let mut names = Vec::new();
+            for path in paths {
+                let kind = choices % 3;
+                choices /= 3;
+                if kind != 0 {
+                    names.push((path.to_lowercase(), Path::new(path), kind == 2));
+                }
+            }
+            let mut expected = std::collections::BTreeSet::new();
+            for (i, a) in names.iter().enumerate() {
+                for b in &names[i + 1..] {
+                    if a.2 || b.2 {
+                        expected.insert(meeting_folder(a.1, b.1));
+                    }
+                }
+            }
+            let clashes = CaseClashes::of(&names);
+            assert_eq!(
+                clashes.met_in.keys().collect::<Vec<_>>(),
+                expected.iter().collect::<Vec<_>>(),
+                "{names:?}"
+            );
+        }
     }
 
     /// A file against thousands of folders is a pair for each neighbour, not

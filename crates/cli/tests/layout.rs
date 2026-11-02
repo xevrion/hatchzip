@@ -560,6 +560,62 @@ fn folders_differing_only_in_case_extract_everywhere() {
     assert_consumed(&archive);
 }
 
+/// Only the root must keep A and a apart. Simulate a case-insensitive a
+/// subfolder: its F and f may merge, including after a journaled crash.
+#[test]
+fn directory_aliases_in_a_separate_branch_need_no_case_record() {
+    let files = Files::from([
+        ("A/f".into(), noise(12_000, 1)),
+        ("a/F/one.txt".into(), b"one\n".to_vec()),
+        ("a/f/two.txt".into(), b"two\n".to_vec()),
+    ]);
+    for (name, build) in case_builders() {
+        for keep in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let archive = build(tmp.path(), &files);
+            if !session::case_sensitive(tmp.path()) {
+                assert_refused(&archive, "differ only in case");
+                continue;
+            }
+            let before = fs::read(&archive).unwrap();
+            let out = tmp.path().join("out");
+            let folding = out.join("a");
+            fs::create_dir_all(&folding).unwrap();
+            let folding = folding.to_str().unwrap();
+            let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+            let mut args = vec!["extract", a, "-o", o, "--keep-free", "0", "--yes"];
+            if keep {
+                args.push("--keep-archive");
+            }
+            let crashed = hatchzip(
+                &args,
+                &[
+                    ("HATCHZIP_IGNORE_CASE_AT", folding),
+                    ("HATCHZIP_BATCH_ENTRIES", "1"),
+                    ("HATCHZIP_CRASH_AT", "after-journal"),
+                    ("HATCHZIP_CRASH_AFTER", "0"),
+                ],
+            );
+            assert!(!crashed.status.success(), "{name}, keep={keep}");
+            let journal: serde_json::Value =
+                serde_json::from_slice(&fs::read(&side_files(&archive)[0]).unwrap()).unwrap();
+            assert_eq!(journal["case_folders"], serde_json::json!([""]));
+            let env = [("HATCHZIP_IGNORE_CASE_AT", folding)];
+            assert_ok(&hatchzip(&["check", a, "--keep-free", "0"], &env));
+            assert_ok(&extract(&archive, &out, &env));
+            assert_tree(&out, &files);
+            if keep {
+                assert_eq!(fs::read(&archive).unwrap(), before);
+                for side in side_files(&archive) {
+                    assert!(!side.exists());
+                }
+            } else {
+                assert_consumed(&archive);
+            }
+        }
+    }
+}
+
 /// Case or no case, the same path twice is refused everywhere.
 #[test]
 fn tar_duplicate_names_are_refused() {
