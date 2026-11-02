@@ -20,7 +20,8 @@ use hatchzip_gui::args::{TaskArgs, TaskKind};
 use hatchzip_gui::backend::Drops;
 use hatchzip_gui::settings::Settings;
 use hatchzip_gui::{
-    Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window, task_window,
+    EntryRow, MainWindow, Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window,
+    task_window,
 };
 use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
 use slint::language::ColorScheme;
@@ -166,6 +167,14 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
     folder.invoke_accessible_expand_action();
     assert_eq!(folder.accessible_expanded(), Some(true));
     assert_eq!(folder.accessible_item_selected(), Some(true));
+    assert!(
+        ui.get_entries()
+            .iter()
+            .any(|r| r.path == "Northwind/bin/northwind")
+    );
+    // Expanding an open folder must not collapse it.
+    folder.invoke_accessible_expand_action();
+    assert_eq!(folder.accessible_expanded(), Some(true));
     assert!(
         ui.get_entries()
             .iter()
@@ -916,6 +925,58 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
     ui.hide().unwrap();
 }
 
+fn tree_accessibility_edges(scheme: ColorScheme) {
+    let ui = MainWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.set_screen(Screen::Opened);
+    ui.show().unwrap();
+    // Realize the empty list before sending a key to its FocusScope.
+    let _ = ui.window().take_snapshot().unwrap();
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::DownArrow.into(),
+    });
+    assert_eq!(ui.get_entries().row_count(), 0);
+    ui.set_entries(
+        Rc::new(slint::VecModel::from(vec![
+            EntryRow {
+                name: "folder".into(),
+                path: "folder".into(),
+                dir: true,
+                ..Default::default()
+            },
+            EntryRow {
+                name: "shortcut".into(),
+                path: "shortcut".into(),
+                size: "translated link text".into(),
+                link: true,
+                ..Default::default()
+            },
+            EntryRow {
+                name: "file".into(),
+                path: "file".into(),
+                size: "link".into(),
+                ..Default::default()
+            },
+        ]))
+        .into(),
+    );
+    // Down on the empty model must not leave a negative selection behind.
+    let folder = ElementHandle::find_by_accessible_label(&ui, "folder")
+        .next()
+        .unwrap();
+    assert_eq!(folder.accessible_item_selected(), Some(true));
+    // Descriptions follow the row kind, even when display text changes.
+    let link = ElementHandle::find_by_accessible_label(&ui, "shortcut")
+        .next()
+        .unwrap();
+    assert_eq!(link.accessible_description().unwrap(), "Link");
+    let file = ElementHandle::find_by_accessible_label(&ui, "file")
+        .next()
+        .unwrap();
+    assert_eq!(file.accessible_description().unwrap(), "File");
+    ui.hide().unwrap();
+}
+
 #[test]
 fn windows_end_to_end() {
     let data = tempfile::tempdir().unwrap();
@@ -933,6 +994,7 @@ fn windows_end_to_end() {
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
         main_window_flow(scheme, tag);
+        tree_accessibility_edges(scheme);
         keep_flow(scheme, tag);
         task_window_flow(scheme, tag);
         replace_flow(scheme, tag);
