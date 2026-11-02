@@ -79,14 +79,14 @@ pub const NORMALIZES_NAMES: bool = false;
 /// Whether `dir` is known to keep apart names that differ only in case. What
 /// isn't known counts as not: only btrfs always does, and the rest can be
 /// asked. A filesystem this doesn't list can ignore case on its own terms,
-/// such as a ZFS dataset.
+/// such as a ZFS dataset. bcachefs stays out until it has been run: it would
+/// have to report the casefold flag here, and pass it on to new folders.
 pub fn case_sensitive(dir: &Path) -> bool {
     use std::os::unix::fs::OpenOptionsExt;
 
     const EXT: u32 = 0xEF53;
     const F2FS: u32 = 0xF2F5_2010;
     const TMPFS: u32 = 0x0102_1994;
-    const BCACHEFS: u32 = 0xCA45_1A4E;
     const XFS: u32 = 0x5846_5342;
 
     // Folders only: opening a FIFO found here would wait for a writer.
@@ -104,14 +104,14 @@ pub fn case_sensitive(dir: &Path) -> bool {
     // The magic numbers are 32 bits, and `f_type` is signed on some systems.
     match st.f_type as u32 {
         magic if magic == BTRFS_MAGIC as u32 => true,
-        EXT | F2FS | TMPFS | BCACHEFS => folder_ignores_case(&f) == Some(false),
+        EXT | F2FS | TMPFS => folder_ignores_case(&f) == Some(false),
         XFS => xfs_ignores_case(&f) == Some(false),
         _ => false,
     }
 }
 
-/// Whether a folder on ext4, f2fs, tmpfs or bcachefs has the casefold flag,
-/// which folders made inside it inherit. `None` when it can't be asked.
+/// Whether a folder on ext4, f2fs or tmpfs has the casefold flag, which
+/// folders made inside it inherit. `None` when it can't be asked.
 fn folder_ignores_case(dir: &File) -> Option<bool> {
     const FS_CASEFOLD_FL: libc::c_uint = 0x4000_0000;
 

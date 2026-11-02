@@ -179,10 +179,13 @@ fn meeting_folder(a: &Path, b: &Path) -> PathBuf {
 }
 
 /// Whether `dir` is known to keep apart names that differ only in case. A
-/// debug build can be told it isn't, so that tests reach the refusals on a
-/// disk that does.
-fn keeps_case_apart(dir: &Path) -> bool {
-    test_knob("HATCHZIP_IGNORE_CASE").is_none() && platform::case_sensitive(dir)
+/// debug build can be told it isn't, anywhere or at one folder, so that tests
+/// reach the refusals on a disk that does.
+pub(crate) fn keeps_case_apart(dir: &Path) -> bool {
+    let at = std::env::var_os("HATCHZIP_IGNORE_CASE_AT").filter(|_| cfg!(debug_assertions));
+    test_knob("HATCHZIP_IGNORE_CASE").is_none()
+        && at.is_none_or(|at| Path::new(&at) != dir)
+        && platform::case_sensitive(dir)
 }
 
 /// Whether this system can make one file of different names even where case
@@ -422,8 +425,8 @@ impl Job {
         if let Some((a, b)) = clashes.beyond_ascii.as_ref().filter(|_| normalizes_names()) {
             bail!(
                 "'{}' and '{}' differ only in case, and with characters outside ASCII this \
-                 system may treat them as one file even on a case-sensitive volume; extraction \
-                 refused. Extract this archive with another program",
+                 system may treat them as one file on any volume; extraction refused. Extract \
+                 this archive with another program",
                 a.display(),
                 b.display()
             );

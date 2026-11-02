@@ -154,7 +154,9 @@ fn assert_extracts_where_case_is_kept(archive: &Path, extracted: impl Fn(&Path))
 
 fn case_files() -> Files {
     let mut files = Files::new();
-    files.insert("game/Makefile".into(), b"upper\n".to_vec());
+    // Over two xz blocks, so a `.tar.xz` killed at its resume points still
+    // has the other name to do.
+    files.insert("game/Makefile".into(), noise(12_000, 1));
     files.insert("game/makefile".into(), b"lower\n".to_vec());
     files.insert("game/other.txt".into(), b"other\n".to_vec());
     files
@@ -169,6 +171,22 @@ fn case_builders() -> Vec<(&'static str, Build)> {
         ("solid 7z", |d, f| sevenz_of(d, "case.7z", f, true)),
         ("tar", |d, f| tar_of(d, "case.tar", f)),
         ("tar.gz", |d, f| targz_of(d, "case.tar.gz", f)),
+        ("tar.xz", |d, f| tarxz_of(d, "case.tar.xz", f)),
+    ]
+}
+
+/// What kills a run after its second commit. A `.tar.xz` commits at resume
+/// points, which come at the ends of its blocks once they are due this often.
+fn crash_env(archive: &Path) -> [(&'static str, &'static str); 3] {
+    let (often, at) = if archive.to_string_lossy().ends_with(".tar.xz") {
+        (("HATCHZIP_STREAM_STEP", "1024"), "stream-after-journal")
+    } else {
+        (("HATCHZIP_BATCH_ENTRIES", "1"), "after-journal")
+    };
+    [
+        often,
+        ("HATCHZIP_CRASH_AT", at),
+        ("HATCHZIP_CRASH_AFTER", "1"),
     ]
 }
 
@@ -222,15 +240,7 @@ fn keeping_and_resuming_names_differing_only_in_case() {
         assert_unchanged(&before);
 
         let out = tmp.path().join("out");
-        let crashed = extract(
-            &archive,
-            &out,
-            &[
-                ("HATCHZIP_BATCH_ENTRIES", "1"),
-                ("HATCHZIP_CRASH_AT", "after-journal"),
-                ("HATCHZIP_CRASH_AFTER", "1"),
-            ],
-        );
+        let crashed = extract(&archive, &out, &crash_env(&archive));
         // A `.tar.gz` this small is one unit, with no point to crash at.
         if name != "tar.gz" {
             assert!(!crashed.status.success(), "{name} should have crashed");
@@ -274,15 +284,7 @@ fn assert_refused_where_case_may_be_ignored_from(
     finished: impl Fn(&Path),
 ) {
     let out = archive.with_file_name("out");
-    let crashed = extract(
-        archive,
-        &out,
-        &[
-            ("HATCHZIP_BATCH_ENTRIES", "1"),
-            ("HATCHZIP_CRASH_AT", "after-journal"),
-            ("HATCHZIP_CRASH_AFTER", "1"),
-        ],
-    );
+    let crashed = extract(archive, &out, &crash_env(archive));
     assert!(!crashed.status.success(), "it should have crashed");
     let (before, written) = (snapshot(archive), files_below(&out));
     let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
