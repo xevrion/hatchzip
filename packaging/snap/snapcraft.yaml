@@ -37,9 +37,10 @@ donation: https://buymeacoffee.com/xevrion
 grade: stable
 # Strict, with write access through `home` and `removable-media`. HatchZip
 # truncates and deletes the archive it extracts, writes its progress files
-# (<archive>.hatchzip, <archive>.hatchzip-tail) next to it and reads the
-# other volumes of a split archive from the same folder, so it needs write
-# access where the archives are, not just to files picked in a dialog.
+# (<archive>.hatchzip, <archive>.hatchzip-tail, <archive>.hatchzip-folders)
+# next to it and reads the other volumes of a split archive from the same
+# folder, so it needs write access where the archives are, not just to files
+# picked in a dialog.
 # `home` covers non-hidden files in the home folder and is connected
 # automatically; `removable-media` covers /media, /run/media and /mnt and is
 # connected by the user (or automatically, if the store grants it). Classic

@@ -47,7 +47,7 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - Is it safe? A file is written and flushed to disk before the part of the archive holding it is cut off, so a crash leaves each file either extracted or still in the archive. Every file's CRC-32 is checked; a damaged file stops the run.
 - Does it need internet? No. No networking code or library, no telemetry, no accounts, and it never checks for updates itself; Help, Check for updates in the app opens the latest release in the browser. CI fails if an HTTP, TLS or socket library enters the dependencies.
 - How much space does it need? About the size of the extracted files plus the largest part it can free at once (one file for ZIP, tar and RAR; one solid block for 7z), and 2 GB kept free by default (`--keep-free`). A 180 GB archive that unpacks to 200 GB needs a little over 200 GB, not 380 GB.
-- What if it crashes? Progress is saved in two small files next to the archive; run the same command, or open the archive in the app, again to continue.
+- What if it crashes? Progress is saved in small files next to the archive; run the same command, or open the archive in the app, again to continue.
 - Does it work on FAT32 or exFAT? Yes, for ZIP, 7z, tar and RAR. A .tar.gz there needs room for the archive and the files at once.
 - Why does antivirus flag it? The release files are not code-signed yet. Each has a `.sha256` checksum and, from 0.1.3 on, signed build provenance (`gh attestation verify <file> --repo xevrion/hatchzip`). See [Verify your download](https://hatchzip.dev/verify.html).
 - Is hatchzip.com related? No. HatchZip is only distributed from github.com/xevrion/hatchzip, hatchzip.dev and the package managers above.
