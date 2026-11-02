@@ -281,6 +281,18 @@ impl Journal {
     }
 
     pub fn load(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
+        let loaded = Self::load_without_folders(paths)?;
+        // Read at the very end, so checked now: a resume past a missing or
+        // damaged list would free the rest of the archive and only then fail.
+        if let Some(saved) = loaded.0.folders {
+            crate::folders::load(&paths.folders, saved)?;
+        }
+        Ok(loaded)
+    }
+
+    /// For a restore, which never sets the folders: a lost list must not stop
+    /// the one command that gives the archive back.
+    pub fn load_without_folders(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
         let bytes = fs::read(&paths.journal)
             .with_context(|| format!("reading {}", paths.journal.display()))?;
         // The version is checked before the rest is parsed, so a newer layout
@@ -356,11 +368,6 @@ impl Journal {
             || journal.tail_start + tail.len() as u64 != len
         {
             bail!("{} does not match its journal", paths.tail.display());
-        }
-        // Read at the very end, so checked now: a resume past a missing or
-        // damaged list would free the rest of the archive and only then fail.
-        if let Some(saved) = journal.folders {
-            crate::folders::load(&paths.folders, saved)?;
         }
         let tail = Arc::new(Tail {
             start: journal.tail_start,

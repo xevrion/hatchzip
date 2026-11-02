@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use common::*;
+use hatchzip_core::session;
 use tempfile::TempDir;
 
 fn when() -> SystemTime {
@@ -264,6 +265,75 @@ fn a_missing_folders_file_stops_the_resume_before_anything_is_freed() {
     let err = String::from_utf8_lossy(&resumed.stderr);
     assert!(err.contains("hatchzip-folders"), "{err}");
     assert_unchanged(&before);
+}
+
+/// A run can have both saved folders and names that differ only in case, and
+/// its journal, at version 8, still resumes.
+#[test]
+fn a_run_with_folders_and_names_differing_only_in_case_resumes() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = tar_with_folders(tmp.path(), Some(("docs/A.TXT", 0o755)));
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+        ],
+    );
+    assert!(!crashed.status.success(), "should have crashed");
+    let journal: serde_json::Value =
+        serde_json::from_slice(&fs::read(&side_files(&archive)[0]).unwrap()).unwrap();
+    assert_eq!(journal["version"], 8);
+    assert_eq!(journal["case_folders"], serde_json::json!(["docs"]));
+    assert!(!journal["folders"].is_null());
+
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_folders(&out);
+    assert_mode(&out.join("docs/A.TXT"), 0o755);
+    assert_consumed(&archive);
+}
+
+/// A restore never reads the saved folders, so it still gives the archive
+/// back, or discards a kept run's progress, with the file gone or damaged.
+#[test]
+fn a_lost_folders_file_does_not_stop_a_restore() {
+    for keep in [false, true] {
+        for damaged in [false, true] {
+            let tmp = TempDir::new().unwrap();
+            let archive = tar_with_folders(tmp.path(), None);
+            let out = tmp.path().join("out");
+            let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+            let mut args = vec!["extract", a, "-o", o, "--keep-free", "0", "--yes"];
+            if keep {
+                args.push("--keep-archive");
+            }
+            let crashed = hatchzip(
+                &args,
+                &[
+                    ("HATCHZIP_BATCH_ENTRIES", "1"),
+                    ("HATCHZIP_CRASH_AT", "after-journal"),
+                ],
+            );
+            assert!(!crashed.status.success(), "should have crashed");
+            if damaged {
+                fs::write(folders_file(&archive), b"[]").unwrap();
+            } else {
+                fs::remove_file(folders_file(&archive)).unwrap();
+            }
+
+            assert_ok(&hatchzip(&["restore", a, "-o", o], &[]));
+            assert_no_side_files(&archive);
+
+            let again = tmp.path().join("again");
+            assert_ok(&extract(&archive, &again, &[]));
+            assert!(again.join("docs/old").is_dir());
+        }
+    }
 }
 
 /// The DOS time of a ZIP folder entry is read the way a file's is, so both
