@@ -115,6 +115,30 @@ fn allocated(_path: &Path) -> Option<u64> {
     None
 }
 
+/// Bytes the file occupies, holes included. `fs::metadata().len()` reports
+/// the length, not the allocation, and `platform::allocated_bytes` is not
+/// reachable from an end-to-end test.
+#[cfg(windows)]
+fn allocated_for_punch(path: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCompressedFileSizeW(name: *const u16, high: *mut u32) -> u32;
+    }
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut high = 0u32;
+    let low = unsafe { GetCompressedFileSizeW(wide.as_ptr(), &mut high) };
+    if low == u32::MAX && high == 0 {
+        return None;
+    }
+    Some((u64::from(high) << 32) | u64::from(low))
+}
+
+#[cfg(target_os = "macos")]
+fn allocated_for_punch(path: &Path) -> Option<u64> {
+    allocated(path)
+}
+
 fn journal(archive: &Path) -> serde_json::Value {
     serde_json::from_slice(&fs::read(&side_files(archive)[0]).unwrap()).unwrap()
 }
@@ -899,4 +923,45 @@ fn a_gzip_file_that_is_not_a_tar_is_refused() {
     assert!(!run.status.success());
     assert!(String::from_utf8_lossy(&run.stderr).contains("does not contain a tar archive"));
     assert_eq!(fs::read(&archive).unwrap(), bytes);
+}
+
+/// Points closer together than a punch granule still free space. NTFS aligns
+/// a punch to 64 KiB and APFS to 4 KiB, so with a point every 50 KiB NTFS
+/// freed nothing at all while the next punch started at the previous byte:
+/// every range rounded inwards to nothing and the archive was only freed at
+/// the end. With the overlap each punch covers the granule the previous one
+/// left behind. The test runs where the allocation can be measured.
+#[cfg(any(windows, target_os = "macos"))]
+#[test]
+fn points_closer_than_a_punch_granule_still_free_space() {
+    if std::env::var_os("HATCHZIP_EXPECT_PUNCH").is_none() {
+        // The assertion needs a filesystem whose punch probe frees space;
+        // CI sets this, a plain local run does not.
+        return;
+    }
+    let files = files();
+    let tar = tar_bytes(&files);
+    let cuts: Vec<usize> = (1..tar.len() / 50_000).map(|i| i * 50_000).collect();
+    let tmp = TempDir::new().unwrap();
+    let archive = tmp.path().join("game.tar.gz");
+    fs::write(&archive, gzip(&tar, &cuts, 6)).unwrap();
+    let before = allocated_for_punch(&archive).unwrap();
+
+    let crashed = extract(
+        &archive,
+        &tmp.path().join("out"),
+        &[
+            ("HATCHZIP_STREAM_STEP", "1"),
+            ("HATCHZIP_CRASH_AT", "stream-after-punch"),
+            ("HATCHZIP_CRASH_AFTER", "80"),
+        ],
+    );
+    assert!(!crashed.status.success(), "the run should have crashed");
+
+    let used = allocated_for_punch(&archive).unwrap();
+    let freed = before.saturating_sub(used);
+    assert!(
+        freed >= 256 * 1024,
+        "only {freed} bytes freed of {before}; points 50 KiB apart inside a 64 KiB punch granule freed nothing"
+    );
 }

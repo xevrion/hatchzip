@@ -1590,7 +1590,7 @@ impl Run<'_> {
         self.job.resume = Some(point);
         crash_point("stream-after-journal");
 
-        if punching.is_some() {
+        if let Some(granule) = punching {
             if !self
                 .job
                 .storage
@@ -1599,7 +1599,11 @@ impl Run<'_> {
             {
                 return Ok(None);
             }
-            *punched = byte;
+            // A filesystem that rounds a punch inwards keeps the granule
+            // holding `byte` allocated. Starting the next punch one granule
+            // earlier covers it; it still never reaches `byte`, the point a
+            // resume parses.
+            *punched = byte.saturating_sub(granule);
             (self.progress.on_commit)(self.job.top - byte);
         }
         crash_point("stream-after-punch");
