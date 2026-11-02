@@ -6,6 +6,7 @@ The HatchZip website: static pages, no build step. The only script is Cloudflare
 |---|---|
 | `index.html` | The main page |
 | `sponsor.html` | Sponsoring HatchZip, for individuals and companies |
+| `funding.json` | Funding manifest ([fundingjson.org](https://fundingjson.org/)) for FLOSS/fund and FOSS United; `/.well-known/funding-manifest-urls` in the repo vouches for it |
 | `stats.py` | Fills in the live numbers between `<!--stat:NAME-->` markers; the pages workflow runs it every hour |
 | `verify.html` | Verify your download: what HatchZip does, checksums, provenance, and the release file table |
 | `update-verify.py` | Regenerates the release file table in `verify.html` |
