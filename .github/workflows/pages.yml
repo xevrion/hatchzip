@@ -1,9 +1,13 @@
 name: pages
 
-# Manual only, so nothing goes live until someone runs it from the Actions tab.
-# The site is plain files in site/, there is nothing to build.
+# Run by hand to publish main from the Actions tab. Every hour a scheduled
+# run republishes the commit that is already live, only with its numbers
+# refreshed (site/stats.py), so nothing new on main goes live until someone
+# runs it by hand.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
 
 # Each job asks for exactly what it needs below.
 permissions: {}
@@ -19,15 +23,33 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # Finding the last run by hand, whose commit is the live one.
+      actions: read
       # configure-pages reads the repository's Pages settings.
       pages: read
     steps:
+      - id: live
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          sha=$(gh api "repos/$REPO/actions/workflows/pages.yml/runs?event=workflow_dispatch&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha')
+          test -n "$sha" && test "$sha" != null
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.live.outputs.sha || github.sha }}
           persist-credentials: false
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      # Commits from before stats.py have nothing to fill in.
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f site/stats.py ]; then python3 site/stats.py site/*.html; fi
       # These are for people, Cloudflare Pages and releases, not for visitors.
-      - run: rm site/README.md site/_headers site/update-verify.py
+      - run: rm -f site/README.md site/_headers site/update-verify.py site/stats.py
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site

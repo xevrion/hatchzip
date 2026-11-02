@@ -1,10 +1,12 @@
 # Website
 
-The HatchZip website: static pages, no build step, no JavaScript, no requests to other sites.
+The HatchZip website: static pages, no build step. The only script is Cloudflare Web Analytics, which counts visits without cookies; the Content-Security-Policy on every page allows it and nothing else.
 
 | File | Purpose |
 |---|---|
 | `index.html` | The main page |
+| `sponsor.html` | Sponsoring HatchZip, for individuals and companies |
+| `stats.py` | Fills in the live numbers between `<!--stat:NAME-->` markers; the pages workflow runs it every hour |
 | `verify.html` | Verify your download: what HatchZip does, checksums, provenance, and the release file table |
 | `update-verify.py` | Regenerates the release file table in `verify.html` |
 | `not-enough-space-to-extract.html`, `winrar-not-enough-space.html`, `7zip-not-enough-space.html` | Guides for people whose extraction ran out of disk space |
