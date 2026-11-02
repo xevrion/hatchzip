@@ -253,6 +253,24 @@ pub fn targz_of(dir: &Path, name: &str, files: &Files) -> PathBuf {
     path
 }
 
+/// In blocks small enough to make several of a tiny tree, since a single one
+/// can't be extracted in place. A block is never smaller than the dictionary.
+pub fn tarxz_of(dir: &Path, name: &str, files: &Files) -> PathBuf {
+    use std::io::Write;
+    use std::num::NonZeroU64;
+
+    use lzma_rust2::{XzOptions, XzWriter};
+
+    let mut opts = XzOptions::with_preset(0);
+    opts.lzma_options.dict_size = 4096;
+    opts.set_block_size(NonZeroU64::new(4096));
+    let mut w = XzWriter::new(Vec::new(), opts).unwrap();
+    w.write_all(&tar_bytes_of(files)).unwrap();
+    let path = dir.join(name);
+    fs::write(&path, w.finish().unwrap()).unwrap();
+    path
+}
+
 /// Replaces `archive` with `parts` volumes next to it and returns the first.
 pub fn split_up(archive: &Path, parts: usize) -> PathBuf {
     let bytes = fs::read(archive).unwrap();

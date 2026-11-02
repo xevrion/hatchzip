@@ -1382,18 +1382,26 @@ fn absolute_names_and_backslashes_land_inside() {
 }
 
 /// Two names that differ only in case would race on a case-insensitive
-/// disk, and are refused as for every format.
+/// disk, and are refused there as for every format.
 #[test]
-fn names_differing_only_in_case_are_refused_untouched() {
+fn names_differing_only_in_case_depend_on_the_destination() {
     let tmp = TempDir::new().unwrap();
     let mut entries = entries_of(&small());
     entries.push(entry("game/D.PAK", b"other\n".to_vec()));
     let archive = write_rar(tmp.path(), Version::Five, &entries, None, Naming::Old);
+    let out = tmp.path().join("out");
+    if hatchzip_core::session::case_sensitive(tmp.path()) {
+        assert_ok(&extract(&archive, &out, &[]));
+        let mut files = small();
+        files.insert("game/D.PAK".into(), b"other\n".to_vec());
+        assert_tree(&out, &files);
+        return;
+    }
     let before = snapshot_dir(tmp.path());
-    let out = extract(&archive, &tmp.path().join("out"), &[]);
-    assert!(!out.status.success());
+    let run = extract(&archive, &out, &[]);
+    assert!(!run.status.success());
     assert_unchanged(&before);
-    refused_untouched(tmp.path(), &out);
+    refused_untouched(tmp.path(), &run);
 }
 
 /// Extracts a set whose volume 1 holds `first`, followed by two files big

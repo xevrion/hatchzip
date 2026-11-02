@@ -39,7 +39,7 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
 
 /// The output folder may not exist yet, so ask about the nearest parent that
 /// does.
-fn existing_ancestor(path: &Path) -> PathBuf {
+pub fn existing_ancestor(path: &Path) -> PathBuf {
     let mut p = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     while !p.exists() {
         if !p.pop() {

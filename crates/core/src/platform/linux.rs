@@ -72,6 +72,78 @@ pub fn punch_granule(dir: &Path) -> u64 {
     }
 }
 
+/// Whether this system can treat different names as one file on a case-sensitive
+/// filesystem. Linux leaves names as they are.
+pub const NORMALIZES_NAMES: bool = false;
+
+/// Whether `dir` is known to keep apart names that differ only in case. What
+/// isn't known counts as not: only btrfs always does, and the rest can be
+/// asked. A filesystem this doesn't list can ignore case on its own terms,
+/// such as a ZFS dataset. bcachefs stays out until it has been run: it would
+/// have to report the casefold flag here, and pass it on to new folders.
+pub fn case_sensitive(dir: &Path) -> bool {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    const EXT: u32 = 0xEF53;
+    const F2FS: u32 = 0xF2F5_2010;
+    const TMPFS: u32 = 0x0102_1994;
+    const XFS: u32 = 0x5846_5342;
+
+    // Folders only: opening a FIFO found here would wait for a writer.
+    let Ok(f) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(dir)
+    else {
+        return false;
+    };
+    let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstatfs(f.as_raw_fd(), &mut st) } != 0 {
+        return false;
+    }
+    // The magic numbers are 32 bits, and `f_type` is signed on some systems.
+    match st.f_type as u32 {
+        magic if magic == BTRFS_MAGIC as u32 => true,
+        EXT | F2FS | TMPFS => folder_ignores_case(&f) == Some(false),
+        XFS => xfs_ignores_case(&f) == Some(false),
+        _ => false,
+    }
+}
+
+/// Whether a folder on ext4, f2fs or tmpfs has the casefold flag, which
+/// folders made inside it inherit. `None` when it can't be asked.
+fn folder_ignores_case(dir: &File) -> Option<bool> {
+    const FS_CASEFOLD_FL: libc::c_uint = 0x4000_0000;
+
+    let mut flags: libc::c_uint = 0;
+    // SAFETY: the kernel writes an int here, whatever the size in the number.
+    let got = unsafe { libc::ioctl(dir.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
+    (got == 0).then_some(flags & FS_CASEFOLD_FL != 0)
+}
+
+/// Whether an XFS filesystem was made with ASCII case-insensitive names,
+/// which `mkfs.xfs -n version=ci` does for all of it.
+fn xfs_ignores_case(any: &File) -> Option<bool> {
+    /// `struct xfs_fsop_geom_v1`: the first version, which kernels still take.
+    #[repr(C)]
+    struct Geometry {
+        _sizes: [u32; 8],
+        _blocks: [u64; 4],
+        _uuid: [u8; 16],
+        _stripes_and_version: [u32; 3],
+        flags: u32,
+        _more_sizes: [u32; 3],
+    }
+    const FSGEOMETRY_V1: libc::Ioctl = libc::_IOR::<Geometry>('X' as u32, 100);
+    const FLAGS_DIRV2CI: u32 = 1 << 12;
+
+    // SAFETY: all integers. The size the kernel writes is in the number, and
+    // the layout above follows `xfs_fs.h`.
+    let mut geometry: Geometry = unsafe { std::mem::zeroed() };
+    let got = unsafe { libc::ioctl(any.as_raw_fd(), FSGEOMETRY_V1, &mut geometry) };
+    (got == 0).then_some(geometry.flags & FLAGS_DIRV2CI != 0)
+}
+
 /// An archive path as UnRAR's C interface takes it: a narrow string here.
 #[cfg(feature = "rar")]
 pub struct RarName(std::ffi::CString);

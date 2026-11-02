@@ -30,6 +30,22 @@ pub enum State {
     Orphan(Journal),
 }
 
+/// Asks again what a run recorded when it began: see
+/// [`crate::engine::check_case_record`].
+pub(crate) fn check_recorded_case(journal: &Journal) -> Result<()> {
+    crate::engine::check_case_record(
+        &journal.output,
+        &journal.case_folders,
+        journal.case_beyond_ascii,
+    )
+}
+
+/// Whether names that differ only in case can both exist in `dir`, as far as
+/// HatchZip knows.
+pub fn case_sensitive(dir: &Path) -> bool {
+    crate::platform::case_sensitive(dir)
+}
+
 /// `writable` is false for anything that only looks, so it works on
 /// read-only media and never takes the lock. For a fresh extraction the
 /// output folder may already hold other files, but no folder where the
@@ -51,6 +67,9 @@ pub fn open(
         // Only a writable open deletes or writes anything in the folder.
         if writable || output.is_some() {
             check_output(&journal, primary, output.as_deref(), "extract")?;
+        }
+        if writable {
+            check_recorded_case(&journal)?;
         }
         if journal.restoring.is_some() {
             if !writable {
@@ -97,6 +116,7 @@ pub fn open(
     if writable {
         check_no_links_on_the_way(&job, &output)?;
         check_collisions(&job, &output)?;
+        job.check_case(&output)?;
     }
     Ok(State::Fresh(job, output))
 }
@@ -393,6 +413,7 @@ pub fn retarget(job: &Job, out: &Path) -> Result<PathBuf> {
     check_path_lengths(job, &out)?;
     check_no_links_on_the_way(job, &out)?;
     check_collisions(job, &out)?;
+    job.check_case(&out)?;
     Ok(out)
 }
 
@@ -522,6 +543,7 @@ pub fn plan(
     keep_free: u64,
     keep_archive: bool,
 ) -> Result<SpacePlan> {
+    job.check_case(out)?;
     let reclaims = fsutil::same_filesystem(job.storage.primary(), out);
     let stale: u64 =
         job.uncommitted(out).iter().map(|(_, n)| n).sum::<u64>() + job.past_resume_point(out);
@@ -579,6 +601,7 @@ pub fn begin(
     replace: Option<&crate::replace::Choices>,
 ) -> Result<Journal> {
     // Front ends ask earlier; the folder may have changed since.
+    job.check_case(&output)?;
     let found = existing(job, &output)?;
     if let Some(first) = found.first()
         && replace.is_none()
@@ -630,6 +653,8 @@ pub fn begin(
         total_size: job.remaining_size(),
         keep: keep_archive,
         replace,
+        case_folders: job.case_folders(),
+        case_beyond_ascii: job.case_beyond_ascii(),
     };
     Journal::create(paths, &job.storage, plan)
 }

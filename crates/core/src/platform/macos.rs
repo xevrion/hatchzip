@@ -20,6 +20,36 @@ pub fn sync_batch(_output: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Whether this system can treat different names as one file on a case-sensitive
+/// filesystem. APFS and HFS+ do: names equal after Unicode normalization are one
+/// file, such as U+212A KELVIN SIGN and `K`.
+pub const NORMALIZES_NAMES: bool = true;
+
+/// Whether `dir` is known to keep apart names that differ only in case. Only
+/// APFS and HFS+ are taken at their word: a network or FUSE volume reports
+/// what its server claims.
+pub fn case_sensitive(dir: &Path) -> bool {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    // Folders only: opening a FIFO found here would wait for a writer.
+    let Ok(f) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(dir)
+    else {
+        return false;
+    };
+    let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstatfs(f.as_raw_fd(), &mut st) } != 0 {
+        return false;
+    }
+    // SAFETY: the kernel fills `f_fstypename` with a terminated name.
+    let kind = unsafe { std::ffi::CStr::from_ptr(st.f_fstypename.as_ptr()) };
+    matches!(kind.to_bytes(), b"apfs" | b"hfs")
+        // SAFETY: only reads a limit of the open folder.
+        && unsafe { libc::fpathconf(f.as_raw_fd(), libc::_PC_CASE_SENSITIVE) } == 1
+}
+
 fn block_size(file: &File) -> io::Result<u64> {
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstatfs(file.as_raw_fd(), &mut st) } != 0 {

@@ -100,7 +100,40 @@ pub(crate) fn check(job: &Job, out: &Path, found: &[PathBuf]) -> Result<()> {
             );
         }
     }
+    // The folder isn't there yet, so it will take after the output, which can
+    // ignore case where a folder inside doesn't. The second of a pair would
+    // fail to move, after the journal is written and the first has moved.
+    if let Some((a, b)) = case_pair(found)
+        && !engine::keeps_case_apart(out)
+    {
+        bail!(
+            "'{}' and '{}' differ only in case, and {} is not known to keep such names apart, so \
+             they cannot be moved aside to be replaced. Nothing was modified. Extract to an empty \
+             folder or move them first",
+            a.display(),
+            b.display(),
+            out.display()
+        );
+    }
     Ok(())
+}
+
+/// Two of `paths`, or of the folders they are in, that differ only in case.
+/// Folders count here: merged in the folder of replaced files, what a restore
+/// puts back would land in the wrong one.
+fn case_pair(paths: &[PathBuf]) -> Option<(&Path, &Path)> {
+    let mut names: Vec<(String, &Path)> = paths
+        .iter()
+        .flat_map(|p| p.ancestors())
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| (p.to_string_lossy().to_lowercase(), p))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+        .windows(2)
+        .find(|w| w[0].0 == w[1].0)
+        .map(|w| (w[0].1, w[1].1))
 }
 
 /// Moves every file at the path of an entry of `job` into the folder, then

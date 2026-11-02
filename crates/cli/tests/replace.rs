@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use common::*;
+use hatchzip_core::session;
 use tempfile::TempDir;
 
 const ASIDE: &str = ".hatchzip-replaced";
@@ -368,6 +369,73 @@ fn a_folder_and_a_file_never_replace_each_other() {
         fs::read(out.join("game/readme.txt")).unwrap(),
         old()["game/readme.txt"]
     );
+}
+
+/// The folder of replaced files takes after the output, which can ignore case
+/// where the folder they are in now doesn't. So two names it would make one
+/// are refused before the first moves, while the second isn't left to fail
+/// halfway. Pairs meet below `sub`, for `sub` to keep them apart: only the
+/// output is told to ignore case.
+#[test]
+fn names_the_folder_of_replaced_files_would_make_one_are_refused() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    for (first, second) in [
+        ("sub/Makefile", "sub/makefile"),
+        // One is a file where the other needs a folder.
+        ("sub/Game", "sub/game/inner.txt"),
+        // Only folders differ, so a restore would put one file in the wrong one.
+        ("sub/Game/a.txt", "sub/game/b.txt"),
+    ] {
+        eprintln!("{first} and {second}");
+        let tmp = TempDir::new().unwrap();
+        let files = Files::from([
+            (first.to_string(), b"new first\n".to_vec()),
+            (second.to_string(), b"new second\n".to_vec()),
+        ]);
+        let archive = zip_of(tmp.path(), "case.zip", &files);
+        let out = tmp.path().join("out");
+        let old = Files::from([
+            (first.to_string(), b"old first\n".to_vec()),
+            (second.to_string(), b"old second\n".to_vec()),
+        ]);
+        put(&out, &old);
+        let before = fs::read(&archive).unwrap();
+
+        let at = [("HATCHZIP_IGNORE_CASE_AT", out.to_str().unwrap())];
+        let run = replace(&archive, &out, &at);
+        assert_refused_untouched(&run, &archive, &before, &out, "differ only in case");
+        for (name, data) in &old {
+            assert_eq!(&fs::read(out.join(name)).unwrap(), data, "{name}");
+        }
+
+        assert_ok(&replace(&archive, &out, &[]));
+        assert_tree(&out, &files);
+    }
+}
+
+/// With one of the two in the output, there is only one name to move aside.
+#[test]
+fn one_name_of_a_case_pair_can_be_replaced_where_the_output_ignores_case() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let files = Files::from([
+        ("sub/Makefile".to_string(), b"upper\n".to_vec()),
+        ("sub/makefile".to_string(), b"lower\n".to_vec()),
+    ]);
+    let archive = zip_of(tmp.path(), "case.zip", &files);
+    let out = tmp.path().join("out");
+    put(
+        &out,
+        &Files::from([("sub/Makefile".to_string(), b"old\n".to_vec())]),
+    );
+    let at = [("HATCHZIP_IGNORE_CASE_AT", out.to_str().unwrap())];
+    assert_ok(&replace(&archive, &out, &at));
+    assert_tree(&out, &files);
 }
 
 #[test]

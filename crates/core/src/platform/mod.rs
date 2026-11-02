@@ -30,4 +30,14 @@ mod tests {
     fn linux_temp_dirs_can_punch() {
         assert!(crate::fsutil::can_punch(&std::env::temp_dir()));
     }
+
+    /// CI runs on ext4, so there a no would be a bug, and the tests that
+    /// extract names that differ only in case would quietly test the refusal
+    /// instead. A build root on overlayfs or ZFS is rightly unknown.
+    #[test]
+    fn ci_temp_dirs_keep_case_apart() {
+        if std::env::var_os("HATCHZIP_EXPECT_PUNCH").is_some() {
+            assert!(super::case_sensitive(&std::env::temp_dir()));
+        }
+    }
 }

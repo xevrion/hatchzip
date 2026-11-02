@@ -21,21 +21,27 @@ use crate::fsutil;
 /// as is. Older HatchZip builds refuse version 3, which matters: they would
 /// delete a half-extracted file whose archive bytes are already freed.
 const VERSION: u32 = 3;
-/// An extraction that keeps the archive writes version 4, and only it does.
+/// An extraction that keeps the archive writes version 4, unless a later
+/// version below takes over.
 /// Builds before `keep` existed refuse it, which matters just as much: they
 /// would resume it in place and truncate the archive the user kept. Every
 /// other journal stays at version 3, so an older build can still finish it.
 const KEEP_VERSION: u32 = 4;
 /// An extraction that replaces existing files writes version 5, kept
-/// archive or not. Builds before `replace` existed refuse it: they would
-/// delete the person's files at the paths of entries left to do, and a
-/// restore would not put the replaced ones back.
+/// archive or not, unless a later version below takes over. Builds before
+/// `replace` existed refuse it: they would delete the person's files at the
+/// paths of entries left to do, and a restore would not put the replaced
+/// ones back.
 const REPLACE_VERSION: u32 = 5;
 /// One that keeps some existing files, or both copies of them, writes
 /// version 6. A build before that would finish it by deleting the files the
 /// person chose to keep.
 const CHOOSE_VERSION: u32 = 6;
-const READABLE: [u32; 5] = [2, 3, 4, 5, 6];
+/// One with names that differ only in case writes version 7. A build before
+/// that never asks where it may resume such a run, so on a filesystem that
+/// ignores case it would delete an extracted file as its own.
+const CASE_VERSION: u32 = 7;
+const READABLE: [u32; 6] = [2, 3, 4, 5, 6, 7];
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Link {
@@ -110,6 +116,16 @@ pub struct Journal {
     /// it started; see [`crate::replace`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replace: Option<Replace>,
+    /// The folders, inside the output, where entries' names differ only in
+    /// case. A resume and a restore ask about them again, not trusting the
+    /// answer from when the run began; see [`crate::session::check_recorded_case`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub case_folders: Vec<PathBuf>,
+    /// Some of those names go outside ASCII, so a system that normalizes
+    /// names may take them for one file, whatever its filesystem says about
+    /// case. Asked again for the same reason.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub case_beyond_ascii: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -182,10 +198,14 @@ pub struct Plan {
     /// Existing files are moved aside before the first entry is extracted,
     /// and what to do with each once it completes.
     pub replace: Option<Replace>,
+    pub case_folders: Vec<PathBuf>,
+    pub case_beyond_ascii: bool,
 }
 
-fn version_for(keep: bool, replace: Option<&Replace>) -> u32 {
-    if replace.is_some_and(Replace::chose) {
+fn version_for(keep: bool, replace: Option<&Replace>, case_folders: &[PathBuf]) -> u32 {
+    if !case_folders.is_empty() {
+        CASE_VERSION
+    } else if replace.is_some_and(Replace::chose) {
         CHOOSE_VERSION
     } else if replace.is_some() {
         REPLACE_VERSION
@@ -204,7 +224,7 @@ impl Journal {
         r.read_to_end(&mut tail)?;
         fsutil::write_atomic(&paths.tail, &tail)?;
         let journal = Self {
-            version: version_for(plan.keep, plan.replace.as_ref()),
+            version: version_for(plan.keep, plan.replace.as_ref(), &plan.case_folders),
             format: plan.format.to_string(),
             parts: storage.record(),
             tail_start: plan.tail_start,
@@ -218,6 +238,8 @@ impl Journal {
             restoring: None,
             keep: plan.keep,
             replace: plan.replace,
+            case_folders: plan.case_folders,
+            case_beyond_ascii: plan.case_beyond_ascii,
         };
         journal.save(paths)?;
         Ok(journal)
@@ -249,10 +271,22 @@ impl Journal {
         }
         let mut journal: Self = serde_json::from_slice(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?;
+        // Names that differ only in case take the version over from all the
+        // others, so at that version it says nothing about the rest.
+        let case = version == CASE_VERSION;
         let replaces = version == REPLACE_VERSION || version == CHOOSE_VERSION;
-        if journal.replace.is_some() != replaces
-            || journal.replace.as_ref().is_some_and(Replace::chose) != (version == CHOOSE_VERSION)
-            || (!replaces && journal.keep != (version == KEEP_VERSION))
+        if journal.case_folders.is_empty() == case
+            || (journal.case_beyond_ascii && !case)
+            || (!case
+                && (journal.replace.is_some() != replaces
+                    || journal.replace.as_ref().is_some_and(Replace::chose)
+                        != (version == CHOOSE_VERSION)
+                    || (!replaces && journal.keep != (version == KEEP_VERSION))))
+            // The top of the output, where names can meet, is an empty path.
+            || journal
+                .case_folders
+                .iter()
+                .any(|p| !p.components().all(|c| matches!(c, Component::Normal(_))))
         {
             bail!("{} is damaged", paths.journal.display());
         }
@@ -267,7 +301,11 @@ impl Journal {
         {
             bail!("{} is damaged", paths.journal.display());
         }
-        journal.version = version_for(journal.keep, journal.replace.as_ref());
+        journal.version = version_for(
+            journal.keep,
+            journal.replace.as_ref(),
+            &journal.case_folders,
+        );
         journal.check_bound(paths)?;
         let tail =
             fs::read(&paths.tail).with_context(|| format!("reading {}", paths.tail.display()))?;
@@ -456,6 +494,30 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Folders where names differ only in case come with their own version,
+    /// alongside anything else a run does, and stay inside the output folder.
+    #[test]
+    fn reads_case_folders_at_their_version_only() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-case-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        for fields in [
+            r#","case_folders":["","a/b"]"#,
+            r#","case_folders":["a"],"keep":true"#,
+            r#","case_folders":["a"],"replace":{"moved":false}"#,
+        ] {
+            let (journal, _) = Journal::load(&write_with(&dir, 7, fields)).unwrap();
+            assert_eq!(journal.version, CASE_VERSION, "{fields}");
+        }
+        assert!(Journal::load(&write_with(&dir, 7, "")).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, r#","case_folders":["a"]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, r#","case_beyond_ascii":true"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 7, r#","case_folders":["../a"]"#)).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A run started by the previous release resumes; one started by a
     /// release that knows more is refused before anything is touched.
     #[test]
@@ -467,9 +529,7 @@ mod tests {
         assert_eq!(journal.resume, None);
         assert_eq!(journal.version, VERSION);
 
-        let err = Journal::load(&write(&dir, CHOOSE_VERSION + 1))
-            .err()
-            .unwrap();
+        let err = Journal::load(&write(&dir, CASE_VERSION + 1)).err().unwrap();
         assert!(format!("{err:#}").contains("newer HatchZip"), "{err:#}");
         let err = Journal::load(&write(&dir, 1)).err().unwrap();
         assert!(format!("{err:#}").contains("older HatchZip"), "{err:#}");

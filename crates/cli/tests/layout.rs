@@ -10,6 +10,7 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use common::*;
+use hatchzip_core::session;
 use tempfile::TempDir;
 use zip::CompressionMethod;
 use zip::write::{SimpleFileOptions, ZipWriter};
@@ -136,20 +137,440 @@ fn zip_link_at_a_folder_entry_is_refused() {
     assert_refused(&archive, "'d' is both a symbolic link and a folder");
 }
 
-/// A case-insensitive filesystem would put both in one place, so they are
-/// refused everywhere, as duplicate names are.
+/// Extracts `archive` where its folder keeps names apart that differ only in
+/// case. Anywhere else, such as the macOS and Windows runners, `check` and
+/// `extract` refuse it untouched. Both are what the archive should get on
+/// that filesystem.
+fn assert_extracts_where_case_is_kept(archive: &Path, extracted: impl Fn(&Path)) {
+    if session::case_sensitive(archive.parent().unwrap()) {
+        let out = archive.with_file_name("out");
+        assert_ok(&extract(archive, &out, &[]));
+        extracted(&out);
+        assert_consumed(archive);
+    } else {
+        assert_refused(archive, "differ only in case");
+    }
+}
+
+fn case_files() -> Files {
+    let mut files = Files::new();
+    // Over two xz blocks, so a `.tar.xz` killed at its resume points still
+    // has the other name to do.
+    files.insert("game/Makefile".into(), noise(12_000, 1));
+    files.insert("game/makefile".into(), b"lower\n".to_vec());
+    files.insert("game/other.txt".into(), b"other\n".to_vec());
+    files
+}
+
+type Build = fn(&Path, &Files) -> PathBuf;
+
+fn case_builders() -> Vec<(&'static str, Build)> {
+    vec![
+        ("zip", |d, f| zip_of(d, "case.zip", f)),
+        ("7z", |d, f| sevenz_of(d, "case.7z", f, false)),
+        ("solid 7z", |d, f| sevenz_of(d, "case.7z", f, true)),
+        ("tar", |d, f| tar_of(d, "case.tar", f)),
+        ("tar.gz", |d, f| targz_of(d, "case.tar.gz", f)),
+        ("tar.xz", |d, f| tarxz_of(d, "case.tar.xz", f)),
+    ]
+}
+
+/// What kills a run after its second commit. A `.tar.xz` commits at resume
+/// points, which come at the ends of its blocks once they are due this often.
+fn crash_env(archive: &Path) -> [(&'static str, &'static str); 3] {
+    let (often, at) = if archive.to_string_lossy().ends_with(".tar.xz") {
+        (("HATCHZIP_STREAM_STEP", "1024"), "stream-after-journal")
+    } else {
+        (("HATCHZIP_BATCH_ENTRIES", "1"), "after-journal")
+    };
+    [
+        often,
+        ("HATCHZIP_CRASH_AT", at),
+        ("HATCHZIP_CRASH_AFTER", "1"),
+    ]
+}
+
+/// Two files in every format, as a Linux source tree has them.
 #[test]
-fn zip_link_differing_only_in_case_is_refused() {
+fn names_differing_only_in_case_depend_on_the_destination() {
+    for (name, build) in case_builders() {
+        let files = case_files();
+        let tmp = TempDir::new().unwrap();
+        let archive = build(tmp.path(), &files);
+        eprintln!("{name}");
+        assert_extracts_where_case_is_kept(&archive, |out| assert_tree(out, &files));
+    }
+}
+
+/// Nothing is written, so there is no destination to ask about.
+#[test]
+fn listing_and_testing_names_differing_only_in_case_always_work() {
+    for (name, build) in case_builders() {
+        let tmp = TempDir::new().unwrap();
+        let archive = build(tmp.path(), &case_files());
+        let a = archive.to_str().unwrap();
+        for command in ["list", "test"] {
+            let run = hatchzip(&[command, a], &[]);
+            assert!(run.status.success(), "{name}: {command}: {run:?}");
+        }
+    }
+}
+
+/// A kept archive would race for one file just the same, so it gets the
+/// same answer, and a run killed halfway decides the same way on resuming.
+#[test]
+fn keeping_and_resuming_names_differing_only_in_case() {
+    let files = case_files();
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    for (name, build) in case_builders() {
+        let tmp = TempDir::new().unwrap();
+        let archive = build(tmp.path(), &files);
+        let kept = tmp.path().join("kept");
+        let (a, k) = (archive.to_str().unwrap(), kept.to_str().unwrap());
+        let before = snapshot(&archive);
+        let run = hatchzip(
+            &["extract", a, "-o", k, "--keep-free", "0", "--keep-archive"],
+            &[],
+        );
+        assert_ok(&run);
+        assert_tree(&kept, &files);
+        assert_unchanged(&before);
+
+        let out = tmp.path().join("out");
+        let crashed = extract(&archive, &out, &crash_env(&archive));
+        // A `.tar.gz` this small is one unit, with no point to crash at.
+        if name != "tar.gz" {
+            assert!(!crashed.status.success(), "{name} should have crashed");
+            assert_ok(&extract(&archive, &out, &[]));
+        }
+        assert_tree(&out, &files);
+        assert_consumed(&archive);
+    }
+}
+
+/// Every file below `dir`, for showing that a refusal left them alone.
+fn files_below(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            found.extend(files_below(&path));
+        } else {
+            found.push((path.clone(), fs::read(&path).unwrap()));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Crashes a run after its first batch, then has it find a folder that may
+/// ignore case, as if the output had moved to another disk. An entry left to
+/// do would resolve to its twin that is already out, so a resume and a
+/// restore must both stop before they touch anything, and a tar no longer
+/// lists that twin, so only the journal can say so. Back on a disk that keeps
+/// case, the run finishes.
+fn assert_refused_where_case_may_be_ignored(archive: &Path, finished: impl Fn(&Path)) {
+    assert_refused_where_case_may_be_ignored_from(archive, 1, finished);
+}
+
+/// `check` exits with `check_status`: 0 when only the cleanup is left, since
+/// there is nothing to plan or list, though a run is still refused.
+fn assert_refused_where_case_may_be_ignored_from(
+    archive: &Path,
+    check_status: i32,
+    finished: impl Fn(&Path),
+) {
+    let out = archive.with_file_name("out");
+    let crashed = extract(archive, &out, &crash_env(archive));
+    assert!(!crashed.status.success(), "it should have crashed");
+    let (before, written) = (snapshot(archive), files_below(&out));
+    let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+    let ignore = [("HATCHZIP_IGNORE_CASE", "1")];
+    let check = hatchzip(&["check", a], &ignore);
+    assert_eq!(check.status.code(), Some(check_status), "{check:?}");
+    for run in [
+        extract(archive, &out, &ignore),
+        hatchzip(&["restore", a, "-o", o], &ignore),
+    ] {
+        assert_eq!(run.status.code(), Some(1), "{run:?}");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains("differ only in case"), "{stderr}");
+        assert_unchanged(&before);
+        assert_eq!(files_below(&out), written);
+    }
+    // Only looking stays possible, while there is something to look at.
+    if check_status != 0 {
+        assert_ok(&hatchzip(&["list", a], &ignore));
+    }
+    assert_ok(&extract(archive, &out, &[]));
+    finished(&out);
+    assert_consumed(archive);
+}
+
+#[test]
+fn a_resume_or_restore_where_case_may_be_ignored_is_refused() {
+    let files = case_files();
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    for (name, build) in case_builders() {
+        // A `.tar.gz` this small has no point to crash at.
+        if name != "tar.gz" {
+            let tmp = TempDir::new().unwrap();
+            let archive = build(tmp.path(), &files);
+            eprintln!("{name}");
+            assert_refused_where_case_may_be_ignored(&archive, |out| assert_tree(out, &files));
+        }
+    }
+}
+
+/// A file and a folder clash too, and only a fresh archive lists both. With
+/// two entries the crash leaves only the cleanup to do, with no archive to
+/// list anything, and with a third there is a resume.
+#[test]
+fn a_run_with_a_file_differing_only_in_case_from_a_folder_is_refused() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let (first, second) = (
+        Tar::File("D", b"file\n"),
+        Tar::File("d/inner.txt", b"inner\n"),
+    );
+    for (bytes, check_status) in [
+        (tar_bytes(&[first, second]), 0),
+        (
+            tar_bytes(&[
+                Tar::File("before.txt", b"before\n"),
+                Tar::File("D", b"file\n"),
+                Tar::File("d/inner.txt", b"inner\n"),
+            ]),
+            1,
+        ),
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let archive = write(tmp.path(), "case.tar", bytes);
+        assert_refused_where_case_may_be_ignored_from(&archive, check_status, |out| {
+            assert_eq!(fs::read(out.join("D")).unwrap(), b"file\n");
+        });
+    }
+}
+
+fn kelvin_files() -> Files {
+    let mut files = Files::new();
+    files.insert("K.txt".into(), b"ascii\n".to_vec());
+    files.insert("\u{212a}.txt".into(), b"kelvin\n".to_vec());
+    files
+}
+
+/// U+212A KELVIN SIGN lowercases to `k`, and where the system normalizes
+/// names it is `K`, whatever the filesystem says about case.
+#[test]
+fn names_outside_ascii_are_refused_where_the_system_normalizes_names() {
+    let tmp = TempDir::new().unwrap();
+    let archive = zip_of(tmp.path(), "case.zip", &kelvin_files());
+    let before = snapshot(&archive);
+    let run = extract(
+        &archive,
+        &tmp.path().join("out"),
+        &[("HATCHZIP_NORMALIZE_NAMES", "1")],
+    );
+    assert_eq!(run.status.code(), Some(1), "{run:?}");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("outside ASCII"), "{stderr}");
+    assert_unchanged(&before);
+}
+
+/// A run can start where names aren't normalized and go on where they are,
+/// so it records that it has such names. A system that normalizes them never
+/// starts one, so there this has nothing to resume.
+#[test]
+fn a_run_with_names_outside_ascii_stops_where_the_system_normalizes_names() {
+    let mut files = kelvin_files();
+    // Sorts between the two, so a run that crashes has both kinds left to do.
+    files.insert("a.txt".into(), b"other\n".to_vec());
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = tar_of(tmp.path(), "case.tar", &files);
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    if !side_files(&archive)[0].exists() {
+        assert!(!crashed.status.success());
+        return;
+    }
+    let (before, written) = (snapshot(&archive), files_below(&out));
+    let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+    let normalize = [("HATCHZIP_NORMALIZE_NAMES", "1")];
+    for run in [
+        hatchzip(&["check", a], &normalize),
+        extract(&archive, &out, &normalize),
+        hatchzip(&["restore", a, "-o", o], &normalize),
+    ] {
+        assert_eq!(run.status.code(), Some(1), "{run:?}");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains("outside ASCII"), "{stderr}");
+        assert_unchanged(&before);
+        assert_eq!(files_below(&out), written);
+    }
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_tree(&out, &files);
+}
+
+/// A resume asks about the recorded folders before anything else, and a FIFO
+/// at one would keep a plain open waiting for a writer forever.
+#[cfg(unix)]
+#[test]
+fn a_fifo_where_a_folder_was_recorded_cannot_hang_a_resume() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = zip_of(tmp.path(), "case.zip", &case_files());
+    let out = tmp.path().join("out");
+    let crashed = extract(
+        &archive,
+        &out,
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success());
+    let recorded = out.join("game");
+    fs::rename(&recorded, tmp.path().join("aside")).unwrap();
+    let made = std::process::Command::new("mkfifo").arg(&recorded).status();
+    assert!(made.unwrap().success());
+    let mut run = std::process::Command::new(env!("CARGO_BIN_EXE_hatchzip"))
+        .args(["extract", "--keep-free", "0", "--yes", "-o"])
+        .args([&out, &archive])
+        .env("HATCHZIP_STATE_DIR", state_dir())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if let Some(status) = run.try_wait().unwrap() {
+            assert!(!status.success());
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    run.kill().unwrap();
+    panic!("the run hung on the FIFO");
+}
+
+/// The journal lists these folders and is rewritten at every commit, so
+/// their number has a limit. Nothing is written by looking.
+#[test]
+fn too_many_folders_with_names_differing_only_in_case_are_refused() {
+    let tmp = TempDir::new().unwrap();
+    let names: Vec<(String, String)> = (0..1001)
+        .map(|i| (format!("d{i}/A"), format!("d{i}/a")))
+        .collect();
+    let entries: Vec<Tar> = names
+        .iter()
+        .flat_map(|(a, b)| [Tar::File(a, b"a\n"), Tar::File(b, b"b\n")])
+        .collect();
+    let archive = write(tmp.path(), "case.tar", tar_bytes(&entries));
+    assert_ok(&hatchzip(&["list", archive.to_str().unwrap()], &[]));
+    assert_refused(&archive, "more than HatchZip can keep track of");
+}
+
+/// An older build never asks, so it must refuse to touch such a run.
+#[test]
+fn a_run_with_names_differing_only_in_case_records_their_folders() {
+    let tmp = TempDir::new().unwrap();
+    if !session::case_sensitive(tmp.path()) {
+        return;
+    }
+    let archive = zip_of(tmp.path(), "case.zip", &case_files());
+    let crashed = extract(
+        &archive,
+        &tmp.path().join("out"),
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success());
+    let journal: serde_json::Value =
+        serde_json::from_slice(&fs::read(&side_files(&archive)[0]).unwrap()).unwrap();
+    assert_eq!(journal["version"], 7);
+    assert_eq!(journal["case_folders"], serde_json::json!(["game"]));
+}
+
+/// A case-insensitive filesystem would put both in one place: a link where
+/// the other entry needs a folder.
+#[test]
+fn zip_link_differing_only_in_case_depends_on_the_destination() {
     let tmp = TempDir::new().unwrap();
     let mut z = ZipWriter::new(Cursor::new(Vec::new()));
     z.start_file("D/inner.txt", stored()).unwrap();
     z.write_all(b"inner\n").unwrap();
     z.add_symlink("d", "elsewhere", stored()).unwrap();
     let archive = write(tmp.path(), "case.zip", z.finish().unwrap().into_inner());
-    assert_refused(
-        &archive,
-        "'d' is a symbolic link, but 'D/inner.txt' requires a folder",
-    );
+    assert_extracts_where_case_is_kept(&archive, |out| {
+        assert_eq!(fs::read(out.join("D/inner.txt")).unwrap(), b"inner\n");
+        assert!(fs::symlink_metadata(out.join("d")).unwrap().is_symlink());
+    });
+}
+
+/// The same with a file where the other entry needs a folder.
+#[test]
+fn tar_file_differing_only_in_case_from_a_folder_depends_on_the_destination() {
+    let tmp = TempDir::new().unwrap();
+    let bytes = tar_bytes(&[
+        Tar::File("D", b"file\n"),
+        Tar::File("d/inner.txt", b"inner\n"),
+    ]);
+    let archive = write(tmp.path(), "case.tar", bytes);
+    assert_extracts_where_case_is_kept(&archive, |out| {
+        assert_eq!(fs::read(out.join("D")).unwrap(), b"file\n");
+        assert_eq!(fs::read(out.join("d/inner.txt")).unwrap(), b"inner\n");
+    });
+}
+
+/// Folders that differ only in case merge on a filesystem that ignores case,
+/// which is fine while no file inside them clashes, so this always extracts.
+#[test]
+fn folders_differing_only_in_case_extract_everywhere() {
+    let tmp = TempDir::new().unwrap();
+    let bytes = tar_bytes(&[Tar::File("D/a.txt", b"a\n"), Tar::File("d/b.txt", b"b\n")]);
+    let archive = write(tmp.path(), "case.tar", bytes);
+    let out = tmp.path().join("out");
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_eq!(fs::read(out.join("D/a.txt")).unwrap(), b"a\n");
+    assert_eq!(fs::read(out.join("d/b.txt")).unwrap(), b"b\n");
+    assert_consumed(&archive);
+}
+
+/// Case or no case, the same path twice is refused everywhere.
+#[test]
+fn tar_duplicate_names_are_refused() {
+    let tmp = TempDir::new().unwrap();
+    let bytes = tar_bytes(&[
+        Tar::File("Makefile", b"one\n"),
+        Tar::File("makefile", b"two\n"),
+        Tar::File("Makefile", b"three\n"),
+    ]);
+    let archive = write(tmp.path(), "dup.tar", bytes);
+    assert_refused(&archive, "'Makefile' appears more than once in the archive");
 }
 
 /// The reporter's symlink.tar.
