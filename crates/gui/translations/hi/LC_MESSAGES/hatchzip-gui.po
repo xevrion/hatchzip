@@ -375,4 +375,4 @@ msgid "Link"
 msgstr "लिंक"
 
 msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
-msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें"
+msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें।"

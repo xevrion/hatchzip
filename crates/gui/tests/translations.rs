@@ -222,6 +222,11 @@ fn bundled_hindi_and_english_fallback() {
         "{}",
         window.get_plan().verdict
     );
+    assert!(
+        window.get_plan().verdict.ends_with('।'),
+        "{}",
+        window.get_plan().verdict
+    );
     window.hide().unwrap();
     if let Some(dir) = std::env::var_os("HATCHZIP_TRANSLATION_SHOTS") {
         for language in ["en", "hi"] {
