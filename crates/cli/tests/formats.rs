@@ -399,11 +399,7 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
             "xz stream's structure",
         ),
         ("game.tar.bz2", &b"BZh9pretend bzip2"[..], "bzip2"),
-        (
-            "zeros.tar.bz2",
-            &[0; 32][..],
-            "does not start with a bzip2 stream",
-        ),
+        ("zeros.tar.bz2", &[0; 32][..], "tar headers"),
         (
             "game.tar.gz",
             &b"\x1F\x8B\x08\x00pretend gzip"[..],
@@ -416,11 +412,26 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
         assert!(!run.status.success(), "{name}");
         let stderr = String::from_utf8_lossy(&run.stderr);
         assert!(stderr.contains(says), "{name}: {stderr}");
-        if name.ends_with(".bz2") {
+        if name == "game.tar.bz2" {
             assert_eq!(run.status.code(), Some(4), "reported as damaged");
         }
         assert_eq!(fs::read(&archive).unwrap(), bytes, "{name}");
         assert!(!side_files(&archive)[0].exists());
+    }
+}
+
+/// Bzip2 is found by its signature, so a ZIP behind a bzip2 tar name still
+/// extracts as a ZIP.
+#[test]
+fn a_zip_with_a_bzip2_tar_name_extracts_as_a_zip() {
+    for name in ["game.tbz2", "game.tbz"] {
+        let tmp = TempDir::new().unwrap();
+        let files = sample_files();
+        let archive = zip_of(tmp.path(), name, &files);
+        let out = tmp.path().join("out");
+        assert_ok(&extract(&archive, &out, &[]));
+        assert_tree(&out, &files);
+        assert_consumed(&archive);
     }
 }
 
