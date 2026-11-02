@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
+use std::time::SystemTime;
 
 pub fn same_filesystem(a: &Path, b: &Path) -> bool {
     match (fs::metadata(a), fs::metadata(b)) {
@@ -58,6 +59,37 @@ pub fn open_existing_no_follow(path: &Path) -> io::Result<File> {
 /// the length stays the same.
 pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok(fs::metadata(path)?.blocks() * 512)
+}
+
+/// The moment a wall-clock time names in the local zone, with the offset in
+/// effect at that date rather than today's.
+pub fn local_time(
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+) -> Option<SystemTime> {
+    // SAFETY: all zeros is a valid `tm`: integers, and a zone name pointer
+    // that may be null.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = i32::from(year) - 1900;
+    tm.tm_mon = i32::from(month) - 1;
+    tm.tm_mday = day.into();
+    tm.tm_hour = hour.into();
+    tm.tm_min = minute.into();
+    tm.tm_sec = second.into();
+    // Have mktime work out whether daylight saving applied at that date.
+    tm.tm_isdst = -1;
+    // SAFETY: `tm` is valid and only used for this call.
+    match unsafe { libc::mktime(&mut tm) } {
+        // A failure, since a ZIP time can't be the second before 1970.
+        -1 => None,
+        // `time_t` is 32 bits on some systems.
+        #[allow(clippy::unnecessary_cast)]
+        secs => crate::fsutil::from_epoch_secs(secs as i64),
+    }
 }
 
 /// How many names the file has on its filesystem.

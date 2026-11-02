@@ -594,3 +594,39 @@ fn restores_the_ntfs_mtime() {
             + std::time::Duration::from_millis(250)
     );
 }
+
+/// With only the DOS time, as Python's zipfile writes, an entry is read in
+/// the local zone with the offset in effect at its date, so summer and winter
+/// differ. A POSIX zone, so this needs no time zone database.
+#[cfg(unix)]
+#[test]
+fn reads_the_dos_time_in_the_local_zone() {
+    let tmp = TempDir::new().unwrap();
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, month) in [("summer.txt", 6), ("winter.txt", 1)] {
+        let noon = zip::DateTime::from_date_and_time(2020, month, 15, 12, 0, 0).unwrap();
+        let opts = SimpleFileOptions::default().last_modified_time(noon);
+        w.start_file(name, opts).unwrap();
+        w.write_all(b"a").unwrap();
+    }
+    let archive = tmp.path().join("t.zip");
+    fs::write(&archive, w.finish().unwrap().into_inner()).unwrap();
+    let out = tmp.path().join("out");
+
+    assert_ok(&extract(
+        &archive,
+        &out,
+        &[("TZ", "CET-1CEST,M3.5.0,M10.5.0/3")],
+    ));
+    for (name, utc) in [
+        ("summer.txt", 1_592_215_200), // 2020-06-15 10:00:00 UTC
+        ("winter.txt", 1_579_086_000), // 2020-01-15 11:00:00 UTC
+    ] {
+        let mtime = fs::metadata(out.join(name)).unwrap().modified().unwrap();
+        assert_eq!(
+            mtime,
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(utc),
+            "{name}"
+        );
+    }
+}

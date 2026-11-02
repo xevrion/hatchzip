@@ -57,4 +57,4 @@ rar = ["dep:unrar-ng-sys", "dep:aes", "dep:cbc", "dep:pbkdf2", "dep:sha2"]
 libc = "0.2.191"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Time"] }

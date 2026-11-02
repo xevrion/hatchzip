@@ -13,6 +13,7 @@ export struct EntryRow {
     path: string,
     size: string,
     dir: bool,
+    link: bool,
     expanded: bool,
     depth: int,
 }
@@ -65,13 +66,13 @@ component EntryList inherits VerticalLayout {
             height: root.row-height;
             accessible-role: list-item;
             accessible-label: row.path;
-            accessible-description: row.dir ? "Folder" : row.size == "link" ? "Link" : "File";
+            accessible-description: row.dir ? "Folder" : row.link ? "Link" : "File";
             accessible-expandable: row.dir;
             accessible-expanded: row.expanded;
             accessible-item-selectable: true;
             accessible-item-selected: root.selected == index;
             accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
-            accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
+            accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 1); } }
             background: root.selected == index && scope.has-focus ? Palette.alternate-background : transparent;
             HorizontalLayout {
                 padding-left: Theme.gutter + row.depth * 16px;
@@ -121,7 +122,13 @@ component EntryList inherits VerticalLayout {
         height: 0px;
         key-pressed(event) => {
             if event.text == Key.UpArrow { root.selected = max(0, root.selected - 1); root.show-selection(); return accept; }
-            if event.text == Key.DownArrow { root.selected = min(root.entries.length - 1, root.selected + 1); root.show-selection(); return accept; }
+            if event.text == Key.DownArrow {
+                if root.entries.length > 0 {
+                    root.selected = min(root.entries.length - 1, root.selected + 1);
+                    root.show-selection();
+                }
+                return accept;
+            }
             if event.text == Key.LeftArrow { root.toggle(root.selected, -1); return accept; }
             if event.text == Key.RightArrow { root.toggle(root.selected, 1); return accept; }
             return reject;

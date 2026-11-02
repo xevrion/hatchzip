@@ -187,32 +187,21 @@ fn punch_probe(path: &Path) -> Probe {
     }
 }
 
-/// ZIP stores local wall-clock time with no zone. We read it as UTC, which is
-/// what most cross-platform extractors settle on.
+/// ZIP stores local wall-clock time with no zone. It is read in the local
+/// zone, as unzip, 7-Zip, bsdtar, Windows Explorer and macOS Archive Utility
+/// do.
 pub fn zip_time(dt: zip::DateTime) -> Option<SystemTime> {
-    let (y, m, d) = (
-        i64::from(dt.year()),
-        i64::from(dt.month()),
-        i64::from(dt.day()),
-    );
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+    if !(1..=12).contains(&dt.month()) || !(1..=31).contains(&dt.day()) {
         return None;
     }
-    // Howard Hinnant's days_from_civil.
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let secs = days * 86_400
-        + i64::from(dt.hour()) * 3600
-        + i64::from(dt.minute()) * 60
-        + i64::from(dt.second());
-    u64::try_from(secs)
-        .ok()
-        .map(|s| UNIX_EPOCH + Duration::from_secs(s))
+    platform::local_time(
+        dt.year(),
+        dt.month(),
+        dt.day(),
+        dt.hour(),
+        dt.minute(),
+        dt.second(),
+    )
 }
 
 /// Seconds from 1970, negative before it.
@@ -255,6 +244,19 @@ pub fn from_filetime(ticks: u64) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only that the conversion works on this system at all: whatever the
+    /// zone here, a local time is within 14 hours of the same clock reading
+    /// in UTC, so reading it as UTC would pass too. The offsets are tested
+    /// end to end, where a test can set the zone, which is not on Windows.
+    #[test]
+    fn zip_times_are_read_in_a_time_zone() {
+        let noon = UNIX_EPOCH + Duration::from_secs(1_592_222_400); // 2020-06-15 12:00:00 UTC
+        let dt = zip::DateTime::from_date_and_time(2020, 6, 15, 12, 0, 0).unwrap();
+        let t = zip_time(dt).unwrap();
+        let apart = t.duration_since(noon).or_else(|_| noon.duration_since(t));
+        assert!(apart.unwrap() <= Duration::from_secs(14 * 3600));
+    }
 
     #[test]
     fn filetimes_count_from_1601() {
