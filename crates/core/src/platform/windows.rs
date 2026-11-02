@@ -228,6 +228,47 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok((u64::from(high) << 32) | u64::from(low))
 }
 
+/// The moment a wall-clock time names in the local zone, with the offset in
+/// effect at that date rather than today's.
+pub fn local_time(
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+) -> Option<std::time::SystemTime> {
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows_sys::Win32::System::Time::{
+        SystemTimeToFileTime, TzSpecificLocalTimeToSystemTimeEx,
+    };
+
+    let local = SYSTEMTIME {
+        wYear: year,
+        wMonth: month.into(),
+        wDayOfWeek: 0,
+        wDay: day.into(),
+        wHour: hour.into(),
+        wMinute: minute.into(),
+        wSecond: second.into(),
+        wMilliseconds: 0,
+    };
+    let mut utc = SYSTEMTIME::default();
+    // SAFETY: both pointers are to locals. A null zone means the active one.
+    // The Ex variant is the one with dynamic daylight saving settings.
+    if unsafe { TzSpecificLocalTimeToSystemTimeEx(std::ptr::null(), &local, &mut utc) } == 0 {
+        return None;
+    }
+    let mut ticks = FILETIME::default();
+    // SAFETY: both pointers are to locals.
+    if unsafe { SystemTimeToFileTime(&utc, &mut ticks) } == 0 {
+        return None;
+    }
+    crate::fsutil::from_filetime(
+        (u64::from(ticks.dwHighDateTime) << 32) | u64::from(ticks.dwLowDateTime),
+    )
+}
+
 /// How many names the file has on its filesystem.
 pub fn link_count(path: &Path) -> io::Result<u64> {
     use std::os::windows::io::AsRawHandle;
