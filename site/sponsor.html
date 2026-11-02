@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Sponsor HatchZip</title>
+<meta name="description" content="HatchZip is free and open source. Sponsorship pays for its maintenance, macOS signing, new formats and a security review. Options for individuals and companies.">
+<link rel="canonical" href="https://hatchzip.dev/sponsor.html">
+<meta property="og:url" content="https://hatchzip.dev/sponsor.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HatchZip">
+<meta property="og:title" content="Sponsor HatchZip">
+<meta property="og:description" content="Sponsorship keeps HatchZip free and open source. Options for individuals and companies.">
+<meta property="og:image" content="https://hatchzip.dev/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="HatchZip: extract huge archives without double the disk space.">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/"},{"@type":"ListItem","position":2,"name":"Sponsor HatchZip","item":"https://hatchzip.dev/sponsor.html"}]}
+</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+<div class="page">
+<aside class="side">
+<a class="brand" href="./"><img src="favicon.svg" alt="" width="48" height="48"><span>HatchZip</span></a>
+<nav aria-label="On this page">
+<ul>
+<li><a href="./">Home</a></li>
+<li><a href="#numbers">HatchZip in numbers</a></li>
+<li><a href="#funds">What it pays for</a></li>
+<li><a href="#individuals">For individuals</a></li>
+<li><a href="#companies">For companies</a></li>
+<li><a href="#contact">Contact</a></li>
+</ul>
+</nav>
+</aside>
+<div class="content">
+<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+<li><a href="./">HatchZip</a></li>
+<li aria-current="page">Sponsor</li>
+</ol>
+</nav>
+<header class="top">
+<div>
+<h1>Sponsor HatchZip</h1>
+<p class="lead">HatchZip is free and open source, and it stays that way. Sponsorship pays for the time to maintain it and for the parts that cost money.</p>
+</div>
+</header>
+<main>
+
+<p>HatchZip extracts ZIP, 7z, RAR and tar archives in place: it frees the archive's space as the files come out, so a 100 GB archive needs room for about 100 GB of files, not 200 GB. It checks that the extraction fits before it changes anything, and resumes after a crash. It is built by Yash Bavadiya, a computer science student at IIT Jodhpur, with contributions from the community.</p>
+
+<h2 id="numbers">HatchZip in numbers</h2>
+<table class="stack">
+<caption>Updated every hour from GitHub, last on <!--stat:date-->2 November 2026<!--/stat-->. HatchZip was first released on 21 October 2026.</caption>
+<thead>
+<tr><th scope="col">Measure</th><th scope="col">Value</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">GitHub stars</th><td data-label="Value"><!--stat:stars-->2,442<!--/stat--></td></tr>
+<tr><th scope="row">Release downloads</th><td data-label="Value"><!--stat:downloads-->18,654<!--/stat--> (Windows <!--stat:downloads-windows-->13,820<!--/stat-->, Linux <!--stat:downloads-linux-->2,702<!--/stat-->, macOS <!--stat:downloads-macos-->2,132<!--/stat-->), not counting checksum files</td></tr>
+<tr><th scope="row">Contributors</th><td data-label="Value"><!--stat:contributors-->9<!--/stat--></td></tr>
+<tr><th scope="row">Archive formats</th><td data-label="Value">ZIP, 7z, RAR 5 and 4, tar, tar.gz, split archives; tar.xz in the next release</td></tr>
+<tr><th scope="row">License</th><td data-label="Value">MIT OR Apache-2.0</td></tr>
+</tbody>
+</table>
+<p class="note">The numbers come from the GitHub API and are written into this page when it is published, so your browser doesn't contact GitHub. HatchZip has no telemetry, so there is no count of active users.</p>
+
+<h2 id="funds">What sponsorship pays for</h2>
+<ul>
+<li><strong>Maintenance time.</strong> Reviewing contributors' pull requests, fixing bugs and making releases. Every change that touches how the archive is freed gets crash tests on Linux, macOS and Windows.</li>
+<li><strong>macOS signing.</strong> The Apple Developer Program costs 99 USD a year. With it, the macOS app is signed and notarized and opens without a warning. Windows signing is provided free by the <a href="code-signing.html">SignPath Foundation</a>.</li>
+<li><strong>More formats.</strong> <code>.tar.bz2</code> is in progress; <code>.tar.zst</code> and native split ZIP (<code>.z01</code>) are next.</li>
+<li><strong>A security review.</strong> HatchZip deletes archive bytes as it goes, so the code that decides what is safe to free deserves an independent review.</li>
+</ul>
+
+<h2 id="individuals">For individuals</h2>
+<ul>
+<li><a href="https://github.com/sponsors/xevrion">GitHub Sponsors</a>, monthly or once.</li>
+<li><a href="https://buymeacoffee.com/xevrion">Buy Me a Coffee</a>, once.</li>
+</ul>
+<p>Starring the <a href="https://github.com/xevrion/hatchzip">repository</a>, reporting bugs and telling people about HatchZip help too.</p>
+
+<h2 id="companies">For companies</h2>
+<p>HatchZip's engine is a Rust library, <a href="https://crates.io/crates/hatchzip-core"><code>hatchzip-core</code></a>, so in-place extraction can go into a game launcher, mod manager, installer, updater, NAS app or data pipeline: anywhere people unpack large archives on disks that are nearly full.</p>
+<ul>
+<li><strong>Sponsorship.</strong> Through <a href="https://github.com/sponsors/xevrion">GitHub Sponsors</a>. Company sponsors get their logo in the README and on this page.</li>
+<li><strong>Feature sponsorship.</strong> Fund a specific format or platform feature, with an agreed scope and date. It ships in the open-source project for everyone.</li>
+<li><strong>Integration support.</strong> Help embedding <code>hatchzip-core</code> in your product, and support with agreed response times.</li>
+</ul>
+<p>Sponsors don't get private builds or a vote on safety checks: HatchZip refuses whatever could lose data, for everyone.</p>
+
+<h2 id="contact">Contact</h2>
+<p>Email <a href="mailto:sponsor@hatchzip.dev">sponsor@hatchzip.dev</a> for company sponsorship, feature sponsorship or integration support.</p>
+</main>
+
+<footer>
+<p>HatchZip is licensed under <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT">MIT</a> OR <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE">Apache-2.0</a>.</p>
+<p>Made by Yash Bavadiya (<a href="https://x.com/xevrion_the1">@xevrion_the1</a>).</p>
+</footer>
+</div>
+</div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+</body>
+</html>

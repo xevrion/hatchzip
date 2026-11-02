@@ -1,0 +1,104 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "individual",
+    "role": "maintainer",
+    "name": "Yash Bavadiya",
+    "email": "sponsor@hatchzip.dev",
+    "description": "Computer science student at IIT Jodhpur, Google Summer of Code 2026 contributor to KDE, and the author and maintainer of HatchZip. I write the engine, review every contribution and make the releases.",
+    "webpageUrl": {
+      "url": "https://hatchzip.dev"
+    }
+  },
+  "projects": [
+    {
+      "guid": "hatchzip",
+      "name": "HatchZip",
+      "description": "HatchZip is a free, open-source archive extractor for Windows, macOS and Linux that extracts in place: it frees the archive's space as the files come out, so a 100 GB archive needs room for about 100 GB of files instead of 200 GB. It handles ZIP (including ZIP64 and self-extracting files), 7z, RAR, tar, tar.gz, tar.xz and split archives. It checks that the extraction fits before it changes anything, verifies every file's checksum, refuses hostile archives before a byte is freed, and resumes after a crash or power loss from a journal written in a crash-safe order. It ships as a desktop app, a command line tool and a Rust library (hatchzip-core) that other programs can embed. First released on 21 October 2026.",
+      "webpageUrl": {
+        "url": "https://hatchzip.dev"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/xevrion/hatchzip",
+        "wellKnown": "https://github.com/xevrion/hatchzip/blob/main/.well-known/funding-manifest-urls"
+      },
+      "licenses": ["spdx:MIT", "spdx:Apache-2.0"],
+      "tags": ["storage", "productivity", "security", "developer-tools", "linux"]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "github-sponsors",
+        "type": "payment-provider",
+        "address": "https://github.com/sponsors/xevrion",
+        "description": "Monthly or one-time sponsorship through GitHub Sponsors."
+      },
+      {
+        "guid": "buymeacoffee",
+        "type": "payment-provider",
+        "address": "https://buymeacoffee.com/xevrion",
+        "description": "One-time support through Buy Me a Coffee."
+      },
+      {
+        "guid": "bank",
+        "type": "bank",
+        "address": "",
+        "description": "Bank transfer to India for grants and company sponsorship. Email sponsor@hatchzip.dev for details."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "maintenance",
+        "status": "active",
+        "name": "Maintenance and releases",
+        "description": "Part-time maintenance for a year: reviewing contributors' pull requests, fixing bugs, security fixes, and releases tested with crash tests on Linux, macOS and Windows.",
+        "amount": 12000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": ["bank", "github-sponsors"]
+      },
+      {
+        "guid": "security-review",
+        "status": "active",
+        "name": "Independent security review",
+        "description": "An outside review of the code that decides what is safe to free from an archive, of the journal and resume logic, and of the archive parsers, followed by the fixes.",
+        "amount": 10000,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["bank"]
+      },
+      {
+        "guid": "formats",
+        "status": "active",
+        "name": "More formats",
+        "description": "In-place extraction for .tar.zst and native split ZIP (.z01), with crash tests and documentation.",
+        "amount": 5000,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["bank", "github-sponsors"]
+      },
+      {
+        "guid": "macos-signing",
+        "status": "active",
+        "name": "macOS signing and notarization",
+        "description": "The Apple Developer Program membership, so the macOS app is signed and notarized and opens without a warning.",
+        "amount": 99,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": ["github-sponsors", "buymeacoffee"]
+      },
+      {
+        "guid": "any-amount",
+        "status": "active",
+        "name": "Any amount",
+        "description": "Support HatchZip with any amount, once or monthly.",
+        "amount": 0,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["github-sponsors", "buymeacoffee"]
+      }
+    ]
+  }
+}

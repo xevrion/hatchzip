@@ -61,6 +61,7 @@ How it works: it extracts from the end of the archive and cuts each finished par
 
 - [Home page](https://hatchzip.dev/)
 - [Verify your download](https://hatchzip.dev/verify.html)
+- [Sponsor HatchZip](https://hatchzip.dev/sponsor.html): options for individuals and companies, and live project numbers
 - [README](https://github.com/xevrion/hatchzip/blob/main/README.md)
 - [How it works](https://github.com/xevrion/hatchzip/blob/main/docs/how-it-works.md)
 - [Formats](https://github.com/xevrion/hatchzip/blob/main/docs/formats.md)
