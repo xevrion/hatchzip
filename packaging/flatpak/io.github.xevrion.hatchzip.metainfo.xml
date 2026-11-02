@@ -83,6 +83,7 @@
     <mediatype>application/x-7z-compressed</mediatype>
     <mediatype>application/x-tar</mediatype>
     <mediatype>application/x-compressed-tar</mediatype>
+    <mediatype>application/x-bzip2-compressed-tar</mediatype>
     <mediatype>application/x-bzip-compressed-tar</mediatype>
     <mediatype>application/x-xz-compressed-tar</mediatype>
   </provides>
