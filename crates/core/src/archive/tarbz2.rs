@@ -887,6 +887,32 @@ mod tests {
         );
     }
 
+    /// A block has no length, so one damaged block in a large archive fails
+    /// its CRC at its real end and at every later boundary, and the scan
+    /// runs on to the size limit. Hitting the limit is therefore damage in
+    /// practice, not a valid block this build can't read.
+    #[test]
+    fn a_damaged_block_in_a_large_archive_reaches_the_size_limit() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let noise: Vec<u8> = (0..600_000)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed as u8
+            })
+            .collect();
+        let mut enc = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(1));
+        std::io::Write::write_all(&mut enc, &noise).unwrap();
+        let mut bytes = enc.finish().unwrap();
+        bytes[2000] ^= 0xff;
+        let err = decode(&mut decoder(&bytes, &BzPoint::start()), 65536).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("larger than any bzip2 compressor writes"),
+            "{err:#}"
+        );
+    }
+
     #[test]
     fn a_file_without_a_first_stream_is_refused() {
         for bytes in [&[][..], &[0; 32][..], &b"PK\x03\x04 not bzip2"[..]] {
