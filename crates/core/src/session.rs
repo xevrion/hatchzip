@@ -328,6 +328,7 @@ fn check_collisions(job: &Job, out: &Path) -> Result<()> {
     if !out.exists() {
         return Ok(());
     }
+    check_own_files(job, out)?;
     let mut checked = std::collections::HashSet::new();
     for item in job.units.iter().flat_map(|u| &u.items) {
         let dest = out.join(&item.path);
@@ -374,6 +375,58 @@ fn check_collisions(job: &Job, out: &Path) -> Result<()> {
                     out.join(parent).display()
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+/// Refuses an entry that would land on one of the archive's own files: a
+/// volume, or a progress file next to the first volume (`<archive>.hatchzip`,
+/// `<archive>.hatchzip-tail` and any later one). Written over, a volume would
+/// be lost before it was read, and a progress file would be trusted by the
+/// next resume as HatchZip's own. That can only happen when the archive's
+/// folder is inside the output folder. Names are compared ignoring case, as
+/// a case-insensitive filesystem would.
+fn check_own_files(job: &Job, out: &Path) -> Result<()> {
+    let text = |p: &Path| p.to_string_lossy().to_lowercase();
+    let folder = |p: &Path| {
+        let dir = p.parent().filter(|d| !d.as_os_str().is_empty());
+        fs::canonicalize(dir.unwrap_or(Path::new(".")))
+            .ok()
+            .map(|d| text(&d))
+    };
+    let lower = |p: &Path| p.file_name().map(|n| text(Path::new(n)));
+    let Ok(out) = fs::canonicalize(out) else {
+        return Ok(());
+    };
+    let primary = job.storage.primary();
+    let own_folder = folder(primary);
+    let side = lower(primary).map(|n| format!("{n}.hatchzip"));
+    let volumes: Vec<_> = job
+        .storage
+        .parts()
+        .iter()
+        .map(|p| (folder(&p.path), lower(&p.path)))
+        .collect();
+    for item in job.units.iter().flat_map(|u| &u.items) {
+        let dest = out.join(&item.path);
+        let dir = dest.parent().map(text);
+        let name = lower(&dest);
+        let (Some(dir), Some(name)) = (dir, name) else {
+            continue;
+        };
+        let volume = volumes
+            .iter()
+            .any(|(d, n)| d.as_ref() == Some(&dir) && n.as_ref() == Some(&name));
+        let progress = own_folder.as_ref() == Some(&dir)
+            && side.as_ref().is_some_and(|s| name.starts_with(s.as_str()));
+        if volume || progress {
+            bail!(
+                "'{}' would be extracted onto {}, one of the archive's own files. Choose another \
+                 destination. Nothing was modified",
+                item.path.display(),
+                dest.display()
+            );
         }
     }
     Ok(())
@@ -441,17 +494,23 @@ pub fn default_output(primary: &Path) -> PathBuf {
         && digits.bytes().all(|b| b.is_ascii_digit())
     {
         name.truncate(stem.len() - digits.len() - ".part".len());
-        return primary.with_file_name(name);
-    }
-    for ext in [
-        ".zip", ".7z", ".tar.xz", ".txz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
-    ] {
-        if lower.ends_with(ext) && name.len() > ext.len() {
-            name.truncate(name.len() - ext.len());
-            break;
+    } else {
+        for ext in [
+            ".zip", ".7z", ".tar.xz", ".txz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
+        ] {
+            if lower.ends_with(ext) && name.len() > ext.len() {
+                name.truncate(name.len() - ext.len());
+                break;
+            }
         }
     }
-    if name == file_name {
+    // What is left names a folder next to the archive, so it must be an
+    // ordinary name. `...zip` would leave `..`, the folder above, and `..zip`
+    // would leave `.`, the archive's own folder, where its entries could
+    // replace its progress files. Windows drops trailing dots and spaces, so
+    // `. .zip` is `.` there too.
+    if name == file_name || name.chars().all(|c| c == '.' || c == ' ') {
+        name = file_name;
         name.push_str("-extracted");
     }
     primary.with_file_name(name)
@@ -694,6 +753,30 @@ mod tests {
         assert_eq!(name("game.txz"), Path::new("game"));
         assert_eq!(name("game.part.rar"), Path::new("game.part"));
         assert_eq!(name("notes.txt"), Path::new("notes.txt-extracted"));
+    }
+
+    /// A name that would leave only dots, the folder above or the archive's
+    /// own, gets a folder of its own instead.
+    #[test]
+    fn output_folder_is_never_the_folder_above_or_the_archives_own() {
+        let name = |n: &str| default_output(&Path::new("dl").join(n));
+        for n in [
+            "...zip",
+            "..zip",
+            ".zip",
+            ". .zip",
+            "...tar.gz",
+            "...7z.001",
+            "...part1.rar",
+            "..part2.rar",
+        ] {
+            assert_eq!(
+                name(n),
+                Path::new("dl").join(format!("{n}-extracted")),
+                "{n}"
+            );
+        }
+        assert_eq!(name("...game.zip"), Path::new("dl/...game"));
     }
 
     /// Eight stored entries, so extracting in place frees the archive entry

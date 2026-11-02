@@ -936,7 +936,12 @@ fn crypt_record5(extra: &[u8]) -> Result<Option<DataCrypt>> {
             .checked_add(len)
             .filter(|&end| end <= extra.len())
             .ok_or_else(|| anyhow!("a header's extra record runs past its end"))?;
-        if vint(extra, &mut e)? == 1 {
+        let kind = vint(extra, &mut e)?;
+        // The type is part of the record, so it has to end inside it too.
+        if e > end {
+            bail!("a header's extra record runs past its end");
+        }
+        if kind == 1 {
             let record = &extra[e..end];
             let (_, count, salt, p) = crypt_start5(record)?;
             let iv: [u8; 16] = record
@@ -1006,6 +1011,10 @@ fn file5(v: usize, hflags: u64, b: &[u8], extra: &[u8]) -> Result<Header> {
             .filter(|&end| end <= extra.len())
             .ok_or_else(|| anyhow!("a header's extra record runs past its end"))?;
         let kind = vint(extra, &mut e)?;
+        // The type is part of the record, so it has to end inside it too.
+        if e > end {
+            bail!("a header's extra record runs past its end");
+        }
         match kind {
             1 => {
                 encrypted = true;
@@ -1990,6 +1999,15 @@ mod tests {
             "game/back_slash.txt"
         );
         assert_eq!(clean_name("game\\file.txt", false), "game\\file.txt");
+    }
+
+    /// An extra record whose type runs past the record's own length is
+    /// damage, not a panic.
+    #[test]
+    fn an_extra_records_type_must_end_inside_it() {
+        // Length 0, then a type byte that belongs to no record.
+        assert!(crypt_record5(&[0x00, 0x01]).is_err());
+        assert!(crypt_record5(&[0x00, 0x05]).is_err());
     }
 
     #[test]

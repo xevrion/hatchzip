@@ -341,3 +341,39 @@ fn too_much_after_the_last_entry_is_refused() {
     assert_eq!(fs::read(&archive).unwrap(), before);
     assert_no_side_files(&archive);
 }
+
+/// An archive named so that only dots are left once the format is taken
+/// off gets a folder of its own, not the folder above (`...zip`) or its own
+/// folder (`..zip`).
+#[test]
+fn a_name_of_dots_never_extracts_outside_its_own_folder() {
+    for name in ["...zip", "..zip"] {
+        let tmp = TempDir::new().unwrap();
+        let downloads = tmp.path().join("downloads");
+        fs::create_dir(&downloads).unwrap();
+        let files = Files::from([("escaped.txt".to_string(), b"x".to_vec())]);
+        let archive = zip_of(&downloads, name, &files);
+        let a = archive.to_str().unwrap();
+        assert_ok(&hatchzip(&["extract", a, "--keep-free", "0", "--yes"], &[]));
+        assert_eq!(
+            fs::read(downloads.join(format!("{name}-extracted/escaped.txt"))).unwrap(),
+            b"x",
+            "{name}"
+        );
+        assert!(!tmp.path().join("escaped.txt").exists(), "{name}");
+        assert!(!downloads.join("escaped.txt").exists(), "{name}");
+    }
+}
+
+/// Entries can't land on the archive's own files, which the output folder
+/// holds when it is the archive's folder: a volume would be lost before it
+/// was read, and a progress file would be trusted by the next resume.
+#[test]
+fn entries_on_the_archives_own_files_are_refused() {
+    for entry in ["a.zip.hatchzip", "A.ZIP.HATCHZIP-TAIL", "a.zip"] {
+        let tmp = TempDir::new().unwrap();
+        let files = Files::from([(entry.to_string(), b"planted".to_vec())]);
+        let archive = zip_of(tmp.path(), "a.zip", &files);
+        refused(&archive, tmp.path(), "one of the archive's own files");
+    }
+}
