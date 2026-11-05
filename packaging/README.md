@@ -187,7 +187,9 @@ tag never accepts it, so a release can't ship with the test certificate.
 
 Signing runs when one of the two services below is set up, and is skipped
 otherwise; the workflow log says which one it used. Builds of a tag are
-signed. Dry runs (the workflow run by hand without a tag) are signed only
+signed only when the repository variable `SIGN_RELEASES` is `true`, so a
+release can still go out unsigned while the release certificate is set up.
+Dry runs (the workflow run by hand without a tag) are signed only
 when the repository variable `SIGN_DRY_RUNS` is `true`, since a signing
 policy can wait for a person to approve each request. If both services are
 set up, SignPath is used.

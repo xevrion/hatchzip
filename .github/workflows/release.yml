@@ -136,10 +136,12 @@ jobs:
       actions: read
     env:
       # The signing service: SignPath if its token is set, else Azure
-      # Artifact Signing if its secret is, else none. Dry runs are signed
-      # only when the variable SIGN_DRY_RUNS is true, since a signing policy
+      # Artifact Signing if its secret is, else none. Tags are signed only
+      # when the variable SIGN_RELEASES is true, so a release can still go
+      # out unsigned while the release certificate is being set up. Dry runs
+      # are signed only when SIGN_DRY_RUNS is true, since a signing policy
       # may wait for a person to approve each request.
-      SIGNER: ${{ (startsWith(github.ref, 'refs/tags/') || vars.SIGN_DRY_RUNS == 'true') && ((secrets.SIGNPATH_API_TOKEN != '' && 'signpath') || (secrets.AZURE_CLIENT_SECRET != '' && 'azure')) || '' }}
+      SIGNER: ${{ ((startsWith(github.ref, 'refs/tags/') && vars.SIGN_RELEASES == 'true') || (!startsWith(github.ref, 'refs/tags/') && vars.SIGN_DRY_RUNS == 'true')) && ((secrets.SIGNPATH_API_TOKEN != '' && 'signpath') || (secrets.AZURE_CLIENT_SECRET != '' && 'azure')) || '' }}
       # SignPath's test certificate is self-signed, so Windows doesn't trust
       # it. A dry run signed with it is still checked; a tag never is, so a
       # release can't ship with it.
