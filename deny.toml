@@ -30,6 +30,7 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant, merged into zbus 6: D-Bus for accessibility on Linux (accesskit_unix, atspi), which is on zbus 5" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names, merged into zbus 6: same path as zvariant" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, merged into zbus 6: same path as zvariant" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils, unmaintained: used by spin_on inside slint-macros, a proc macro that runs at compile time and never sees archive data" },
 ]
 
 [licenses]
