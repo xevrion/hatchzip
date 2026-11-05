@@ -23,9 +23,10 @@ finish-args:
   - --device=dri
   # HatchZip modifies the archive it extracts: it truncates the archive
   # file as each part is extracted and deletes it at the end. It also
-  # writes two progress files next to the archive (<archive>.hatchzip and
-  # <archive>.hatchzip-tail), reads the other volumes of a split archive
-  # from the same folder, and extracts into a folder next to it by default.
+  # writes progress files next to the archive (<archive>.hatchzip,
+  # <archive>.hatchzip-tail and <archive>.hatchzip-folders), reads the other
+  # volumes of a split archive from the same folder, and extracts into a
+  # folder next to it by default.
   # The FileChooser and Documents portals grant access to the one file the
   # user picked, so none of that works through them. Flathub requires
   # static permissions to be kept to an absolute minimum and portals to be

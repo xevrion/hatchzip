@@ -231,6 +231,9 @@ pub fn build(
                     } else {
                         ui.invoke_extracted_removed()
                     };
+                    if let Some(warning) = &task.warning {
+                        view.message = format!("{} {warning}.", view.message).into();
+                    }
                 }
                 _ => {}
             }

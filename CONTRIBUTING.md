@@ -144,7 +144,7 @@ Every figure in the README and docs was measured on real hardware. Changes that 
 
 ## Reporting bugs
 
-Use the [bug report form](https://github.com/xevrion/hatchzip/issues/new/choose). If an extraction failed midway, keep the `.hatchzip` and `.hatchzip-tail` files next to the archive: they are needed to resume, and they help diagnose what happened.
+Use the [bug report form](https://github.com/xevrion/hatchzip/issues/new/choose). If an extraction failed midway, keep the `.hatchzip`, `.hatchzip-tail` and `.hatchzip-folders` files next to the archive: they are needed to resume, and they help diagnose what happened.
 
 ## Code of conduct
 

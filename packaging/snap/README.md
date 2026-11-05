@@ -35,10 +35,10 @@ app:
 
 In-place extraction needs write access where the archive is, not only to
 the file a dialog returns: HatchZip truncates the archive as it extracts
-and deletes it at the end, writes `<archive>.hatchzip` and
-`<archive>.hatchzip-tail` next to it so an extraction can resume, reads the
-other volumes of a split archive from the same folder, and creates the
-output folder beside it. `home` and `removable-media` cover that for
+and deletes it at the end, writes `<archive>.hatchzip`,
+`<archive>.hatchzip-tail` and `<archive>.hatchzip-folders` next to it so an
+extraction can resume, reads the other volumes of a split archive from the
+same folder, and creates the output folder beside it. `home` and `removable-media` cover that for
 archives in the home folder and on mounted drives. The engine's system
 calls (`ftruncate`, `fallocate` for punching holes, `syncfs`, `flock`) are
 all in snapd's default seccomp template.

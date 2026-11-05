@@ -55,6 +55,27 @@ pub fn open_existing_no_follow(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Opens an existing folder to set its mode and time, failing if `path` is
+/// a link or anything but a folder.
+pub fn open_folder_no_follow(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(path)
+}
+
+/// Gives the owner full access to a folder that an earlier, interrupted run
+/// already set, so it can be opened and looked into to be set again. The
+/// caller has just checked that `path` is no link.
+pub fn unlock_folder(path: &Path) -> io::Result<()> {
+    let mode = fs::symlink_metadata(path)?.permissions().mode();
+    if mode & 0o700 == 0o700 {
+        return Ok(());
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(mode & 0o777 | 0o700))
+}
+
 /// Bytes the file really occupies on disk. Punching a hole lowers it while
 /// the length stays the same.
 pub fn allocated_bytes(path: &Path) -> io::Result<u64> {

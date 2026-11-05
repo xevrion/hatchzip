@@ -23,6 +23,8 @@ pub struct Task {
     pub rate_estimate: Option<(u64, u64)>,
     pub restore_result: Option<(usize, PathBuf, bool, usize)>,
     pub resumable_failure: Option<String>,
+    /// What the finished run could not do, shown after its result.
+    pub warning: Option<String>,
     name: String,
     is_test: bool,
     restoring: bool,
@@ -88,6 +90,7 @@ impl Task {
             rate_estimate: None,
             restore_result: None,
             resumable_failure: None,
+            warning: None,
             name: name.to_string(),
             is_test,
             restoring: false,
@@ -185,6 +188,7 @@ impl Task {
                 self.rate_estimate = None;
                 self.restore_result = None;
                 self.resumable_failure = None;
+                self.warning = None;
                 v.fraction = 0.0;
                 v.amounts = "".into();
                 v.rate = "".into();
@@ -226,8 +230,13 @@ impl Task {
                 v.rate = "".into();
                 v.message = "Progress is saved. The extraction can be resumed now or later.".into();
             }
-            Update::Extracted { output, keep } => {
+            Update::Extracted {
+                output,
+                keep,
+                warning,
+            } => {
                 self.keep = keep;
+                self.warning = warning;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
@@ -441,6 +450,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: false,
+            warning: None,
         });
         assert_eq!(t.view.phase, Phase::Done);
         assert_eq!(t.view.heading, "Extraction complete");
@@ -475,6 +485,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: true,
+            warning: None,
         });
         assert_eq!(
             t.view.message,
@@ -625,6 +636,7 @@ mod tests {
             task.apply(Update::Extracted {
                 output: "out".into(),
                 keep,
+                warning: None,
             });
             assert_eq!(task.keeps_archive(), keep);
         }

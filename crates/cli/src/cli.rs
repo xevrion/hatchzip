@@ -67,8 +67,9 @@ Examples:
   hatchzip restore game.zip            Restore a partially extracted archive
 
 To resume an interrupted extraction, run the same command again. Progress is \
-stored in two files next to the archive (<archive>.hatchzip and \
-<archive>.hatchzip-tail); do not delete them while an extraction is incomplete. \
+stored in files next to the archive (<archive>.hatchzip, <archive>.hatchzip-tail \
+and, for an archive with folder entries, <archive>.hatchzip-folders); do not \
+delete them while an extraction is incomplete. \
 To stop permanently instead, run restore: the entries not yet extracted become a \
 standard archive again. An extraction with --keep-archive resumes the same way and \
 keeps the archive when resumed.
