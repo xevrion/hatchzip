@@ -64,7 +64,7 @@ fn bundled_hindi_and_english_fallback() {
     assert!(ui.get_formats().contains("समर्थित फ़ॉर्मैट"));
     for rar in [false, true] {
         ui.set_supports_rar(rar);
-        assert!(ui.get_formats().contains("tar.gz, tar.xz"));
+        assert!(ui.get_formats().contains("tar.gz, tar.bz2, tar.xz"));
         assert_eq!(ui.get_formats().contains("RAR"), rar);
     }
     assert!(

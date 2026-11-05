@@ -92,6 +92,9 @@
       <RegistryValue Root="HKCU" Key="Software\Classes\.tar\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
       <RegistryValue Root="HKCU" Key="Software\Classes\.tgz\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
       <RegistryValue Root="HKCU" Key="Software\Classes\.gz\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\.tbz2\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\.tbz\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\.bz2\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
       <RegistryValue Root="HKCU" Key="Software\Classes\.txz\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
       <RegistryValue Root="HKCU" Key="Software\Classes\.xz\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />
       <RegistryValue Root="HKCU" Key="Software\Classes\.001\OpenWithProgids" Name="HatchZip.Archive" Type="string" Value="" />

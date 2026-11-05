@@ -1962,6 +1962,7 @@ version = "0.1.9"
 dependencies = [
  "aes",
  "anyhow",
+ "bzip2",
  "cbc",
  "crc32fast",
  "fs4",

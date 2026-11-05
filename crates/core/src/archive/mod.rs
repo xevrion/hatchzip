@@ -8,6 +8,7 @@ pub mod resumable;
 mod sevenz;
 pub mod storage;
 mod tar;
+mod tarbz2;
 pub mod targz;
 pub mod tarxz;
 mod xz;
@@ -280,6 +281,7 @@ pub fn open(
         #[cfg(not(feature = "rar"))]
         RAR => Err(no_rar()),
         targz::NAME => targz::open(storage, point),
+        tarbz2::NAME => tarbz2::open(storage, point),
         tarxz::NAME => tarxz::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
@@ -416,9 +418,54 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         // refused once the stream opens.
         return Ok(tarxz::NAME);
     }
-    if starts(b"\x28\xB5\x2F\xFD") || starts(b"BZh") {
+    if starts(b"BZh") {
+        let first = (|| -> Result<_> {
+            let mut bz = tarbz2::Bzip2::new(
+                storage.reader(None),
+                storage.original_len(),
+                &tarbz2::BzPoint::start(),
+            )?;
+            let mut first = [0; 512];
+            let mut n = 0;
+            while n < first.len() {
+                let k = bz.read(&mut first[n..])?;
+                if k == 0 {
+                    break;
+                }
+                n += k;
+            }
+            Ok((first, n))
+        })()
+        // A volume that can't be read is not damage in the stream.
+        .map_err(|e| {
+            if e.downcast_ref::<std::io::Error>().is_some() {
+                e
+            } else {
+                anyhow::Error::new(Damaged(e))
+            }
+        })
+        .context(
+            "checking the bzip2 archive (nothing was changed); if it is damaged, download it again",
+        )?;
+        // Like a .tar.gz, a stream that doesn't start with a ustar header is
+        // still taken as a tar when its own name says so.
+        let named = named_bzip2(
+            &storage
+                .primary()
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        if is_tar(&first.0[..first.1]) || named {
+            return Ok(tarbz2::NAME);
+        }
         bail!(
-            "this is a compressed stream (.zst or .bz2). In-place extraction of these \
+            "this is a bzip2-compressed file that does not contain a tar archive; the file was not changed. Decompress it with bzip2, or use a .tar.bz2 archive"
+        );
+    }
+    if starts(b"\x28\xB5\x2F\xFD") {
+        bail!(
+            "this is a compressed stream (.zst). In-place extraction of these \
              compressed streams is not supported yet"
         );
     }
@@ -431,6 +478,19 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     // Anything else gets a ZIP parse: self-extracting archives put an
     // executable in front, so the signature isn't at the start.
     Ok("zip")
+}
+
+/// The file's own name says `.tar.bz2`, alone or before a numeric split
+/// suffix such as `.001`. The folders it sits in don't count.
+fn named_bzip2(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let base = match name.rsplit_once('.') {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => &name,
+    };
+    [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| base.ends_with(e))
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -475,4 +535,25 @@ const S_IFLNK: u32 = 0o120000;
 
 fn is_symlink_mode(mode: Option<u32>) -> bool {
     mode.is_some_and(|m| m & S_IFMT == S_IFLNK)
+}
+
+#[cfg(test)]
+mod named_tests {
+    use super::named_bzip2;
+
+    #[test]
+    fn only_the_file_name_and_a_split_number_select_bzip2() {
+        for yes in ["a.tar.bz2", "A.TBZ2", "a.tbz", "a.tar.bz2.001", "a.tbz2.12"] {
+            assert!(named_bzip2(yes), "{yes}");
+        }
+        for no in [
+            "a.zip",
+            "a.tar.bz2.old",
+            "a.tar.bz2.",
+            "a.bz2",
+            "a.tar.gz.001",
+        ] {
+            assert!(!named_bzip2(no), "{no}");
+        }
+    }
 }
