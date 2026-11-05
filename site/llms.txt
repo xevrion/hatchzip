@@ -13,15 +13,15 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - Windows (PowerShell): `irm https://raw.githubusercontent.com/xevrion/hatchzip/main/install.ps1 | iex`
 - Homebrew: `brew install xevrion/tap/hatchzip` (CLI), `brew install --cask xevrion/tap/hatchzip` (macOS app and CLI)
 - Scoop: `scoop bucket add xevrion https://github.com/xevrion/scoop-bucket`, then `scoop install xevrion/hatchzip` (CLI)
-- Cargo: `cargo install hatchzip` (without RAR; `--features rar` adds it and needs a C++ compiler). Every other install method includes RAR
+- Cargo: `cargo binstall hatchzip` downloads the release build (with RAR); `cargo install hatchzip` builds from source (without RAR; `--features rar` adds it and needs a C++ compiler). Every other install method includes RAR
 - winget (`Xevrion.HatchZip`) is in review and the AUR packages are not published yet; until the README lists them as live, packages under those names do not come from this project
 
 ## Formats
 
-- ZIP (including ZIP64 and self-extracting .exe), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz
+- ZIP (including ZIP64 and self-extracting .exe), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, .tar.xz and .txz
 - Split archives: `.001` sets of ZIP or 7z, RAR volume sets (`.part1.rar`, or `.rar` with `.r00`)
 - Password-protected ZIP, 7z and RAR
-- Not supported yet: .tar.xz, .tar.zst, native split ZIP (`.z01`)
+- Not supported yet: .tar.zst, native split ZIP (`.z01`)
 
 ## Use
 
@@ -38,7 +38,8 @@ How it works: it extracts from the end of the archive and cuts each finished par
 
 - A 7z made with 7-Zip's default settings is one solid block; it needs free space for that whole block, and `check` says so first.
 - A `.tar.gz` frees space while it extracts only on filesystems that can free part of a file (NTFS, APFS, ext4, XFS, btrfs). On FAT32 and exFAT it needs room for the archive and the files at once, and `check` says so.
-- `.tar.xz` and `.tar.zst` are not supported yet.
+- A `.tar.xz` frees space the same way. One made as a single block (`xz -T1`) or without integrity checks is extracted only with `--keep-archive`.
+- `.tar.zst` is not supported yet.
 - RAR (RAR 5 and RAR 4, single files and `.part1.rar` or `.rar`/`.r00` volume sets) is freed file by file, each volume deleted once empty. Archives with encrypted file names (`rar -hp`) work with the password. A solid RAR is extracted only with `--keep-archive`; RAR archives with links are refused before anything changes. `restore` refuses archives with encrypted file names, since it takes no password; such an extraction can only be completed.
 
 ## Common questions

@@ -29,7 +29,7 @@
 {"@type":"FAQPage","@id":"https://hatchzip.dev/#faq","mainEntity":[
 {"@type":"Question","name":"Is HatchZip safe?","acceptedAnswer":{"@type":"Answer","text":"HatchZip checks that the extraction fits before it changes anything. A file is written and flushed to disk before the part of the archive holding it is cut off, so a crash leaves each file either extracted or still in the archive. Every file's CRC-32 is checked, and a damaged file stops the run. To check a download is genuine, see Verify your download."}},
 {"@type":"Question","name":"Does HatchZip need internet access?","acceptedAnswer":{"@type":"Answer","text":"No. HatchZip has no networking code and no networking library, no telemetry and no accounts, and it never checks for updates itself. It reads the archive on your disk and writes the files next to it. Its CI fails if an HTTP, TLS or socket library enters the dependencies. The desktop app's two links, to the source code and to the latest release under Help, Check for updates, open in your web browser."}},
-{"@type":"Question","name":"Which archive formats does HatchZip extract?","acceptedAnswer":{"@type":"Answer","text":"HatchZip extracts ZIP (including ZIP64 and self-extracting .exe files), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, split .001 archives of ZIP or 7z, and RAR volume sets. It opens password-protected ZIP, 7z and RAR archives. A solid RAR is extracted only while keeping the archive. .tar.xz and .tar.zst are not supported yet."}},
+{"@type":"Question","name":"Which archive formats does HatchZip extract?","acceptedAnswer":{"@type":"Answer","text":"HatchZip extracts ZIP (including ZIP64 and self-extracting .exe files), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, .tar.xz and .txz, split .001 archives of ZIP or 7z, and RAR volume sets. It opens password-protected ZIP, 7z and RAR archives. A solid RAR is extracted only while keeping the archive. .tar.zst is not supported yet."}},
 {"@type":"Question","name":"How much free space does HatchZip need?","acceptedAnswer":{"@type":"Answer","text":"HatchZip needs about the size of the extracted files, plus the largest part it can free at once: one file for ZIP, tar and RAR, one solid block for 7z. A 180 GB archive that unpacks to 200 GB needs a little over 200 GB, not 380 GB. It also keeps 2 GB free by default. hatchzip check shows the exact figure and changes nothing."}},
 {"@type":"Question","name":"What happens if HatchZip crashes or is stopped?","acceptedAnswer":{"@type":"Answer","text":"HatchZip saves its progress in two small files next to the archive. After a crash, a power cut or Ctrl+C, open the same archive in the app or run the same command again, and it continues where it stopped. To give up instead, hatchzip restore turns what is left into a normal archive holding the files not yet extracted."}},
 {"@type":"Question","name":"Does HatchZip work on FAT32 and exFAT drives?","acceptedAnswer":{"@type":"Answer","text":"Yes. ZIP, 7z, tar and RAR archives are freed by shortening the archive file, which works on every filesystem, including FAT32 and exFAT USB drives. A .tar.gz frees space as it goes only where the filesystem can free part of a file, such as NTFS, APFS, ext4, XFS and btrfs. On FAT32 and exFAT it still extracts, but needs room for the archive and the files at once."}}
@@ -140,7 +140,7 @@
 <pre><code>curl -fsSL https://raw.githubusercontent.com/xevrion/hatchzip/main/install.sh | sh</code></pre>
 <p>Windows, in PowerShell:</p>
 <pre><code>irm https://raw.githubusercontent.com/xevrion/hatchzip/main/install.ps1 | iex</code></pre>
-<p>Or, with Rust installed: <code>cargo install hatchzip</code></p>
+<p>Or, with Rust installed: <code>cargo binstall hatchzip</code> downloads the release build, and <code>cargo install hatchzip</code> builds it from source.</p>
 <p>Then run <code>hatchzip check game.zip</code> to see whether it fits, and <code>hatchzip extract game.zip</code> to extract it. <code>hz</code> works as a short name, and <code>man hatchzip</code> has the full manual.</p>
 <p><a href="https://github.com/xevrion/hatchzip/releases">All releases</a></p>
 </section>
@@ -148,10 +148,11 @@
 <section aria-labelledby="features">
 <h2 id="features">What it does</h2>
 <ul>
-<li>Extracts ZIP (including ZIP64 and self-extracting <code>.exe</code> files), 7z, plain tar, <code>.tar.gz</code> and <code>.tgz</code>, and split archives (<code>.001</code>, <code>.002</code>, ...) of ZIP or 7z.</li>
+<li>Extracts ZIP (including ZIP64 and self-extracting <code>.exe</code> files), 7z, plain tar, <code>.tar.gz</code>, <code>.tgz</code>, <code>.tar.xz</code> and <code>.txz</code>, and split archives (<code>.001</code>, <code>.002</code>, ...) of ZIP or 7z.</li>
 <li>Extracts RAR 5 and RAR 4, single files and volume sets (<code>.part1.rar</code>, ... or <code>.rar</code>, <code>.r00</code>, ...), freeing the archive file by file and deleting each volume once it is empty, including archives made with "Encrypt file names". A solid RAR can only be extracted while keeping the archive. RAR support is in the downloads from this site and the releases page, not in <code>cargo install hatchzip</code>.</li>
-<li>A <code>.tar.gz</code> is read once from start to end before anything changes, so a damaged one is refused untouched. It then gives its space back as it extracts on NTFS (Windows), APFS (macOS), ext4, XFS, btrfs and other filesystems that can free part of a file. On FAT32 and exFAT it still extracts and resumes, but needs room for the archive and the files at once.</li>
+<li>A <code>.tar.gz</code> or <code>.tar.xz</code> is read once from start to end before anything changes, so a damaged one is refused untouched. It then gives its space back as it extracts on NTFS (Windows), APFS (macOS), ext4, XFS, btrfs and other filesystems that can free part of a file. On FAT32 and exFAT it still extracts and resumes, but needs room for the archive and the files at once.</li>
 <li>Checks that the extraction will fit before it changes anything.</li>
+<li>Shows what is inside as a folder tree in the app, with folder sizes, before anything changes.</li>
 <li>Can also extract normally and keep the archive, when there is room for both: <code>--keep-archive</code>, an option in the app, or Extract here (keep archive) in the right-click menu. If keeping it does not fit, it says how much extracting in place needs instead.</li>
 <li>Extracts several archives one after another, checking the space for each just before it starts. The first one that does not complete stops the run, with a list of what was extracted and what was not.</li>
 <li>Keeps 2 GB of free space by default, so the disk never fills to zero. Change it with <code>--keep-free</code>.</li>
@@ -187,7 +188,8 @@
 <h2 id="limits">Limits</h2>
 <ul>
 <li>A 7z made with 7-Zip's default settings can be one solid block. HatchZip can only free it once all of it is out, so it needs free space for the whole block. <code>hatchzip check</code> tells you before anything changes.</li>
-<li><code>.tar.zst</code> and <code>.tar.xz</code> are not supported yet. They are refused before extraction.</li>
+<li><code>.tar.zst</code> is not supported yet. It is refused before extraction.</li>
+<li>A <code>.tar.xz</code> made as a single block (what <code>xz -T1</code> writes), or without integrity checks, is extracted only while keeping the archive.</li>
 <li>A solid RAR decodes front to back in one pass, so it can't be freed as it goes; it is extracted only while keeping the archive. RAR archives with links are refused before extraction, and one with encrypted file names cannot be restored after a partial extraction, only completed.</li>
 <li>The archive is used up as it extracts. If the download itself is damaged, the files before the damage come out and the archive is partly gone. Use <code>--verify-first</code> when you can't download it again.</li>
 </ul>
@@ -200,7 +202,7 @@
 <h3>Does HatchZip need internet access?</h3>
 <p>No. HatchZip has no networking code and no networking library, no telemetry and no accounts, and it never checks for updates itself. It reads the archive on your disk and writes the files next to it. Its CI fails if an HTTP, TLS or socket library enters the dependencies. The desktop app's two links, to the source code and to the latest release under Help, Check for updates, open in your web browser.</p>
 <h3>Which archive formats does HatchZip extract?</h3>
-<p>HatchZip extracts ZIP (including ZIP64 and self-extracting <code>.exe</code> files), 7z, RAR 5 and RAR 4, plain tar, <code>.tar.gz</code> and <code>.tgz</code>, split <code>.001</code> archives of ZIP or 7z, and RAR volume sets. It opens password-protected ZIP, 7z and RAR archives. A solid RAR is extracted only while keeping the archive. <code>.tar.xz</code> and <code>.tar.zst</code> are not supported yet.</p>
+<p>HatchZip extracts ZIP (including ZIP64 and self-extracting <code>.exe</code> files), 7z, RAR 5 and RAR 4, plain tar, <code>.tar.gz</code> and <code>.tgz</code>, <code>.tar.xz</code> and <code>.txz</code>, split <code>.001</code> archives of ZIP or 7z, and RAR volume sets. It opens password-protected ZIP, 7z and RAR archives. A solid RAR is extracted only while keeping the archive. <code>.tar.zst</code> is not supported yet.</p>
 <h3>How much free space does HatchZip need?</h3>
 <p>HatchZip needs about the size of the extracted files, plus the largest part it can free at once: one file for ZIP, tar and RAR, one solid block for 7z. A 180 GB archive that unpacks to 200 GB needs a little over 200 GB, not 380 GB. It also keeps 2 GB free by default. <code>hatchzip check</code> shows the exact figure and changes nothing.</p>
 <h3>What happens if HatchZip crashes or is stopped?</h3>
