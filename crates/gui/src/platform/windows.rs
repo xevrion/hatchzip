@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 /// The settings switch, named after this system's file manager.
-pub const SHELL_MENU_LABEL: &str = "Show in the Explorer context menu";
+pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Explorer;
 
 /// Explorer, through the per-user registry hive.
 pub const SHELL_MENU: bool = true;

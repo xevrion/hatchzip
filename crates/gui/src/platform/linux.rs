@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 /// The settings switch, named after this system's file manager.
-pub const SHELL_MENU_LABEL: &str = "Show in the file manager's context menu";
+pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Files;
 
 /// The file managers hatchzip-shell knows (Dolphin, GNOME Files, Nemo).
 pub const SHELL_MENU: bool = true;

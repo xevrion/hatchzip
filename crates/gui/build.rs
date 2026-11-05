@@ -19,7 +19,9 @@ fn main() {
     // platform-specific layout. Release builds do not need this debug data.
     let config = slint_build::CompilerConfiguration::new()
         .with_style(style)
-        .with_debug_info(std::env::var("PROFILE").as_deref() == Ok("debug"));
+        .with_debug_info(std::env::var("PROFILE").as_deref() == Ok("debug"))
+        .with_bundled_translations("translations")
+        .with_default_translation_context(slint_build::DefaultTranslationContext::None);
     slint_build::compile_with_config("ui/app.slint", config).expect("compiling the UI");
 
     if target_os == "windows" {
