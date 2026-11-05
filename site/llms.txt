@@ -2,7 +2,7 @@
 
 > HatchZip is a free, open-source archive extractor for Windows, macOS and Linux that extracts ZIP, 7z, RAR, tar and split archives in place, so it needs free space for the extracted files only, not for the files and the archive together.
 
-Site: https://hatchzip.dev. Source: https://github.com/xevrion/hatchzip (MIT OR Apache-2.0). Current version 0.1.8. A desktop app and a command line tool, `hatchzip` (short name `hz`).
+Site: https://hatchzip.dev. Source: https://github.com/xevrion/hatchzip (MIT OR Apache-2.0). Current version 0.1.9. A desktop app and a command line tool, `hatchzip` (short name `hz`).
 
 How it works: it extracts from the end of the archive and cuts each finished part off the archive file (a .tar.gz from the front, freeing the compressed bytes already used). When the run finishes, only the extracted files are left. It checks that the extraction fits before it changes anything, and an interrupted run resumes when it is started again.
 
