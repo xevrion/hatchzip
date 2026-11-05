@@ -1,6 +1,6 @@
 # Format notes
 
-Research for the formats after ZIP, checked against crate sources and against real archives made with zstd 1.5.7, xz 5.8.2 and 5.8.4, 7-Zip 25.01, gzip and pigz. Anything marked unverified has not been tested.
+Research for the formats after ZIP, checked against crate sources and against real archives made with zstd 1.5.7, xz 5.8.2 and 5.8.4, 7-Zip 25.01, 7-Zip ZS 25.01, gzip and pigz. Anything marked unverified has not been tested.
 
 ## The general problem
 
@@ -21,7 +21,7 @@ The protocol: flush the outputs, write and flush the journal, then punch up to t
 
 | Format | Restart granularity available | Crate | Work needed |
 |---|---|---|---|
-| 7z | **Done** (`crates/core/src/archive/sevenz.rs`). Per folder (solid block), truncating from the end like ZIP. Inside a folder, only at LZMA2 full-reset chunks. | `sevenz-rust2` (Apache-2.0): `BlockDecoder` decodes one folder from our own `Read + Seek`; pack positions and sizes are public. | Freeing space inside one solid block is the remaining work; 7-Zip's defaults can put a whole archive in one block. |
+| 7z | **Done** (`crates/core/src/archive/sevenz.rs`). Per folder (solid block), truncating from the end like ZIP. Inside a folder, only at LZMA2 full-reset chunks. Decodes LZMA, LZMA2, BCJ, bzip2, Deflate, PPMd, Zstandard, LZ4 and Brotli. | `sevenz-rust2` (Apache-2.0): `BlockDecoder` decodes one folder from our own `Read + Seek`; pack positions and sizes are public. | Freeing space inside one solid block is the remaining work; 7-Zip's defaults can put a whole archive in one block. |
 | Split archives | **Done** (`crates/core/src/archive/storage.rs`) for byte splits. | n/a | `.7z.001` and `.zip.001` are byte splits of one archive. Native `.z01` ZIP, which keeps the directory in the last part and numbers disks in its offsets, is not done. |
 | tar | **Done** (`crates/core/src/archive/tar.rs`) for uncompressed tar, per entry. | `tar` (MIT or Apache) | |
 | `.tar.gz`, `.tgz` | **Done** (`crates/core/src/archive/targz.rs`, gzip framing in `resumable.rs`). Any deflate block boundary, plus the start of every gzip member. Multi-member files (`bgzip`, `pigz -i`, concatenated `.gz`) work; every member's CRC-32 and ISIZE are checked. | `libz-rs-sys` (Zlib license) exports `inflatePrime`, `inflateSetDictionary`, `inflateGetDictionary` and `Z_BLOCK`. The safe `zlib-rs` API does not expose them. | Done. Tested with archives from GNU tar 1.35 with gzip 1.13 (levels 1 and 6), pigz with and without `-i`, and flate2. |
@@ -66,7 +66,7 @@ For `.tar.zst` the `Walker`'s tar half can be reused unchanged; the decoder half
 
 ## Dependency licenses
 
-All candidate crates are permissive: zip (MIT), flate2 (MIT or Apache), zlib-rs and libz-rs-sys (Zlib), zstd and zstd-safe (BSD-3), ruzstd (MIT), lzma-rust2 (Apache-2.0), liblzma (MIT or Apache, building only the 0BSD liblzma sources), sevenz-rust2 (Apache-2.0), zesven (MIT or Apache), tar (MIT or Apache). No GPL-only, LGPL-only or non-commercial terms appear in any dependency tree.
+All candidate crates are permissive: zip (MIT), flate2 (MIT or Apache), zlib-rs and libz-rs-sys (Zlib), zstd and zstd-safe (BSD-3), ruzstd (MIT), lzma-rust2 (Apache-2.0), liblzma (MIT or Apache, building only the 0BSD liblzma sources), sevenz-rust2 (Apache-2.0), lz4_flex (MIT), brotli and brotli-decompressor (BSD-3-Clause or MIT), zesven (MIT or Apache), tar (MIT or Apache). No GPL-only, LGPL-only or non-commercial terms appear in any dependency tree.
 
 The exception is UnRAR. The `unrar-ng-sys` crate is MIT or Apache, but the bundled C++ code is under the UnRAR freeware license: it may be used to extract RAR archives in any software free of charge, but not to build a RAR-compatible archiver. Distributing it requires the full text of that license, which is in `LICENSE-UNRAR`. This reading is not legal advice.
 
