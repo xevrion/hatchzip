@@ -1,5 +1,5 @@
 {
-    "version": "0.1.8",
+    "version": "0.1.9",
     "description": "Extract huge archives in place, without needing room for both the archive and its contents.",
     "homepage": "https://hatchzip.dev",
     "license": "MIT|Apache-2.0",
@@ -9,8 +9,8 @@
     ],
     "architecture": {
         "64bit": {
-            "url": "https://github.com/xevrion/hatchzip/releases/download/v0.1.8/hatchzip-x86_64-windows.zip",
-            "hash": "8b90782629930e25f336246024e178dbdcb6087d346d386e6a6fdccef0948764"
+            "url": "https://github.com/xevrion/hatchzip/releases/download/v0.1.9/hatchzip-x86_64-windows.zip",
+            "hash": "276af157294d4a549d37f6ca7440624643ac6dd4a11a1d0a30c3d187d4597d1c"
         }
     },
     "bin": [

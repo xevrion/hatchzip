@@ -1,6 +1,6 @@
 pkgbase = hatchzip-bin
 	pkgdesc = Extract huge archives in place, without needing room for both the archive and its contents
-	pkgver = 0.1.8
+	pkgver = 0.1.9
 	pkgrel = 1
 	url = https://hatchzip.dev
 	arch = x86_64
@@ -18,13 +18,13 @@ pkgbase = hatchzip-bin
 	optdepends = libxi: desktop app on X11
 	optdepends = libxrandr: desktop app on X11
 	optdepends = libglvnd: OpenGL drawing in the desktop app
-	provides = hatchzip=0.1.8
+	provides = hatchzip=0.1.9
 	conflicts = hatchzip
 	options = !strip
 	options = !debug
-	source_x86_64 = hatchzip-bin-0.1.8-x86_64-linux.tar.gz::https://github.com/xevrion/hatchzip/releases/download/v0.1.8/hatchzip-x86_64-linux.tar.gz
-	source_x86_64 = hatchzip-bin-0.1.8-amd64.deb::https://github.com/xevrion/hatchzip/releases/download/v0.1.8/hatchzip_amd64.deb
-	sha256sums_x86_64 = 9c2e734dde74ea822979e6ddb071e7271b4d5fd924e4f3cf48b778f8a70da301
-	sha256sums_x86_64 = 2bb92ac2cfeeb4ae6953821b4a399ac40a65ef1d9b2c09387de42b5ec6cec2a4
+	source_x86_64 = hatchzip-bin-0.1.9-x86_64-linux.tar.gz::https://github.com/xevrion/hatchzip/releases/download/v0.1.9/hatchzip-x86_64-linux.tar.gz
+	source_x86_64 = hatchzip-bin-0.1.9-amd64.deb::https://github.com/xevrion/hatchzip/releases/download/v0.1.9/hatchzip_amd64.deb
+	sha256sums_x86_64 = 6041a3c438d81b15ada569f3d0851d3173f1b3eab03442ed817517b1e7b731da
+	sha256sums_x86_64 = e8b6d912ea89325255e584483b904eb4cd39ba063146af00e07e3f1455795a39
 
 pkgname = hatchzip-bin
