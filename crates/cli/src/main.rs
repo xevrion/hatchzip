@@ -719,7 +719,9 @@ fn extract(
     let (state, paths) = open(archive, output, true, secret)?;
     let (job, journal) = match state {
         State::Orphan(mut journal) => {
-            engine::finish_orphaned(&mut journal, &paths)?;
+            if let Some(warning) = engine::finish_orphaned(&mut journal, &paths)? {
+                eprintln!("warning: {warning}");
+            }
             if journal.keep {
                 say!("This extraction was started with --keep-archive; the archive is kept.");
             }
@@ -834,7 +836,10 @@ fn extract(
     bar.finish_and_clear();
 
     match outcome {
-        Ok(Outcome::Finished) => {
+        Ok(Outcome::Finished(warning)) => {
+            if let Some(warning) = warning {
+                eprintln!("warning: {warning}");
+            }
             let archive = if keep {
                 "The archive was kept."
             } else {

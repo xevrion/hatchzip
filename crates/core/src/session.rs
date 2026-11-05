@@ -64,6 +64,12 @@ pub fn open(
 ) -> Result<State> {
     if paths.exists() {
         let (mut journal, tail) = Journal::load(paths)?;
+        // With every entry out, or the archive gone, this is no resume: it
+        // only finishes, and a lost list costs the folders' permissions and
+        // times, which the finish warns about.
+        if writable && !journal.done && journal.parts[0].0.exists() {
+            journal.check_folders(paths)?;
+        }
         // Only a writable open deletes or writes anything in the folder.
         if writable || output.is_some() {
             check_output(&journal, primary, output.as_deref(), "extract")?;

@@ -117,6 +117,7 @@ pub enum Update {
     Extracted {
         output: PathBuf,
         keep: bool,
+        warning: Option<String>,
     },
     Tested(usize),
     /// The archive is whole again, holding this many entries; the ones
@@ -275,10 +276,11 @@ fn extract(
     let output = if here { None } else { output };
     let (job, journal) = match open(&primary, &paths, output, true, secret, counters, send)? {
         State::Orphan(mut journal) => {
-            engine::finish_orphaned(&mut journal, &paths)?;
+            let warning = engine::finish_orphaned(&mut journal, &paths)?;
             send(Update::Extracted {
                 output: journal.output,
                 keep: journal.keep,
+                warning,
             });
             return Ok(());
         }
@@ -373,9 +375,13 @@ fn extract(
         keep_free,
     };
     match run.execute()? {
-        Outcome::Finished => {
+        Outcome::Finished(warning) => {
             counters.archive.store(0, Ordering::Relaxed);
-            send(Update::Extracted { output, keep });
+            send(Update::Extracted {
+                output,
+                keep,
+                warning,
+            });
         }
         Outcome::Paused => send(Update::Paused),
     }

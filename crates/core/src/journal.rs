@@ -280,19 +280,20 @@ impl Journal {
         Ok(journal)
     }
 
-    pub fn load(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
-        let loaded = Self::load_without_folders(paths)?;
-        // Read at the very end, so checked now: a resume past a missing or
-        // damaged list would free the rest of the archive and only then fail.
-        if let Some(saved) = loaded.0.folders {
-            crate::folders::load(&paths.folders, saved)?;
+    /// For a resume, before it changes anything: the list is read at the very
+    /// end, and a resume past a missing or damaged one would free the rest of
+    /// the archive and only then fail. Nothing else needs the list, so a lost
+    /// one stops neither a look at the archive nor a restore.
+    pub fn check_folders(&self, paths: &Paths) -> Result<()> {
+        if let Some(saved) = self.folders {
+            crate::folders::load(&paths.folders, saved).map_err(|e| {
+                anyhow!("{e:#}. Put it back, or run `hatchzip restore` to give the archive back.")
+            })?;
         }
-        Ok(loaded)
+        Ok(())
     }
 
-    /// For a restore, which never sets the folders: a lost list must not stop
-    /// the one command that gives the archive back.
-    pub fn load_without_folders(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
+    pub fn load(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
         let bytes = fs::read(&paths.journal)
             .with_context(|| format!("reading {}", paths.journal.display()))?;
         // The version is checked before the rest is parsed, so a newer layout
@@ -624,10 +625,12 @@ mod tests {
         assert!(Journal::load(&write_with(&dir, 8, &outside)).is_err());
         assert!(Journal::load(&write_with(&dir, 3, r#","folders_left":true"#)).is_err());
 
-        // The list is checked with the journal, not when it is read at the
-        // very end.
+        // A resume checks the list up front, not when it is read at the very
+        // end, and only a resume does.
         fs::write(dir.join("game.zip.hatchzip-folders"), b"[]").unwrap();
-        assert!(Journal::load(&write_with(&dir, 8, folders)).is_err());
+        let paths = write_with(&dir, 8, folders);
+        let (journal, _) = Journal::load(&paths).unwrap();
+        assert!(journal.check_folders(&paths).is_err());
 
         fs::remove_dir_all(&dir).unwrap();
     }

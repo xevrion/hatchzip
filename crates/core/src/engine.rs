@@ -1066,7 +1066,8 @@ pub struct Progress {
 }
 
 pub enum Outcome {
-    Finished,
+    /// With a warning for the person if the folders could not be set.
+    Finished(Option<String>),
     Paused,
 }
 
@@ -1133,8 +1134,7 @@ impl Run<'_> {
             next = end;
         }
 
-        self.finish(&out)?;
-        Ok(Outcome::Finished)
+        Ok(Outcome::Finished(self.finish(&out)?))
     }
 
     /// Commits `units[start..end]`, all extracted, and truncates the archive
@@ -1755,14 +1755,15 @@ impl Run<'_> {
         Ok((!interrupted).then_some(links))
     }
 
-    fn finish(mut self, out: &Path) -> Result<()> {
+    fn finish(mut self, out: &Path) -> Result<Option<String>> {
         make_links_and_settle(&mut self.journal, &self.paths, out)?;
         // Last, since every file, link and put-back file changes its
         // folder's time.
-        set_folders(&self.journal, &self.paths, out)?;
+        let warning = set_folders(&self.journal, &self.paths, out)?;
         if self.journal.keep {
             // The archive stays as it was; only the progress files go.
-            return self.paths.remove();
+            self.paths.remove()?;
+            return Ok(warning);
         }
         let Self { job, paths, .. } = self;
         let Job {
@@ -1775,7 +1776,8 @@ impl Run<'_> {
         // What is left is at most a self-extractor stub in front of the
         // first entry. The saved index goes with it.
         storage.remove()?;
-        paths.remove()
+        paths.remove()?;
+        Ok(warning)
     }
 }
 
@@ -1851,11 +1853,12 @@ fn remove_after_extract(batch: &[Unit], out: &Path) {
 }
 
 /// A run that crashed after deleting the archive but before cleaning up only
-/// has its links and side files left to deal with.
-pub fn finish_orphaned(journal: &mut Journal, paths: &Paths) -> Result<()> {
+/// has its links and side files left to deal with. Returns a warning for the
+/// person if the folders could not be set.
+pub fn finish_orphaned(journal: &mut Journal, paths: &Paths) -> Result<Option<String>> {
     let out = journal.output.clone();
     make_links_and_settle(journal, paths, &out)?;
-    set_folders(journal, paths, &out)?;
+    let warning = set_folders(journal, paths, &out)?;
     // The final commit was interrupted before the archive was removed, and
     // all of it is free to go now. A kept archive stays.
     if journal.done && !journal.keep {
@@ -1868,7 +1871,8 @@ pub fn finish_orphaned(journal: &mut Journal, paths: &Paths) -> Result<()> {
             }
         }
     }
-    paths.remove()
+    paths.remove()?;
+    Ok(warning)
 }
 
 /// Makes the links and puts the replaced files back, unless an earlier run
@@ -1894,16 +1898,31 @@ fn make_links_and_settle(journal: &mut Journal, paths: &Paths, out: &Path) -> Re
 }
 
 /// Sets the saved folders' permissions and times. The journal stays until
-/// they are set, so a crash before the end sets them again on resume.
-fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<()> {
+/// they are set, so a crash before the end sets them again on resume. Every
+/// file is safe by now, so a list that can't be read doesn't stop the run: it
+/// gets a warning, which can only count the folders, since only the list names
+/// them.
+fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<Option<String>> {
     let Some(saved) = journal.folders else {
-        return Ok(());
+        return Ok(None);
     };
     crash_point("before-folders");
-    let list = folders::load(&paths.folders, saved)?;
+    let list = match folders::load(&paths.folders, saved) {
+        Ok(list) => list,
+        Err(e) => {
+            let folders = match saved.count {
+                1 => "1 folder".to_string(),
+                n => format!("{n} folders"),
+            };
+            return Ok(Some(format!(
+                "{e:#}, so {folders} in {} kept the default permissions and modified times",
+                out.display()
+            )));
+        }
+    };
     folders::apply(&list, out)?;
     crash_point("after-folders");
-    Ok(())
+    Ok(None)
 }
 
 /// The last step of a run, when every file is extracted and the archive is

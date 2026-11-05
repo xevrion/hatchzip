@@ -264,7 +264,75 @@ fn a_missing_folders_file_stops_the_resume_before_anything_is_freed() {
     assert!(!resumed.status.success(), "should have refused");
     let err = String::from_utf8_lossy(&resumed.stderr);
     assert!(err.contains("hatchzip-folders"), "{err}");
+    assert!(
+        err.contains("Put it back, or run `hatchzip restore` to give the archive back."),
+        "{err}"
+    );
     assert_unchanged(&before);
+}
+
+/// Looking never reads the saved folders, so the app still opens a run with
+/// the file gone or damaged, and reaches its restore button.
+#[test]
+fn a_lost_folders_file_does_not_stop_a_look() {
+    for damaged in [false, true] {
+        let tmp = TempDir::new().unwrap();
+        let archive = tar_with_folders(tmp.path(), None);
+        let out = tmp.path().join("out");
+        let crashed = extract(
+            &archive,
+            &out,
+            &[
+                ("HATCHZIP_BATCH_ENTRIES", "1"),
+                ("HATCHZIP_CRASH_AT", "after-journal"),
+            ],
+        );
+        assert!(!crashed.status.success(), "should have crashed");
+        if damaged {
+            fs::write(folders_file(&archive), b"[]").unwrap();
+        } else {
+            fs::remove_file(folders_file(&archive)).unwrap();
+        }
+
+        let (primary, paths) = session::locate(&archive).unwrap();
+        let reads = Default::default();
+        let state = session::open(&primary, &paths, None, false, None, &reads).unwrap();
+        assert!(matches!(state, session::State::Resume(..)));
+    }
+}
+
+/// With every entry out the files are safe, so a lost list only costs the
+/// folders' permissions and times: the run finishes and says so.
+#[test]
+fn a_lost_folders_file_does_not_stop_the_finish() {
+    for keep in [false, true] {
+        for damaged in [false, true] {
+            let tmp = TempDir::new().unwrap();
+            let archive = tar_with_folders(tmp.path(), None);
+            let out = tmp.path().join("out");
+            let (a, o) = (archive.to_str().unwrap(), out.to_str().unwrap());
+            let mut args = vec!["extract", a, "-o", o, "--keep-free", "0", "--yes"];
+            if keep {
+                args.push("--keep-archive");
+            }
+            let crashed = hatchzip(&args, &[("HATCHZIP_CRASH_AT", "before-folders")]);
+            assert!(!crashed.status.success(), "should have crashed");
+            if damaged {
+                fs::write(folders_file(&archive), b"[]").unwrap();
+            } else {
+                fs::remove_file(folders_file(&archive)).unwrap();
+            }
+
+            let finished = hatchzip(&args, &[]);
+            assert_ok(&finished);
+            let err = String::from_utf8_lossy(&finished.stderr);
+            assert!(err.contains("hatchzip-folders"), "{err}");
+            assert!(err.contains("default permissions"), "{err}");
+            assert!(out.join("docs/old").is_dir());
+            assert_no_side_files(&archive);
+            assert_eq!(archive.exists(), keep);
+        }
+    }
 }
 
 /// A run can have both saved folders and names that differ only in case, and

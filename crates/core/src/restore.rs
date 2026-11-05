@@ -74,7 +74,7 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
             primary.display()
         );
     }
-    let (mut journal, tail) = Journal::load_without_folders(&paths)?;
+    let (mut journal, tail) = Journal::load(&paths)?;
     session::check_output(&journal, &primary, output, "restore")?;
     session::check_recorded_case(&journal)?;
     if journal.keep {
