@@ -13,6 +13,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use super::storage::{Reader, Storage, Tail};
 use super::{
     Codec, Format, Item, Kind, Opened, PasswordNeeded, Sink, Stream, Unit, Worker, WrongPassword,
+    safe_path,
 };
 use crate::fsutil;
 
@@ -95,14 +96,28 @@ pub fn open(
         let e = meta.entry(index)?;
         let name = e.name().map(|n| n.into_owned()).unwrap_or_default();
         // A name such as `dir/..` resolves to the destination folder itself,
-        // where no file or link can be made.
+        // where no file or link can be made. From zip 9.1 on, `enclosed_name`
+        // also returns None for a component Windows cannot create (`CON.txt`,
+        // a trailing dot); saying that would hide the reason the name is
+        // refused. When the name stays under the destination, `name_problem`
+        // is why it still cannot be written; otherwise it is the traversal.
         let path = e
             .enclosed_name()
             .filter(|p| e.is_dir() || !p.as_os_str().is_empty())
             .ok_or_else(|| {
-                anyhow!(
-                    "'{name}' would be written outside the destination folder; extraction refused"
-                )
+                let why = safe_path(&name).and_then(|p| {
+                    p.iter().find_map(|part| {
+                        crate::platform::name_problem(&part.to_string_lossy())
+                    })
+                });
+                match why {
+                    Some(why) => anyhow!(
+                        "'{name}' cannot be created at this location: {why}. The archive was not modified"
+                    ),
+                    None => anyhow!(
+                        "'{name}' would be written outside the destination folder; extraction refused"
+                    ),
+                }
             })?;
         let kind = if e.is_dir() {
             Kind::Dir
