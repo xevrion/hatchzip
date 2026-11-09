@@ -76,7 +76,7 @@ crc32fast = "1.5.3"
 flate2 = "1.1.10"
 # Writes the .tar.xz test archives, same crate the format decodes with.
 # The tests need the encoder and the xz container half; core does not.
-lzma-rust2 = { version = "0.23.0", default-features = false, features = [
+lzma-rust2 = { version = "0.24.0", default-features = false, features = [
     "std",
     "optimization",
     "encoder",
