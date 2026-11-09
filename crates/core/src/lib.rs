@@ -15,6 +15,7 @@
 pub mod archive;
 mod chosen;
 pub mod engine;
+mod folders;
 mod fsutil;
 pub mod journal;
 mod platform;

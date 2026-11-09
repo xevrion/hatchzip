@@ -525,7 +525,13 @@ fn a_run_with_names_differing_only_in_case_records_their_folders() {
     if !session::case_sensitive(tmp.path()) {
         return;
     }
-    let archive = zip_of(tmp.path(), "case.zip", &case_files());
+    // No folder entries, which would take the journal to version 8.
+    let mut z = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, data) in &case_files() {
+        z.start_file(name, stored()).unwrap();
+        z.write_all(data).unwrap();
+    }
+    let archive = write(tmp.path(), "case.zip", z.finish().unwrap().into_inner());
     let crashed = extract(
         &archive,
         &tmp.path().join("out"),

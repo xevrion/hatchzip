@@ -237,7 +237,7 @@ Press `Ctrl+C` and HatchZip finishes the files it is writing, saves its progress
 hatchzip extract game.zip
 ```
 
-The same applies after a crash, a power cut, or running out of space because something else filled the disk. Progress lives in two small files next to the archive, `game.zip.hatchzip` and `game.zip.hatchzip-tail`. **Do not delete them while an extraction is unfinished**: they hold the archive's index, which is no longer inside the archive itself.
+The same applies after a crash, a power cut, or running out of space because something else filled the disk. Progress lives in small files next to the archive: `game.zip.hatchzip` and `game.zip.hatchzip-tail`, and `game.zip.hatchzip-folders` when the archive's folders have permissions or times to set. **Do not delete them while an extraction is unfinished**: they hold the archive's index, which is no longer inside the archive itself.
 
 Anyone who supplies an archive could also supply progress files next to it, so HatchZip follows them only to the archive's own files, and only for an extraction started on this computer. Every extraction notes its output folder in your user profile, outside the archive's folder, so a resume on the same computer needs no options. On another computer, or for an extraction that HatchZip 0.1.5 or earlier started in the default folder, name the folder again with `-o`; `restore` takes it too.
 
