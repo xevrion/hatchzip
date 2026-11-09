@@ -385,6 +385,33 @@ fn names_outside_ascii_are_refused_where_the_system_normalizes_names() {
     assert_unchanged(&before);
 }
 
+/// Names only full case folding or normalization makes one, which
+/// lowercasing alone misses: `straße` and `STRASSE`, `s` and `ſ`, and the
+/// two forms of `é`. Refused where names may be folded or normalized, so one
+/// can't overwrite the other once the archive is gone.
+#[test]
+fn names_a_filesystem_folds_together_are_refused_there() {
+    for (a, b) in [
+        ("stra\u{df}e.txt", "STRASSE.txt"),
+        ("s.txt", "\u{17f}.txt"),
+        ("caf\u{e9}.txt", "cafe\u{301}.txt"),
+    ] {
+        let mut files = Files::new();
+        files.insert(a.into(), b"first file\n".to_vec());
+        files.insert(b.into(), b"second file\n".to_vec());
+        let tmp = TempDir::new().unwrap();
+        let archive = zip_of(tmp.path(), "fold.zip", &files);
+        let before = snapshot(&archive);
+        let run = extract(
+            &archive,
+            &tmp.path().join("out"),
+            &[("HATCHZIP_NORMALIZE_NAMES", "1")],
+        );
+        assert_eq!(run.status.code(), Some(1), "{a} {b}: {run:?}");
+        assert_unchanged(&before);
+    }
+}
+
 /// A run can start where names aren't normalized and go on where they are,
 /// so it records that it has such names. A system that normalizes them never
 /// starts one, so there this has nothing to resume.

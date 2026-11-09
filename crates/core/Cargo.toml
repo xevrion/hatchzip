@@ -29,6 +29,9 @@ serde.workspace = true
 serde_json.workspace = true
 sevenz-rust2.workspace = true
 tar.workspace = true
+# Comparing names the way filesystems fold them: APFS, HFS+ and casefolded
+# ext4 folders treat the NFC and NFD forms of a name as one.
+unicode-normalization = "0.1.24"
 # The UnRAR decoder, bound without the safe wrapper: it needs the data
 # callback, which the safe crates don't expose. The bindings are MIT or
 # Apache; the UnRAR C++ source they build is under its own license, see

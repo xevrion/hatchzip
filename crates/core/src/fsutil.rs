@@ -26,6 +26,23 @@ pub fn same_filesystem(a: &Path, b: &Path) -> bool {
     platform::same_filesystem(&existing_ancestor(a), &existing_ancestor(b))
 }
 
+/// A name as a filesystem that folds names may see it: decomposed, with full
+/// case folding (`ß` and `SS`, `ſ` and `s`, `ﬁ` and `fi`, the Kelvin sign and
+/// `k`), and decomposed again, since folding can produce new combinations.
+/// Two names with the same key may be one file on APFS, HFS+, NTFS, or an
+/// ext4, f2fs or tmpfs folder with the casefold flag. It errs towards
+/// matching: a pair that only some filesystems fold still matches, so it is
+/// refused wherever names aren't known to be kept apart.
+pub fn fold_name(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let folded: String = name
+        .nfd()
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
+        .collect();
+    folded.nfd().collect()
+}
+
 /// Whether two absolute paths name the same location. Windows and macOS
 /// file systems ignore case by default, so a path typed in another case is
 /// still the same one there.
@@ -244,6 +261,20 @@ pub fn from_filetime(ticks: u64) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_fold_as_filesystems_fold_them() {
+        let same = |a: &str, b: &str| fold_name(a) == fold_name(b);
+        assert!(same("Makefile", "makefile"));
+        assert!(same("stra\u{df}e", "STRASSE"));
+        assert!(same("\u{17f}", "S"));
+        assert!(same("\u{3c3}", "\u{3c2}"));
+        assert!(same("\u{fb01}", "FI"));
+        assert!(same("\u{212a}", "k"));
+        assert!(same("caf\u{e9}", "CAFE\u{301}"));
+        assert!(!same("a", "b"));
+        assert!(!same("\u{65e5}", "\u{4e2d}"));
+    }
 
     /// Only that the conversion works on this system at all: whatever the
     /// zone here, a local time is within 14 hours of the same clock reading

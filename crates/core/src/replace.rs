@@ -126,7 +126,7 @@ fn case_pair(paths: &[PathBuf]) -> Option<(&Path, &Path)> {
         .iter()
         .flat_map(|p| p.ancestors())
         .filter(|p| !p.as_os_str().is_empty())
-        .map(|p| (p.to_string_lossy().to_lowercase(), p))
+        .map(|p| (crate::fsutil::fold_name(&p.to_string_lossy()), p))
         .collect();
     names.sort_unstable();
     names.dedup();

@@ -727,8 +727,54 @@ pub fn check_sfv(storage: &Storage, cancelled: &dyn Fn() -> bool) -> Result<Opti
 /// never committed.
 pub fn clear_uncommitted(job: &Job, out: &Path) -> Result<()> {
     check_no_links_on_the_way(job, out)?;
-    for (p, _) in job.uncommitted(out) {
+    let found = job.uncommitted(out);
+    let mut listed = std::collections::HashMap::new();
+    for (p, _) in &found {
+        check_spelling(out, p, &mut listed)?;
+    }
+    for (p, _) in found {
         fs::remove_file(&p).with_context(|| format!("removing stale {}", p.display()))?;
+    }
+    Ok(())
+}
+
+/// Refuses to delete `path` unless every name from `out` down to it is
+/// spelled on disk as in the entry. Where the filesystem folds names,
+/// `makefile` also finds a `Makefile` that another program, or another
+/// archive, put there after this run began, and that one isn't this run's
+/// to delete. Spellings are compared decomposed and nothing else, since
+/// HFS+ stores names decomposed whatever they were created as.
+fn check_spelling(
+    out: &Path,
+    path: &Path,
+    listed: &mut std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
+) -> Result<()> {
+    use unicode_normalization::UnicodeNormalization;
+    let spelling = |n: &std::ffi::OsStr| n.to_string_lossy().nfd().collect::<String>();
+    let Ok(rel) = path.strip_prefix(out) else {
+        return Ok(());
+    };
+    let mut dir = out.to_path_buf();
+    for name in rel.iter() {
+        let names = match listed.entry(dir.clone()) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(
+                fs::read_dir(&dir)
+                    .with_context(|| format!("listing {}", dir.display()))?
+                    .map(|e| e.map(|e| spelling(&e.file_name())))
+                    .collect::<std::io::Result<_>>()
+                    .with_context(|| format!("listing {}", dir.display()))?,
+            ),
+        };
+        if !names.contains(&spelling(name)) {
+            bail!(
+                "{} is spelled differently on disk than in the archive, so it was not made by \
+                 this extraction and is left alone. Move it out of the way, then run the command \
+                 again",
+                dir.join(name).display()
+            );
+        }
+        dir.push(name);
     }
     Ok(())
 }
@@ -740,6 +786,23 @@ mod tests {
     use ::zip::write::{SimpleFileOptions, ZipWriter};
 
     use super::*;
+
+    /// A resume only deletes what is spelled as its entry: a `Makefile` on
+    /// disk isn't `makefile`'s, even where the filesystem would find it.
+    #[test]
+    fn a_resume_leaves_names_spelled_differently_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path();
+        fs::create_dir(out.join("Src")).unwrap();
+        fs::write(out.join("Src/Makefile"), b"theirs").unwrap();
+        fs::write(out.join("Src/caf\u{e9}.txt"), b"ours").unwrap();
+        let mut listed = std::collections::HashMap::new();
+        assert!(check_spelling(out, &out.join("Src/makefile"), &mut listed).is_err());
+        assert!(check_spelling(out, &out.join("src/Makefile"), &mut listed).is_err());
+        assert!(check_spelling(out, &out.join("Src/Makefile"), &mut listed).is_ok());
+        // HFS+ hands back the decomposed form of what was created composed.
+        assert!(check_spelling(out, &out.join("Src/cafe\u{301}.txt"), &mut listed).is_ok());
+    }
 
     #[test]
     fn output_folder_drops_the_volume_and_format_suffixes() {

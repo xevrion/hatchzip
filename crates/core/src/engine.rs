@@ -493,7 +493,7 @@ impl Job {
     /// entries it has extracted, and one an older release started on has to
     /// stay resumable and restorable.
     fn check_layout(&self) -> Result<CaseClashes> {
-        let key = |p: &Path| p.to_string_lossy().to_lowercase();
+        let key = |p: &Path| crate::fsutil::fold_name(&p.to_string_lossy());
         let items = || self.units.iter().flat_map(|u| &u.items);
         // Every file is first written under its name plus the suffix. An
         // entry named so would share that name with another entry's file,
@@ -2199,10 +2199,28 @@ mod tests {
     fn clashes(paths: &[&'static str]) -> CaseClashes {
         let mut names: Vec<(String, &Path, bool)> = paths
             .iter()
-            .map(|p| (p.to_lowercase(), Path::new(*p), true))
+            .map(|p| (crate::fsutil::fold_name(p), Path::new(*p), true))
             .collect();
         names.sort_unstable();
         CaseClashes::of(&names)
+    }
+
+    /// Names that only full case folding or normalization makes one, which
+    /// lowercasing alone misses, still pair up, and outside ASCII.
+    #[test]
+    fn names_a_filesystem_folds_together_pair_up() {
+        for pair in [
+            ["stra\u{df}e.txt", "STRASSE.txt"],
+            ["s.txt", "\u{17f}.txt"],
+            ["\u{3c3}.txt", "\u{3c2}.txt"],
+            ["fi.txt", "\u{fb01}.txt"],
+            ["caf\u{e9}.txt", "cafe\u{301}.txt"],
+        ] {
+            let c = clashes(&pair);
+            assert_eq!(c.met_in.len(), 1, "{pair:?}");
+            assert!(c.beyond_ascii.is_some(), "{pair:?}");
+        }
+        assert!(clashes(&["\u{65e5}.txt", "\u{4e2d}.txt"]).met_in.is_empty());
     }
 
     /// Three that clash have to name every folder where any two meet, here
