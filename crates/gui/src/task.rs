@@ -25,6 +25,9 @@ pub struct Task {
     pub resumable_failure: Option<String>,
     /// What the finished run could not do, shown after its result.
     pub warning: Option<String>,
+    /// The reserve the no-space state offers to go on with, when lowering it
+    /// would fit. The window shows it in the button.
+    pub lower_reserve: Option<u64>,
     name: String,
     is_test: bool,
     restoring: bool,
@@ -91,6 +94,7 @@ impl Task {
             restore_result: None,
             resumable_failure: None,
             warning: None,
+            lower_reserve: None,
             name: name.to_string(),
             is_test,
             restoring: false,
@@ -176,6 +180,9 @@ impl Task {
         v.message = "".into();
         v.can_retry = false;
         v.can_open_folder = false;
+        v.lower_reserve = false;
+        v.reserve_amount = "".into();
+        self.lower_reserve = None;
         match update {
             Update::Checking => {
                 v.phase = Phase::Checking;
@@ -211,6 +218,20 @@ impl Task {
                 v.phase = Phase::NoSpace;
                 v.message = self.plan.verdict.clone();
                 v.can_retry = true;
+                // The reserve is the only thing in the way: offer the largest
+                // one that still fits, in round numbers a person would type.
+                if !self.is_test && plan.free >= plan.needed {
+                    const STEP: u64 = 100_000_000;
+                    let offer = (plan.free - plan.needed) / STEP * STEP;
+                    self.lower_reserve = Some(offer);
+                    v.lower_reserve = true;
+                    // Empty means none at all: the button says so in words.
+                    v.reserve_amount = if offer == 0 {
+                        "".into()
+                    } else {
+                        human(offer).into()
+                    };
+                }
             }
             Update::Verifying => {
                 v.phase = Phase::Verifying;
@@ -588,6 +609,59 @@ mod tests {
         );
         assert!(t.plan.note.contains("solid block"));
         assert!(!t.running());
+    }
+
+    #[test]
+    fn a_plan_short_only_of_its_reserve_offers_a_smaller_one() {
+        let mut t = Task::extract("game.zip", Some(Path::new("/games")), false);
+        // 842.5 MB needed, 1.4 GB free, 2 GB reserved: 557.5 MB of room.
+        t.apply(Update::NoSpace(space(
+            1_400_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.view.phase, Phase::NoSpace);
+        assert_eq!(t.lower_reserve, Some(500_000_000));
+        assert!(t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "500.0 MB");
+
+        // Less than a step of room left: run without a reserve instead.
+        t.apply(Update::NoSpace(space(
+            842_500_001,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.lower_reserve, Some(0));
+        assert!(t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "");
+
+        // The space itself is short, so lowering the reserve is no help.
+        t.apply(Update::NoSpace(space(
+            500_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.lower_reserve, None);
+        assert!(!t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "");
+
+        // The offer belongs to the state that showed it.
+        t.apply(Update::NoSpace(space(
+            1_400_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert!(t.lower_reserve.is_some());
+        t.apply(Update::Working {
+            output: "/games/game".into(),
+            keep: false,
+        });
+        assert_eq!(t.lower_reserve, None);
+        assert!(!t.view.lower_reserve);
     }
 
     #[test]

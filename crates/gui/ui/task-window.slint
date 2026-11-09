@@ -19,6 +19,7 @@ export component TaskWindow inherits Window {
     callback open-folder();
     callback dismiss();
     callback give-back();
+    callback lower-reserve();
     callback password-ok(string);
     callback password-cancel();
     public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
@@ -73,7 +74,11 @@ export component TaskWindow inherits Window {
             task: root.task;
         }
         if root.task.phase == Phase.no-space: Text {
-            text: "Available: " + root.plan.free + ". Required: " + root.plan.needed + ", plus " + root.plan.keep + " reserved.";
+            text: !root.task.lower-reserve
+                ? "Available: " + root.plan.free + ". Required: " + root.plan.needed + ", plus " + root.plan.keep + " reserved."
+                : root.task.reserve-amount == ""
+                    ? @tr("The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes.", root.plan.needed, root.plan.free, root.plan.left)
+                    : @tr("The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes.", root.plan.needed, root.plan.free, root.task.reserve-amount, root.plan.left);
             color: Theme.muted;
             wrap: word-wrap;
         }
@@ -94,6 +99,7 @@ export component TaskWindow inherits Window {
         TaskButtons {
             task: root.task;
             closable: true;
+            offer-reserve: true;
             pause => {
                 root.pause();
             }
@@ -108,6 +114,9 @@ export component TaskWindow inherits Window {
             }
             give-back => {
                 root.give-back();
+            }
+            lower-reserve => {
+                root.lower-reserve();
             }
         }
     }

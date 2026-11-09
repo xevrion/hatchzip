@@ -376,3 +376,15 @@ msgstr "Enlace"
 
 msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
 msgstr "{}. Desactiva \"Eliminar el archivo durante la extracción\" para extraerlo y conservar el archivo"
+
+msgid "Extract with {} reserved"
+msgstr "Extraer con {} reservados"
+
+msgid "Extract without a reserve"
+msgstr "Extraer sin reserva"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "La reserva es lo único que lo impide: se necesitan {} y hay {} disponibles, así que puede ejecutarse con {} reservados y quedarían {} al terminar."
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "La reserva es lo único que lo impide: se necesitan {} y hay {} disponibles, así que puede ejecutarse sin reserva y quedarían {} al terminar."

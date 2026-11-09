@@ -968,6 +968,95 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
     ui.hide().unwrap();
 }
 
+/// Clicks the control whose accessible label is `label`, after checking it
+/// sits entirely inside the window.
+fn click_labelled(ui: &TaskWindow, label: &str) {
+    let _ = ui.window().take_snapshot().unwrap();
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .next()
+        .unwrap_or_else(|| panic!("missing control: {label}"));
+    let p = element.absolute_position();
+    let s = element.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "{label}: position {p:?}, size {s:?}, window {window:?}"
+    );
+    let at = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position: at });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+}
+
+/// When the reserve is the only thing in the way, the window offers the
+/// largest one that still fits, and the button runs the extraction with it.
+fn reserve_offer_flow(scheme: ColorScheme, tag: &str) {
+    let ui = TaskWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.window().set_size(LogicalSize::new(480.0, 270.0));
+    let clicked = Rc::new(Cell::new(false));
+    let flag = clicked.clone();
+    ui.on_lower_reserve(move || flag.set(true));
+    let base = TaskView {
+        phase: Phase::NoSpace,
+        heading: "Insufficient disk space".into(),
+        message: "Insufficient disk space. 1.4 GB more is required.".into(),
+        can_retry: true,
+        ..Default::default()
+    };
+    ui.set_plan(PlanView {
+        ready: true,
+        free: "1.4 GB".into(),
+        needed: "842.5 MB".into(),
+        keep: "2.0 GB".into(),
+        left: "557.5 MB".into(),
+        ..Default::default()
+    });
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        ..base.clone()
+    });
+    ui.show().unwrap();
+    shot(ui.window(), &format!("{tag}-15-task-lower-reserve"));
+    click_labelled(&ui, "Extract with 500.0 MB reserved");
+    assert!(clicked.get(), "the offer must run the extraction");
+    // Without an offer the button is not there at all.
+    ui.set_task(base);
+    let _ = ui.window().take_snapshot().unwrap();
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Extract with 500.0 MB reserved")
+            .next()
+            .is_none()
+    );
+
+    // The offer speaks the language the rest of the window does.
+    slint::select_bundled_translation("es").unwrap();
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        heading: "Espacio en disco insuficiente".into(),
+        phase: Phase::NoSpace,
+        ..Default::default()
+    });
+    clicked.set(false);
+    shot(ui.window(), &format!("{tag}-16-task-lower-reserve-es"));
+    click_labelled(&ui, "Extraer con 500.0 MB reservados");
+    assert!(clicked.get(), "the translated offer must run it too");
+    slint::select_bundled_translation("en").unwrap();
+    ui.hide().unwrap();
+}
+
 fn tree_accessibility_edges(scheme: ColorScheme) {
     let ui = MainWindow::new().unwrap();
     ui.global::<Palette>().set_color_scheme(scheme);
@@ -1220,6 +1309,7 @@ fn windows_end_to_end() {
         tree_accessibility_edges(scheme);
         keep_flow(scheme, tag);
         task_window_flow(scheme, tag);
+        reserve_offer_flow(scheme, tag);
         replace_flow(scheme, tag);
         keep_task_flow(scheme, tag);
         queue_flow(scheme, tag);

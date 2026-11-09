@@ -149,6 +149,7 @@ pub fn plan_view(plan: &SpacePlan) -> PlanView {
         } else {
             "-".into()
         },
+        left: human(plan.free_after).into(),
         fits: plan.fits,
         verdict: verdict.into(),
         note: notes.join(" ").into(),
