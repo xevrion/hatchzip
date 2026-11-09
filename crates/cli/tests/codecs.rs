@@ -1,9 +1,11 @@
 //! Every compression method the decoders claim, on archives made by real
 //! tools (`tests/fixtures/codecs/`), each extracted in place and compared
 //! byte for byte with the content the fixtures were made from. All of them
-//! come from 7-Zip 25.01 except `zip-xz.zip`, made with 7-Zip 26.05, and
-//! `7z-zstd.7z`, made with py7zr 1.0.0: 7-Zip has no Zstandard coder for
-//! the 7z format, so no 7-Zip build can write that archive.
+//! come from 7-Zip 25.01 except `zip-xz.zip`, made with 7-Zip 26.05,
+//! `7z-zstd.7z`, made with py7zr 1.0.0, and `7z-lz4.7z` and
+//! `7z-brotli.7z`, made with 7-Zip ZS 25.01 (7-Zip 25.01 with the Zstandard,
+//! LZ4 and Brotli coders from mcmilk/7-Zip-zstd v1.5.7-R4). Neither upstream
+//! 7-Zip nor py7zr can write LZ4, and only py7zr can write Brotli.
 //!
 //! The fixtures were made from three files:
 //!   game/text.txt   400 lines of text
@@ -11,8 +13,10 @@
 //!   game/tool.exe   "MZ" and a byte ramp, so the BCJ filter has x86-ish input
 //! with, for example, `7z a -tzip -mm=PPMd zip-ppmd.zip game`,
 //! `7z a -t7z -m0=BCJ -m1=LZMA2 7z-bcj.7z game`,
-//! `7z a -tzip -mm=XZ zip-xz.zip game` and, for the py7zr archive,
-//! `SevenZipFile("7z-zstd.7z", "w", filters=[{"id": FILTER_ZSTD}])`.
+//! `7z a -tzip -mm=XZ zip-xz.zip game`, for the py7zr archive
+//! `SevenZipFile("7z-zstd.7z", "w", filters=[{"id": FILTER_ZSTD}])`, and for
+//! the 7-Zip ZS archives `7zz a 7z-lz4.7z -m0=lz4 -mx3 game` and
+//! `7zz a 7z-brotli.7z -m0=brotli -mx5 game`.
 
 mod common;
 
@@ -112,4 +116,14 @@ fn sevenz_ppmd() {
 #[test]
 fn sevenz_zstd() {
     extract_fixture("7z-zstd.7z");
+}
+
+#[test]
+fn sevenz_lz4() {
+    extract_fixture("7z-lz4.7z");
+}
+
+#[test]
+fn sevenz_brotli() {
+    extract_fixture("7z-brotli.7z");
 }
