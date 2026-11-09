@@ -51,6 +51,27 @@ zip.workspace = true
 tempfile.workspace = true
 
 [features]
+# Which 7z coders this build decodes. Each one turns on the decoder in
+# sevenz-rust2 and lets `archive::sevenz` accept the method, so a coder can
+# never be accepted without a decoder behind it. The workspace dependency
+# itself enables none, leaving this list as the only place to change.
+default = [
+    "sevenz-aes256",
+    "sevenz-bzip2",
+    "sevenz-brotli",
+    "sevenz-deflate",
+    "sevenz-lz4",
+    "sevenz-ppmd",
+    "sevenz-zstd",
+]
+sevenz-aes256 = ["sevenz-rust2/aes256"]
+sevenz-bzip2 = ["sevenz-rust2/bzip2"]
+sevenz-brotli = ["sevenz-rust2/brotli"]
+sevenz-deflate = ["sevenz-rust2/deflate"]
+sevenz-lz4 = ["sevenz-rust2/lz4"]
+sevenz-ppmd = ["sevenz-rust2/ppmd"]
+sevenz-zstd = ["sevenz-rust2/zstd"]
+
 # RAR archives, decoded by UnRAR. Off by default: without it the build is
 # open source throughout and needs no C++ compiler, and a RAR archive is
 # refused before anything is touched. The release builds turn it on.
