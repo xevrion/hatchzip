@@ -163,9 +163,84 @@ pub fn create_symlink(link: &Path, target: &Path) -> io::Result<()> {
 const ERROR_INVALID_FUNCTION: i32 = 1;
 const ERROR_NOT_SUPPORTED: i32 = 50;
 
-/// The punched range shrinks inwards to this, so NTFS doesn't spend writes
-/// zeroing pieces it can't free anyway.
-const PUNCH_ALIGN: u64 = 64 << 10;
+/// NTFS tracks sparse ranges in units of 16 clusters: 64 KiB with the default
+/// 4 KiB clusters, 1 MiB on volumes formatted with 64 KiB ones. `set zero
+/// data` rounds inwards to the unit, so a range must start and end on one to
+/// free anything, and the overlap has to be the same number: a punch that
+/// started later than the unit it kept would leave that unit allocated until
+/// the commit truncates.
+const PUNCH_UNIT_CLUSTERS: u64 = 16;
+
+/// 64 KiB, the unit with the default clusters, for when the volume can't be
+/// asked.
+const PUNCH_UNIT_FALLBACK: u64 = PUNCH_UNIT_CLUSTERS * 4096;
+
+/// The unit NTFS frees sparse ranges in, on the volume holding `path`.
+fn punch_unit(path: &Path) -> u64 {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetDiskFreeSpaceW, GetVolumePathNameW};
+
+    const MAX_WIDE_PATH: usize = 261;
+
+    // `GetDiskFreeSpaceW` wants the volume's root, and every path inside a
+    // volume names the same volume, including one mounted in a folder.
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut root = [0u16; MAX_WIDE_PATH];
+    let ok = unsafe { GetVolumePathNameW(wide.as_ptr(), root.as_mut_ptr(), MAX_WIDE_PATH as u32) };
+    if ok == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let (mut sectors, mut bytes, mut free, mut total) = (0u32, 0u32, 0u32, 0u32);
+    let ok = unsafe {
+        GetDiskFreeSpaceW(
+            root.as_ptr(),
+            &mut sectors,
+            &mut bytes,
+            &mut free,
+            &mut total,
+        )
+    };
+    let unit = sectors as u64 * bytes as u64 * PUNCH_UNIT_CLUSTERS;
+    // A network stack that answers zeros would round every range away, and
+    // `next_multiple_of` divides by this.
+    if ok == 0 || unit == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    unit
+}
+
+/// The same, for the archive itself: the volume is taken from its handle,
+/// since the caller has no path to give.
+fn punch_unit_of(file: &File) -> u64 {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{GetFinalPathNameByHandleW, VOLUME_NAME_DOS};
+
+    let handle = file.as_raw_handle();
+    let needed =
+        unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, VOLUME_NAME_DOS) };
+    if needed == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let mut buf = vec![0u16; needed as usize];
+    let len = unsafe {
+        GetFinalPathNameByHandleW(handle, buf.as_mut_ptr(), buf.len() as u32, VOLUME_NAME_DOS)
+    };
+    if len == 0 || len >= buf.len() as u32 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let name = plain_path(&String::from_utf16_lossy(&buf[..len as usize]));
+    punch_unit(Path::new(&name))
+}
+
+/// A path from `GetFinalPathNameByHandleW` without the verbatim prefix the
+/// volume queries don't take everywhere: `\\?\C:\a` is `C:\a`, and
+/// `\\?\UNC\host\share\a` is `\\host\share\a`.
+fn plain_path(path: &str) -> String {
+    match path.strip_prefix(r"\\?\UNC\") {
+        Some(rest) => format!(r"\\{rest}"),
+        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_string(),
+    }
+}
 
 /// Frees `len` bytes at `offset` without changing the file's length. Returns
 /// `Ok(false)` when the filesystem can't (FAT32, exFAT).
@@ -176,8 +251,9 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
         FILE_ZERO_DATA_INFORMATION, FSCTL_SET_SPARSE, FSCTL_SET_ZERO_DATA,
     };
 
-    let start = offset.next_multiple_of(PUNCH_ALIGN);
-    let end = (offset + len) / PUNCH_ALIGN * PUNCH_ALIGN;
+    let unit = punch_unit_of(file).max(4096);
+    let start = offset.next_multiple_of(unit);
+    let end = (offset + len) / unit * unit;
     if start >= end {
         return Ok(true);
     }
@@ -231,8 +307,15 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
 
 /// NTFS frees sparse ranges in compression units of 16 clusters: 64 KiB with
 /// the default 4 KiB clusters, 1 MiB on volumes formatted with 64 KiB ones.
-pub fn punch_granule(_dir: &Path) -> u64 {
+pub fn punch_margin(_dir: &Path) -> u64 {
     1 << 20
+}
+
+/// Both ends of a punch round inwards to the unit the volume frees in, so the
+/// next punch reaches the start of the unit the last one kept. Where clusters
+/// are 64 KiB that unit is 1 MiB, which only the commit's truncation can free.
+pub fn punch_overlap(dir: &Path) -> u64 {
+    punch_unit(dir).max(4096)
 }
 
 /// Bytes the file really occupies on disk, which for a sparse file is less
@@ -349,3 +432,19 @@ impl RarName {
 #[cfg(feature = "rar")]
 #[link(name = "advapi32")]
 unsafe extern "C" {}
+
+#[cfg(test)]
+mod tests {
+    /// `GetFinalPathNameByHandleW` answers verbatim paths, which the volume
+    /// queries below don't take everywhere.
+    #[test]
+    fn verbatim_paths_lose_their_prefix() {
+        assert_eq!(super::plain_path(r"\\?\C:\a\b"), r"C:\a\b");
+        assert_eq!(
+            super::plain_path(r"\\?\UNC\host\share\a"),
+            r"\\host\share\a"
+        );
+        assert_eq!(super::plain_path(r"C:\a"), r"C:\a");
+        assert_eq!(super::plain_path(r"\\host\share\a"), r"\\host\share\a");
+    }
+}
