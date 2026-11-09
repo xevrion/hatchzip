@@ -445,8 +445,8 @@ fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
 }
 
 /// Turns an archive member name into a relative path that can't leave the
-/// output folder. Leading slashes are dropped, as tar does; `..`, drive
-/// letters and NUL bytes are refused.
+/// output folder. Leading slashes are dropped, as tar does; `..`, NUL bytes
+/// and drive letters are refused.
 pub fn safe_path(name: &str) -> Option<PathBuf> {
     if name.contains('\0') {
         return None;
@@ -456,7 +456,16 @@ pub fn safe_path(name: &str) -> Option<PathBuf> {
         match part {
             "" | "." => {}
             ".." => return None,
-            p if p.contains(':') => return None,
+            // A leading `C:` names a drive. Any other `:` is left to
+            // `platform::name_problem`, as it is a normal name character
+            // outside Windows, like in `10:30.txt`.
+            p if out.as_os_str().is_empty()
+                && p.len() == 2
+                && p.as_bytes()[0].is_ascii_alphabetic()
+                && p.ends_with(':') =>
+            {
+                return None;
+            }
             p => out.push(p),
         }
     }

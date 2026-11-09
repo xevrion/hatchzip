@@ -524,3 +524,29 @@ fn missing_volume_in_sfv_stopped_before_modifying_anything() {
     assert_unchanged(&before);
     assert_no_side_files(&first);
 }
+
+/// `:` is a normal name character outside Windows, like in a file named
+/// after a time.
+#[test]
+fn names_with_a_colon_extract_outside_windows() {
+    let mut files = Files::new();
+    files.insert("notes/meeting 10:30.txt".into(), b"agenda".to_vec());
+    for (i, build) in [
+        |d: &Path, f: &Files| sevenz_of(d, "notes.7z", f, false),
+        |d: &Path, f: &Files| tar_of(d, "notes.tar", f),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let tmp = TempDir::new().unwrap();
+        let archive = build(tmp.path(), &files);
+        let out = tmp.path().join("out");
+        let run = extract(&archive, &out, &[]);
+        if cfg!(windows) {
+            assert!(!run.status.success(), "{i}");
+        } else {
+            assert_ok(&run);
+            assert_tree(&out, &files);
+        }
+    }
+}
