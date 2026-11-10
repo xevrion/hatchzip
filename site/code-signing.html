@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <title>HatchZip code signing policy</title>
@@ -64,7 +64,7 @@
 <h2 id="privacy">Privacy policy</h2>
 <p>This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.</p>
 <p>HatchZip has no networking code and no networking library, no telemetry and no accounts. It reads the archive on your disk and writes the files next to it. The desktop app's two links, to the source code and to the latest release under Help, Check for updates, open in your web browser when you click them.</p>
-<p>This website, hatchzip.dev, counts visits with <a href="https://www.cloudflare.com/web-analytics/">Cloudflare Web Analytics</a>, which sets no cookies and stores nothing on your device. It reports which pages are visited, the referring site, and the country, browser and device type. The site has no accounts, forms or advertising.</p>
+<p>This website, hatchzip.dev, counts visits with <a href="https://www.cloudflare.com/web-analytics/">Cloudflare Web Analytics</a> and <a href="https://umami.is">Umami</a>, both of which set no cookies and stores nothing on your device. It reports which pages are visited, the referring site, and the country, browser and device type. The site has no accounts, forms or advertising.</p>
 </main>
 
 <footer>
@@ -74,5 +74,6 @@
 </div>
 </div>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
 </body>
 </html>
