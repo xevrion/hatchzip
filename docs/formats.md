@@ -66,7 +66,7 @@ For `.tar.zst` the `Walker`'s tar half can be reused unchanged; the decoder half
 
 ## Dependency licenses
 
-All candidate crates are permissive: zip (MIT), flate2 (MIT or Apache), zlib-rs and libz-rs-sys (Zlib), zstd and zstd-safe (BSD-3), ruzstd (MIT), lzma-rust2 (Apache-2.0), liblzma (MIT or Apache, building only the 0BSD liblzma sources), sevenz-rust2 (Apache-2.0), lz4_flex (MIT), brotli and brotli-decompressor (BSD-3-Clause or MIT), zesven (MIT or Apache), tar (MIT or Apache). No GPL-only, LGPL-only or non-commercial terms appear in any dependency tree.
+All candidate crates are permissive: zip (MIT), flate2 (MIT or Apache), zlib-rs and libz-rs-sys (Zlib), zstd and zstd-safe (BSD-3), ruzstd (MIT), lzma-rust2 (Apache-2.0), liblzma (MIT or Apache, building only the 0BSD liblzma sources), sevenz-rust2 (Apache-2.0), lz4_flex (MIT), brotli (BSD-3-Clause and MIT), brotli-decompressor (BSD-3-Clause or MIT), zesven (MIT or Apache), tar (MIT or Apache). No GPL-only, LGPL-only or non-commercial terms appear in any dependency tree.
 
 The exception is UnRAR. The `unrar-ng-sys` crate is MIT or Apache, but the bundled C++ code is under the UnRAR freeware license: it may be used to extract RAR archives in any software free of charge, but not to build a RAR-compatible archiver. Distributing it requires the full text of that license, which is in `LICENSE-UNRAR`. This reading is not legal advice.
 
