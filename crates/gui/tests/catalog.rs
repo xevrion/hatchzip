@@ -102,6 +102,16 @@ fn hindi_catalog_matches_marked_messages() {
 }
 
 #[test]
+fn chinese_catalog_matches_marked_messages() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let po = std::fs::read_to_string(root.join("translations/zh_CN/LC_MESSAGES/hatchzip-gui.po"))
+        .unwrap();
+    let sources = source_ids(&root.join("ui"));
+    let catalog: HashSet<_> = catalog_ids(&po).into_iter().collect();
+    assert_eq!(catalog, sources);
+}
+
+#[test]
 fn catalog_reader_handles_multiline_and_escaped_messages() {
     let po = "msgid \"\"\n\"Hello \\\"world\\\"\"\nmsgstr \"translation\"\n";
     assert_eq!(catalog_ids(po), ["Hello \"world\""]);

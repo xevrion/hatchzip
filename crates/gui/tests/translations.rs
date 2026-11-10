@@ -257,6 +257,31 @@ fn bundled_hindi_and_english_fallback() {
     }
     // GB is deliberately absent from the catalog and falls back to English.
     assert_eq!(ui.get_storage_unit(), "GB");
+    slint::select_bundled_translation("zh_CN").unwrap();
+    assert_eq!(ui.invoke_open_archive_title(), "打开压缩包");
+    assert_eq!(ui.invoke_reading_archive(37), "正在读取压缩包… 37%");
+    for n in [0, 1, 2] {
+        assert_eq!(
+            ui.invoke_entry_count(n.to_string().into(), n),
+            format!("{n} 个条目")
+        );
+        assert_eq!(
+            ui.invoke_task_test_result(n, n.to_string().into()),
+            format!("测试通过：已校验 {n} 个条目。")
+        );
+    }
+    assert_eq!(
+        ui.invoke_remaining_summary("3.2 GB".into(), "120 个条目".into()),
+        "剩余 3.2 GB（120 个条目）"
+    );
+    assert_eq!(
+        ui.invoke_restore_aside(1, "1".into(), "out".into()),
+        "1 个被替换的文件仍在 out 中，因为解压到这些路径的文件已不在压缩包中。"
+    );
+    assert_eq!(
+        ui.invoke_replace_question("file".into(), "folder".into()),
+        "'file' 已存在于 folder 中。"
+    );
     slint::select_bundled_translation("en").unwrap();
     assert_eq!(ui.invoke_open_archive_title(), "Open archive");
     assert_eq!(ui.invoke_reading_archive(37), "Reading archive… 37%");
