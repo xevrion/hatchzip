@@ -12,7 +12,13 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
+  # It isn't a required check, so a pull request that only changes the
+  # website or the docs can skip it.
   pull_request:
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '**/*.md'
   # Weekly, so new queries run against code that hasn't changed.
   schedule:
     - cron: '41 5 * * 3'

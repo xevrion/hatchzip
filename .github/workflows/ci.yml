@@ -27,8 +27,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Whether a pull request touches anything the builds and tests read. One
+  # that only changes the website or the docs skips them, and `ci result`
+  # still passes, since it counts skipped jobs as fine. Pushes and manual
+  # runs always build.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE...$HEAD")
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -qvE '^(site/|docs/)|\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     name: fmt, clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -99,6 +133,8 @@ jobs:
   # feature changes the tree. Reads Cargo.lock only, nothing is compiled.
   deny:
     name: cargo deny (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -124,7 +160,7 @@ jobs:
   result:
     name: ci result
     if: always()
-    needs: [check, test, deny]
+    needs: [changes, check, test, deny]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
