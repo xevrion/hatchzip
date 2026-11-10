@@ -13,8 +13,8 @@ use sevenz_rust2::{
 
 use super::storage::{Reader, Storage, Tail};
 use super::{
-    Format, Item, Kind, Opened, PasswordNeeded, Sink, Unit, Worker, WrongPassword, is_symlink_mode,
-    safe_path,
+    Format, Item, Kind, Opened, PasswordNeeded, Sink, Unit, Unsupported, Worker, WrongPassword,
+    is_symlink_mode, safe_path,
 };
 
 /// Files with no data (directories, empty files) live only in the header.
@@ -54,6 +54,11 @@ pub fn open(
     if archive.files.iter().any(|f| f.is_anti_item()) {
         bail!("this 7z archive contains deletion records (anti-items), which are not supported");
     }
+
+    // Decoding finds an unknown method only when its block is reached, after
+    // the blocks behind it were committed and their bytes freed. Refuse it
+    // here instead, while the archive is still whole.
+    refuse_unsupported_methods(&archive, resuming.is_none())?;
 
     let (starts, data_end) = block_starts(&archive)?;
     if resuming.is_none() {
@@ -125,6 +130,88 @@ pub fn open(
 
 fn inconsistent() -> anyhow::Error {
     anyhow!("this 7z archive's header is inconsistent")
+}
+
+/// Refuses a coder this build cannot decode, naming it. `fresh` says the
+/// archive has not been touched yet, which a resumed run cannot claim.
+fn refuse_unsupported_methods(archive: &Archive, fresh: bool) -> Result<()> {
+    for coder in archive.blocks.iter().flat_map(|block| &block.coders) {
+        let id = coder.encoder_method_id();
+        if coder_supported(id) {
+            continue;
+        }
+        return Err(Unsupported(unsupported_method(id, fresh)).into());
+    }
+    Ok(())
+}
+
+fn unsupported_method(id: &[u8], fresh: bool) -> anyhow::Error {
+    let what = match sevenz_rust2::EncoderMethod::by_id(id) {
+        Some(method) => format!("the {} compression method", method.name()),
+        None => format!(
+            "a compression method this build does not know ({})",
+            id.iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+    };
+    // A resumed run already freed what it extracted, so only a fresh one can
+    // say nothing was modified.
+    let untouched = if fresh { " Nothing was modified" } else { "" };
+    anyhow!("this 7z archive uses {what}, which this build does not decode.{untouched}")
+}
+
+/// The methods sevenz-rust2's decoder builds with the features this crate
+/// turns on, kept in step with its `add_decoder` and `BlockDecoder`. Each
+/// gated entry follows a `sevenz-*` feature in `Cargo.toml`.
+fn coder_supported(id: &[u8]) -> bool {
+    use sevenz_rust2::EncoderMethod as Method;
+    if id == Method::ID_COPY
+        || id == Method::ID_LZMA
+        || id == Method::ID_LZMA2
+        || id == Method::ID_DELTA
+        || id == Method::ID_BCJ_X86
+        || id == Method::ID_BCJ_PPC
+        || id == Method::ID_BCJ_IA64
+        || id == Method::ID_BCJ_ARM
+        || id == Method::ID_BCJ_ARM64
+        || id == Method::ID_BCJ_ARM_THUMB
+        || id == Method::ID_BCJ_SPARC
+        || id == Method::ID_BCJ_RISCV
+        || id == Method::ID_BCJ2
+    {
+        return true;
+    }
+    #[cfg(feature = "sevenz-aes256")]
+    if id == Method::ID_AES256_SHA256 {
+        return true;
+    }
+    #[cfg(feature = "sevenz-bzip2")]
+    if id == Method::ID_BZIP2 {
+        return true;
+    }
+    #[cfg(feature = "sevenz-brotli")]
+    if id == Method::ID_BROTLI {
+        return true;
+    }
+    #[cfg(feature = "sevenz-deflate")]
+    if id == Method::ID_DEFLATE {
+        return true;
+    }
+    #[cfg(feature = "sevenz-lz4")]
+    if id == Method::ID_LZ4 {
+        return true;
+    }
+    #[cfg(feature = "sevenz-ppmd")]
+    if id == Method::ID_PPMD {
+        return true;
+    }
+    #[cfg(feature = "sevenz-zstd")]
+    if id == Method::ID_ZSTD {
+        return true;
+    }
+    false
 }
 
 /// Where each block's packed data begins, and where the packed data of the
@@ -500,6 +587,22 @@ mod tests {
         assert_eq!(read(&[0x81, 0x23]), 0x123);
         assert_eq!(read(&[0xC1, 0x23, 0x45]), 0x14523);
         assert_eq!(read(&[0xFF, 1, 2, 3, 4, 5, 6, 7, 8]), 0x0807060504030201);
+    }
+
+    /// The method is named when the decoder has a name for it, and its bytes
+    /// when it doesn't, and only a fresh run claims nothing was modified.
+    #[test]
+    fn an_unsupported_method_says_what_and_whether_anything_was_touched() {
+        let lzs = &[0x04, 0xF7, 0x11, 0x05];
+        let fresh = format!("{:#}", unsupported_method(lzs, true));
+        assert!(fresh.contains("the LZS compression method"), "{fresh}");
+        assert!(fresh.contains("Nothing was modified"), "{fresh}");
+
+        let resumed = format!("{:#}", unsupported_method(lzs, false));
+        assert!(!resumed.contains("Nothing was modified"), "{resumed}");
+
+        let unknown = format!("{:#}", unsupported_method(&[0x1F, 0x2E], true));
+        assert!(unknown.contains("1F 2E"), "{unknown}");
     }
 
     /// sevenz-rust2 finds the header of an archive with a blank start header

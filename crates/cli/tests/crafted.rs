@@ -22,11 +22,25 @@ fn number(out: &mut Vec<u8>, n: u64) {
     }
 }
 
-/// A 7z header for stored (Copy) blocks of one packed stream each. `packs`
-/// are the packed stream sizes, which may list more streams than there are
-/// blocks; `blocks` the files of each block with their sizes; `dirs` folders,
-/// which have no data.
+/// A 7z header for blocks of one packed stream each, with a Copy coder.
+/// `packs` are the packed stream sizes, which may list more streams than
+/// there are blocks; `blocks` the files of each block with their sizes;
+/// `dirs` folders, which have no data.
 fn header(packs: &[u64], blocks: &[&[(&str, u64)]], dirs: &[&str]) -> Vec<u8> {
+    header_with_methods(packs, blocks, dirs, &vec![COPY; blocks.len()])
+}
+
+const COPY: &[u8] = &[0x00];
+
+/// The same, with the method ID of each block's single coder, so a test can
+/// name a coder the decoders don't have.
+fn header_with_methods(
+    packs: &[u64],
+    blocks: &[&[(&str, u64)]],
+    dirs: &[&str],
+    methods: &[&[u8]],
+) -> Vec<u8> {
+    assert_eq!(methods.len(), blocks.len());
     // Header, main streams info, pack info at position 0.
     let mut h = vec![0x01, 0x04, 0x06, 0x00];
     number(&mut h, packs.len() as u64);
@@ -36,12 +50,14 @@ fn header(packs: &[u64], blocks: &[&[(&str, u64)]], dirs: &[&str]) -> Vec<u8> {
     }
     h.push(0x00);
 
-    // Unpack info: one Copy coder per block, then each block's size.
+    // Unpack info: one coder per block, then each block's size.
     h.extend([0x07, 0x0B]);
     number(&mut h, blocks.len() as u64);
     h.push(0x00);
-    for _ in blocks {
-        h.extend([0x01, 0x01, 0x00]);
+    for method in methods {
+        h.push(0x01);
+        h.push(method.len() as u8);
+        h.extend(*method);
     }
     h.push(0x0C);
     for files in blocks {
@@ -118,8 +134,12 @@ fn sevenz_with_header_last(packs: &[&[u8]], header: &[u8]) -> Vec<u8> {
 }
 
 fn refused(archive: &Path, out: &Path, says: &str) {
+    refused_env(archive, out, says, &[]);
+}
+
+fn refused_env(archive: &Path, out: &Path, says: &str, env: &[(&str, &str)]) {
     let before = fs::read(archive).unwrap();
-    let run = extract(archive, out, &[]);
+    let run = extract(archive, out, env);
     assert!(!run.status.success(), "the archive should be refused");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(stderr.contains(says), "{stderr}");
@@ -276,6 +296,38 @@ fn a_7z_block_without_packed_streams_is_refused() {
     let archive = tmp.path().join("noinput.7z");
     fs::write(&archive, sevenz_with_header_last(&[&[1; 16]], &h)).unwrap();
     refused(&archive, &tmp.path().join("out"), "header is inconsistent");
+}
+
+/// A coder this build has no decoder for is found while decoding, which is
+/// too late: the block behind it was already extracted, committed, and its
+/// bytes freed. Refused up front, the archive stays whole.
+#[test]
+fn a_7z_with_an_unsupported_method_is_refused_before_it_is_touched() {
+    const LZS: &[u8] = &[0x04, 0xF7, 0x11, 0x05];
+    let tmp = TempDir::new().unwrap();
+    let (first, second) = (noise(16, 1), noise(16, 2));
+    let h = header_with_methods(
+        &[16, 16],
+        &[&[("alpha.bin", 16)], &[("beta.bin", 16)]],
+        &[],
+        &[LZS, COPY],
+    );
+    let archive = tmp.path().join("lzs.7z");
+    fs::write(&archive, sevenz_with_header_last(&[&first, &second], &h)).unwrap();
+    let before = fs::read(&archive).unwrap();
+
+    // One unit per batch, so the Copy block would be committed on its own
+    // before the LZS one is reached.
+    let out = tmp.path().join("out");
+    let run = extract(&archive, &out, &[("HATCHZIP_BATCH_ENTRIES", "1")]);
+    assert_eq!(run.status.code(), Some(1), "unsupported, not damaged");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("uses the LZS compression method"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    assert_no_side_files(&archive);
 }
 
 /// A tar entry whose data runs past the end of the file, the last thing in
