@@ -150,6 +150,13 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         ["Northwind"]
     );
     ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::LeftArrow.into(),
+    });
+    assert_eq!(
+        inside_window(&ui, "Northwind").accessible_item_selected(),
+        Some(true)
+    );
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
     });
     assert!(ui.get_entries().iter().any(|r| r.path == "Northwind/bin"));
@@ -228,12 +235,34 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .any(|r| r.path == "Northwind/bin/northwind")
     );
     shot(ui.window(), &format!("{tag}-2-tree-expanded"));
+    let key = |key: Key| {
+        window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    };
+    let selected = |path: &str| {
+        assert_eq!(
+            inside_window(&ui, path).accessible_item_selected(),
+            Some(true),
+            "selection should be on {path}"
+        );
+    };
+    selected("Northwind/bin");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::LeftArrow);
+    selected("Northwind/bin");
+    assert_eq!(folder.accessible_expanded(), Some(true));
+    key(Key::LeftArrow);
+    assert_eq!(folder.accessible_expanded(), Some(false));
+    key(Key::LeftArrow);
+    selected("Northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::DownArrow.into(),
     });
-    window.dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    selected("Northwind/data");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
     });
@@ -242,12 +271,22 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .iter()
             .any(|r| r.path == "Northwind/data/level29.pak")
     );
+    selected("Northwind/data");
+    key(Key::RightArrow);
+    selected("Northwind/data/level00.pak");
     for _ in 0..29 {
         window.dispatch_event(WindowEvent::KeyPressed {
             text: Key::DownArrow.into(),
         });
     }
+    selected("Northwind/data/level29.pak");
     shot(ui.window(), &format!("{tag}-2-tree-scrolled"));
+    key(Key::LeftArrow);
+    selected("Northwind/data");
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_expanded(),
+        Some(true)
+    );
 
     // Asking to keep 100 TB free makes it not fit, and says by how much.
     ui.set_keep_free("100000".into());
@@ -936,9 +975,10 @@ fn tree_accessibility_edges(scheme: ColorScheme) {
     ui.show().unwrap();
     // Realize the empty list before sending a key to its FocusScope.
     let _ = ui.window().take_snapshot().unwrap();
-    ui.window().dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    for key in [Key::LeftArrow, Key::RightArrow, Key::DownArrow] {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    }
     assert_eq!(ui.get_entries().row_count(), 0);
     ui.set_entries(
         Rc::new(slint::VecModel::from(vec![

@@ -230,6 +230,30 @@ impl EntriesModel {
         }
     }
 
+    pub fn navigate(&self, row: usize, right: bool) -> usize {
+        let tree = self.tree.borrow();
+        let Some(&(node, depth)) = tree.visible.get(row) else {
+            return row;
+        };
+        let current = &tree.nodes[node];
+        match (right, current.expanded) {
+            (true, true) if !current.children.is_empty() => row + 1,
+            (false, false) if depth > 0 => {
+                // Walk the visible indices without building any display rows.
+                tree.visible[..row]
+                    .iter()
+                    .rposition(|&(id, _)| id == current.parent)
+                    .unwrap_or(row)
+            }
+            _ if current.dir && right != current.expanded => {
+                drop(tree);
+                self.toggle(row, Some(right));
+                row
+            }
+            _ => row,
+        }
+    }
+
     pub fn toggle(&self, row: usize, expand: Option<bool>) {
         let change = self.tree.borrow_mut().toggle(row, expand);
         if let Some((added, count)) = change {
@@ -286,6 +310,22 @@ mod tests {
             size,
             kind: Kind::File,
         }
+    }
+
+    #[test]
+    fn right_on_an_expanded_empty_folder_keeps_selection() {
+        let model = EntriesModel::new(Entries::new(vec![
+            Entry {
+                path: "empty".into(),
+                size: 0,
+                kind: Kind::Dir,
+            },
+            file("sibling", 1),
+        ]));
+        assert_eq!(model.navigate(0, true), 0);
+        assert!(model.row_data(0).unwrap().expanded);
+        assert_eq!(model.navigate(0, true), 0);
+        assert_eq!(model.row_data(1).unwrap().path, "sibling");
     }
 
     #[test]
