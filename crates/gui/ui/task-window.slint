@@ -1,3 +1,4 @@
+import { Messages } from "messages.slint";
 import { Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Phase, PlanView, TaskView, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt } from "parts.slint";
@@ -73,7 +74,7 @@ export component TaskWindow inherits Window {
             task: root.task;
         }
         if root.task.phase == Phase.no-space: Text {
-            text: "Available: " + root.plan.free + ". Required: " + root.plan.needed + ", plus " + root.plan.keep + " reserved.";
+            text: @tr("Available: {}. Required: {}, plus {} reserved.", root.plan.free, root.plan.needed, root.plan.keep);
             color: Theme.muted;
             wrap: word-wrap;
         }

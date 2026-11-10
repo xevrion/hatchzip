@@ -1,3 +1,4 @@
+import { Messages } from "messages.slint";
 import { Button, CheckBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
 import { Theme, Line, VLine, FolderIcon, FileIcon, DropIcon } from "theme.slint";
 import { Phase, PlanView, TaskView, SpacePanel, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt } from "parts.slint";
@@ -180,76 +181,60 @@ export component MainWindow inherits Window {
     in property <string> notice;
     in property <bool> notice-bad;
 
-    public function shell-explorer() -> string { return @tr("Show in the Explorer context menu"); }
-    public function shell-files() -> string { return @tr("Show in the file manager's context menu"); }
-    public function shell-finder() -> string { return @tr("Show in the Finder context menu"); }
-    public function open-archive-title() -> string { return @tr("Open archive"); }
-    public function archives-filter() -> string { return @tr("Archives"); }
-    public function all-files-filter() -> string { return @tr("All files"); }
-    public function destination-title() -> string { return @tr("Select destination folder"); }
-    public function menu-added() -> string { return @tr("Context menu entries added."); }
-    public function menu-removed() -> string { return @tr("Context menu entries removed."); }
-    public function no-entries() -> string { return @tr("No entries remaining"); }
-    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive", reason); }
-    public function checking-space() -> string { return @tr("Checking disk space…"); }
-    public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
-    public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
-    public function pausing-message() -> string { return @tr("Pausing after the current batch…"); }
-    public function verifying-message() -> string { return @tr("Verifying archive before extracting…"); }
-    public function paused-message() -> string { return @tr("Progress is saved. The extraction can be resumed now or later."); }
-    public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
-    public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
-    public function waiting-disk() -> string { return @tr("Waiting for disk"); }
+    public function shell-explorer() -> string { return Messages.shell-explorer(); }
+    public function shell-files() -> string { return Messages.shell-files(); }
+    public function shell-finder() -> string { return Messages.shell-finder(); }
+    public function open-archive-title() -> string { return Messages.open-archive-title(); }
+    public function archives-filter() -> string { return Messages.archives-filter(); }
+    public function all-files-filter() -> string { return Messages.all-files-filter(); }
+    public function destination-title() -> string { return Messages.destination-title(); }
+    public function menu-added() -> string { return Messages.menu-added(); }
+    public function menu-removed() -> string { return Messages.menu-removed(); }
+    public function no-entries() -> string { return Messages.no-entries(); }
+    public function keep-archive-hint(reason: string) -> string { return Messages.keep-archive-hint(reason); }
+    public function checking-space() -> string { return Messages.checking-space(); }
+    public function restore-detail() -> string { return Messages.restore-detail(); }
+    public function test-detail() -> string { return Messages.test-detail(); }
+    public function pausing-message() -> string { return Messages.pausing-message(); }
+    public function verifying-message() -> string { return Messages.verifying-message(); }
+    public function paused-message() -> string { return Messages.paused-message(); }
+    public function extracted-kept() -> string { return Messages.extracted-kept(); }
+    public function extracted-removed() -> string { return Messages.extracted-removed(); }
+    public function waiting-disk() -> string { return Messages.waiting-disk(); }
 
-    public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
-    public function archive-kind(name: string) -> string { return @tr("{} archive", name); }
-    public function entry-count(number: string, n: int) -> string { return @tr("{} entry" | "{} entries" % n, number); }
-    public function remaining-summary(size: string, entries: string) -> string { return @tr("{} in {} remaining", size, entries); }
-    public function uncompressed-summary(size: string) -> string { return @tr("{} uncompressed", size); }
+    public function reading-archive(percent: int) -> string { return Messages.reading-archive(percent); }
+    public function archive-kind(name: string) -> string { return Messages.archive-kind(name); }
+    public function entry-count(number: string, n: int) -> string { return Messages.entry-count(number, n); }
+    public function remaining-summary(size: string, entries: string) -> string { return Messages.remaining-summary(size, entries); }
+    public function uncompressed-summary(size: string) -> string { return Messages.uncompressed-summary(size); }
 
-    public function task-heading(phase: Phase, is-test: bool, restoring: bool, name: string) -> string {
-        if (restoring) {
-            if (phase == Phase.done) { return @tr("Restore complete"); }
-            if (phase == Phase.failed) { return @tr("Restore failed"); }
-            return @tr("Restoring {}", name);
-        }
-        if (is-test) {
-            if (phase == Phase.done) { return @tr("Test complete"); }
-            if (phase == Phase.failed) { return @tr("Test failed"); }
-            return @tr("Testing {}", name);
-        }
-        if (phase == Phase.done) { return @tr("Extraction complete"); }
-        if (phase == Phase.paused) { return @tr("Extraction paused"); }
-        if (phase == Phase.failed) { return @tr("Extraction failed"); }
-        if (phase == Phase.no-space) { return @tr("Insufficient disk space"); }
-        return @tr("Extracting {}", name);
-    }
+    public function task-heading(phase: Phase, is-test: bool, restoring: bool, name: string) -> string { return Messages.task-heading(phase, is-test, restoring, name); }
 
-    public function task-destination(path: string) -> string { return @tr("Destination: {}", path); }
-    public function task-amounts(done: string, total: string) -> string { return @tr("{} of {}", done, total); }
-    public function task-archive-left(size: string) -> string { return @tr("Archive remaining: {}", size); }
+    public function task-destination(path: string) -> string { return Messages.task-destination(path); }
+    public function task-amounts(done: string, total: string) -> string { return Messages.task-amounts(done, total); }
+    public function task-archive-left(size: string) -> string { return Messages.task-archive-left(size); }
 
-    public function task-test-result(n: int, count: string) -> string { return @tr("Test passed: 1 entry verified." | "Test passed: {} entries verified." % n, count); }
+    public function task-test-result(n: int, count: string) -> string { return Messages.task-test-result(n, count); }
 
-    public function task-rate(speed: string, time: string) -> string { return @tr("{}/s, {} remaining", speed, time); }
-    public function time-short() -> string { return @tr("less than 5 seconds"); }
-    public function time-seconds(n: int, number: string) -> string { return @tr("{} second" | "{} seconds" % n, number); }
-    public function time-minutes(n: int, number: string) -> string { return @tr("{} minute" | "{} minutes" % n, number); }
-    public function time-hours(n: int, number: string) -> string { return @tr("{} hour" | "{} hours" % n, number); }
+    public function task-rate(speed: string, time: string) -> string { return Messages.task-rate(speed, time); }
+    public function time-short() -> string { return Messages.time-short(); }
+    public function time-seconds(n: int, number: string) -> string { return Messages.time-seconds(n, number); }
+    public function time-minutes(n: int, number: string) -> string { return Messages.time-minutes(n, number); }
+    public function time-hours(n: int, number: string) -> string { return Messages.time-hours(n, number); }
 
-    public function restore-held(n: int, number: string) -> string { return @tr("the 1 entry" | "the {} entries" % n, number); }
-    public function restore-result(kept: bool, held: string, path: string) -> string { return kept ? @tr("Extraction progress discarded. The archive was not modified. Extracted files remain in {}.", path) : @tr("Archive restored. It contains {} not yet extracted. Extracted files remain in {}.", held, path); }
-    public function restore-aside(n: int, number: string, path: string) -> string { return @tr("1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive." | "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive." % n, number, path); }
+    public function restore-held(n: int, number: string) -> string { return Messages.restore-held(n, number); }
+    public function restore-result(kept: bool, held: string, path: string) -> string { return Messages.restore-result(kept, held, path); }
+    public function restore-aside(n: int, number: string, path: string) -> string { return Messages.restore-aside(n, number, path); }
 
-    public function task-resumable-error(reason: string) -> string { return @tr("{} Progress is saved; the extraction can be resumed.", reason); }
+    public function task-resumable-error(reason: string) -> string { return Messages.task-resumable-error(reason); }
 
     callback open-archive();
     callback toggle-entry(int, int);
     callback password-ok(string);
     callback password-cancel();
-    public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
-    public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
-    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : @tr("Do the same for the next file" | "Do the same for the next {} files" % left, count); }
+    public function replace-question(file: string, folder: string) -> string { return Messages.replace-question(file, folder); }
+    public function replace-instructions(removing: bool) -> string { return Messages.replace-instructions(removing); }
+    public function replace-remaining(left: int, count: string) -> string { return Messages.replace-remaining(left, count); }
 
     callback replace-answer(int, bool);
     callback replace-cancel();

@@ -371,3 +371,58 @@ msgstr "{}。关闭“解压时删除压缩包”即可解压并保留压缩包"
 
 msgid "GB"
 msgstr "GB"
+
+msgid "Sufficient disk space"
+msgstr "磁盘空间充足"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "磁盘空间不足，还需要 {}。"
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "解压时删除压缩包仅需 {}。"
+
+msgid "There is also enough space to keep the archive."
+msgstr "空间也足够保留压缩包。"
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "所需空间大部分用于一个固实块，只有将其完全解压后才能释放。"
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "目标位置在其他磁盘上，删除压缩包不会释放目标磁盘的空间。"
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "此磁盘无法释放文件内部的空间，因此压缩包将完整保留到解压结束。"
+
+msgid "Required: {}. Available: {}."
+msgstr "所需空间：{}。可用空间：{}。"
+
+msgid "Archive {} of {}"
+msgstr "压缩包 {0} / {1}"
+
+msgid "All {} archives completed."
+msgstr "全部 {} 个压缩包已处理完成。"
+
+msgid "1 more archive has not started"
+msgid_plural "{} more archives have not started"
+msgstr[0] "还有 {} 个压缩包尚未开始"
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "可用空间：{}。所需空间：{}，另需预留 {}。"
+
+msgid "Version {}"
+msgstr "版本 {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "原地解压大型压缩包。解压时逐步删除压缩包，因此只需要容纳解压文件的空间。"
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "使用 MIT 或 Apache-2.0 许可证授权"
+
+msgid "Details: {}"
+msgstr "详细信息：{}"
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "测试已取消，压缩包未被修改。"
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "解压已取消，压缩包未被修改。"

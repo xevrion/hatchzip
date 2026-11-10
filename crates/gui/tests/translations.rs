@@ -282,6 +282,42 @@ fn bundled_hindi_and_english_fallback() {
         ui.invoke_replace_question("file".into(), "folder".into()),
         "'file' 已存在于 folder 中。"
     );
+    let preview = main_window::build(
+        Some(dir_path.join("sample.zip")),
+        &drops,
+        Settings::default(),
+        None,
+    )
+    .unwrap();
+    let weak = preview.as_weak();
+    wait_until("the Chinese space plan", move || {
+        weak.upgrade().is_some_and(|w| w.get_plan().ready)
+    });
+    assert_eq!(preview.get_plan().verdict, "磁盘空间充足");
+    if let Some(path) = std::env::var_os("HATCHZIP_CHINESE_SHOT") {
+        snapshot(preview.window(), path);
+    }
+    preview.hide().unwrap();
+    let (task, start) = hatchzip_gui::task_window::build(
+        hatchzip_gui::args::TaskArgs {
+            kind: hatchzip_gui::args::TaskKind::Test,
+            archives: vec![dir_path.join("sample.zip"), dir_path.join("sample.zip")],
+            keep_archive: false,
+        },
+        Settings::default(),
+    )
+    .unwrap();
+    start();
+    let weak = task.as_weak();
+    wait_until("the Chinese task queue", move || {
+        weak.upgrade().is_some_and(|w| {
+            w.get_task().phase == hatchzip_gui::Phase::Done && w.get_task().step.contains("全部")
+        })
+    });
+    assert_eq!(task.get_task().heading, "测试完成");
+    assert_eq!(task.get_task().message, "测试通过：已校验 1 个条目。");
+    assert_eq!(task.get_task().step, "全部 2 个压缩包已处理完成。");
+    task.hide().unwrap();
     slint::select_bundled_translation("en").unwrap();
     assert_eq!(ui.invoke_open_archive_title(), "Open archive");
     assert_eq!(ui.invoke_reading_archive(37), "Reading archive… 37%");
