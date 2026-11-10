@@ -73,8 +73,8 @@ component Row inherits HorizontalLayout {
     }
 }
 
-// What the disk looks like before, during and after. Plain numbers first,
-// the verdict last, so the eye lands on the answer.
+// Show why extraction is blocked before the numbers can push the verdict
+// out of view in a small window.
 export component SpacePanel inherits VerticalLayout {
     in property <PlanView> plan;
     padding: Theme.gutter;
@@ -101,6 +101,13 @@ export component SpacePanel inherits VerticalLayout {
     }
     if root.plan.ready: VerticalLayout {
         spacing: 8px;
+        Text {
+            text: root.plan.verdict;
+            wrap: word-wrap;
+            height: self.preferred-height;
+            font-weight: 600;
+            color: root.plan.fits ? Palette.foreground : Theme.danger;
+        }
         Row {
             label: @tr("Available");
             value: root.plan.free;
@@ -131,14 +138,6 @@ export component SpacePanel inherits VerticalLayout {
         Meter {
             value: root.plan.meter;
             bad: !root.plan.fits;
-        }
-        // Wrapped messages contribute their full height to the scroll area.
-        Text {
-            text: root.plan.verdict;
-            wrap: word-wrap;
-            height: self.preferred-height;
-            font-weight: 600;
-            color: root.plan.fits ? Palette.foreground : Theme.danger;
         }
         if root.plan.note != "": Text {
             text: root.plan.note;
