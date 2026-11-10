@@ -257,6 +257,67 @@ fn bundled_hindi_and_english_fallback() {
     }
     // GB is deliberately absent from the catalog and falls back to English.
     assert_eq!(ui.get_storage_unit(), "GB");
+    slint::select_bundled_translation("zh_CN").unwrap();
+    assert_eq!(ui.invoke_open_archive_title(), "打开压缩包");
+    assert_eq!(ui.invoke_reading_archive(37), "正在读取压缩包… 37%");
+    for n in [0, 1, 2] {
+        assert_eq!(
+            ui.invoke_entry_count(n.to_string().into(), n),
+            format!("{n} 个条目")
+        );
+        assert_eq!(
+            ui.invoke_task_test_result(n, n.to_string().into()),
+            format!("测试通过：已校验 {n} 个条目。")
+        );
+    }
+    assert_eq!(
+        ui.invoke_remaining_summary("3.2 GB".into(), "120 个条目".into()),
+        "剩余 3.2 GB（120 个条目）"
+    );
+    assert_eq!(
+        ui.invoke_restore_aside(1, "1".into(), "out".into()),
+        "1 个被替换的文件仍在 out 中，因为解压到这些路径的文件已不在压缩包中。"
+    );
+    assert_eq!(
+        ui.invoke_replace_question("file".into(), "folder".into()),
+        "'file' 已存在于 folder 中。"
+    );
+    let preview = main_window::build(
+        Some(dir_path.join("sample.zip")),
+        &drops,
+        Settings::default(),
+        None,
+    )
+    .unwrap();
+    let weak = preview.as_weak();
+    wait_until("the Chinese space plan", move || {
+        weak.upgrade().is_some_and(|w| w.get_plan().ready)
+    });
+    assert_eq!(preview.get_plan().verdict, "磁盘空间充足");
+    if let Some(path) = std::env::var_os("HATCHZIP_CHINESE_SHOT") {
+        snapshot(preview.window(), path);
+    }
+    preview.hide().unwrap();
+    let (task, start) = hatchzip_gui::task_window::build(
+        hatchzip_gui::args::TaskArgs {
+            kind: hatchzip_gui::args::TaskKind::Test,
+            archives: vec![dir_path.join("sample.zip"), dir_path.join("sample.zip")],
+            keep_archive: false,
+        },
+        Settings::default(),
+    )
+    .unwrap();
+    start();
+    let weak = task.as_weak();
+    wait_until("the Chinese task queue", move || {
+        weak.upgrade().is_some_and(|w| {
+            w.get_task().phase == hatchzip_gui::Phase::Done && w.get_task().step.contains("全部")
+        })
+    });
+    assert_eq!(task.get_task().heading, "测试完成");
+    assert_eq!(task.get_task().message, "测试通过：已校验 1 个条目。");
+    assert_eq!(task.get_task().step, "全部 2 个压缩包已处理完成。");
+    task.hide().unwrap();
     slint::select_bundled_translation("en").unwrap();
     assert_eq!(ui.invoke_open_archive_title(), "Open archive");
     assert_eq!(ui.invoke_reading_archive(37), "Reading archive… 37%");

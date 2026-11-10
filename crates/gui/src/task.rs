@@ -13,6 +13,8 @@ use crate::work::{Counters, Update};
 use crate::{Phase, PlanView, TaskView};
 
 pub struct Task {
+    pub space_plan: Option<hatchzip_core::session::SpacePlan>,
+    pub queue_position: Option<(usize, usize)>,
     pub view: TaskView,
     pub plan: PlanView,
     pub output: Option<PathBuf>,
@@ -75,6 +77,8 @@ impl Task {
 
     fn new(is_test: bool, name: &str) -> Self {
         let mut task = Self {
+            space_plan: None,
+            queue_position: None,
             view: TaskView {
                 phase: Phase::Checking,
                 is_test,
@@ -178,6 +182,7 @@ impl Task {
         v.can_open_folder = false;
         match update {
             Update::Checking => {
+                self.space_plan = None;
                 v.phase = Phase::Checking;
                 v.busy = CHECKING.into();
                 self.checking_since = None;
@@ -205,12 +210,14 @@ impl Task {
                     human(plan.free)
                 )
                 .into();
+                self.space_plan = Some(plan);
             }
             Update::NoSpace(plan) => {
                 self.plan = plan_view(&plan);
                 v.phase = Phase::NoSpace;
                 v.message = self.plan.verdict.clone();
                 v.can_retry = true;
+                self.space_plan = Some(plan);
             }
             Update::Verifying => {
                 v.phase = Phase::Verifying;

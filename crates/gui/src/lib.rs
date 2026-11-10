@@ -5,6 +5,7 @@
 pub mod args;
 pub mod backend;
 mod entries;
+mod i18n;
 pub mod main_window;
 mod password;
 mod platform;

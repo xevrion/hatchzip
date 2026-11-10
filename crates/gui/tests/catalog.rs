@@ -90,15 +90,48 @@ fn hindi_catalog_matches_marked_messages() {
         stale.is_empty(),
         "Hindi catalog contains removed source messages: {stale:?}"
     );
-    // GB is deliberately untranslated to exercise English fallback.
+    // Newly marked messages await Hindi translations; keep checking the
+    // completeness of the messages this catalog already covered.
+    let untranslated = HashSet::from([
+        "GB",
+        "Sufficient disk space",
+        "Insufficient disk space. {} more is required.",
+        "Removing the archive during extraction requires only {}.",
+        "There is also enough space to keep the archive.",
+        "Most of the required space is one solid block, which can only be released after it is fully extracted.",
+        "The destination is on another drive, so removing the archive does not free space there.",
+        "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes.",
+        "Required: {}. Available: {}.",
+        "Archive {} of {}",
+        "All {} archives completed.",
+        "1 more archive has not started",
+        "{} more archives have not started",
+        "Available: {}. Required: {}, plus {} reserved.",
+        "Version {}",
+        "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required.",
+        "Licensed under MIT or Apache-2.0",
+        "Details: {}",
+        "Test cancelled. The archive was not modified.",
+        "Extraction cancelled. The archive was not modified.",
+    ]);
     let missing: Vec<_> = sources
         .difference(&catalog)
-        .filter(|id| *id != "GB")
+        .filter(|id| !untranslated.contains(id.as_str()))
         .collect();
     assert!(
         missing.is_empty(),
         "Hindi catalog is missing messages: {missing:?}"
     );
+}
+
+#[test]
+fn chinese_catalog_matches_marked_messages() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let po = std::fs::read_to_string(root.join("translations/zh_CN/LC_MESSAGES/hatchzip-gui.po"))
+        .unwrap();
+    let sources = source_ids(&root.join("ui"));
+    let catalog: HashSet<_> = catalog_ids(&po).into_iter().collect();
+    assert_eq!(catalog, sources);
 }
 
 #[test]

@@ -1158,6 +1158,9 @@ fn windows_end_to_end() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // These tests locate controls by their English labels on every system.
+    let _language = hatchzip_gui::MainWindow::new().unwrap();
+    slint::select_bundled_translation("en").unwrap();
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
         minimum_layout_flow(scheme, tag);

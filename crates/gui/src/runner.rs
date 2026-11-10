@@ -281,6 +281,8 @@ impl Runner {
         if let Some(t) = task.as_mut() {
             f(t);
             t.view.step = self.step(t).into();
+            let (at, total) = self.place.get();
+            t.queue_position = (total > 1).then_some((at, total));
             (self.show)(t);
         }
     }
