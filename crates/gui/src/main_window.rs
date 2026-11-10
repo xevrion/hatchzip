@@ -184,6 +184,7 @@ pub fn build(
     settings_file: Option<PathBuf>,
 ) -> Result<MainWindow> {
     let ui = MainWindow::new()?;
+    crate::locale::apply();
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
