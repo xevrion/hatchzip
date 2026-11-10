@@ -295,7 +295,9 @@ fn every_catalog_matches_marked_messages() {
     assert!(!languages.is_empty(), "no translations found");
     let mut all = Vec::new();
     for language in &languages {
-        let path = root.join(format!("translations/{language}/LC_MESSAGES/hatchzip-gui.po"));
+        let path = root.join(format!(
+            "translations/{language}/LC_MESSAGES/hatchzip-gui.po"
+        ));
         match std::fs::read_to_string(&path) {
             Ok(po) => all.extend(problems(language, &po, &sources)),
             Err(e) => all.push(format!("{language}: reading {}: {e}", path.display())),
@@ -329,7 +331,8 @@ fn plural_messages_are_checked_on_both_sides() {
 }
 
 const HEADER_TWO: &str = "msgid \"\"\nmsgstr \"\"\n\"Language: xx\\n\"\n\"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n";
-const HEADER_ONE: &str = "msgid \"\"\nmsgstr \"\"\n\"Language: xx\\n\"\n\"Plural-Forms: nplurals=1; plural=0;\\n\"\n";
+const HEADER_ONE: &str =
+    "msgid \"\"\nmsgstr \"\"\n\"Language: xx\\n\"\n\"Plural-Forms: nplurals=1; plural=0;\\n\"\n";
 
 fn check(po: &str, sources: &[&str]) -> Vec<String> {
     let sources = sources.iter().map(|s| (*s).to_string()).collect();
