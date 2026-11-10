@@ -1121,7 +1121,11 @@ impl Run<'_> {
             }
             if let Some(solid) = self.job.format.solid() {
                 let walk = solid.walk(self.job.resumed(next))?;
-                let Some(links) = self.stream_solid(next, walk, reclaims, &out)? else {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                let Some(links) = self
+                    .stream_solid(next, walk, reclaims, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                else {
                     return Ok(Outcome::Paused);
                 };
                 self.commit(next, next + 1, links, &out)?;
@@ -1129,7 +1133,11 @@ impl Run<'_> {
                 continue;
             }
             if let Some(stream) = self.stream_now(next, reclaims, &out)? {
-                if !self.stream_unit(next, &stream, &out)? {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                if !self
+                    .stream_unit(next, &stream, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                {
                     return Ok(Outcome::Paused);
                 }
                 self.commit(next, next + 1, Vec::new(), &out)?;
@@ -1138,8 +1146,12 @@ impl Run<'_> {
             }
             let end = self.next_batch(next, &out, reclaims)?;
             let batch = &self.job.units[next..end];
+            let what = describe(batch);
 
-            let Some(links) = self.extract_batch(batch, &out)? else {
+            let Some(links) = self
+                .extract_batch(batch, &out)
+                .map_err(|e| out_of_space(e, &what))?
+            else {
                 return Ok(Outcome::Paused);
             };
             self.commit(next, end, links, &out)?;
@@ -1678,10 +1690,7 @@ impl Run<'_> {
         if first > avail {
             // The upfront check makes this rare: it takes something else on
             // the machine filling the disk while we run.
-            let what = match units[start].items.as_slice() {
-                [one] => format!("'{}'", one.path.display()),
-                many => format!("the next block of {} files", many.len()),
-            };
+            let what = describe(std::slice::from_ref(&units[start]));
             bail!(
                 "not enough disk space to continue: {what} requires {} and {} is available \
                  ({} reserved).\n{} more is required. Progress is saved; free up space and \
@@ -2196,6 +2205,45 @@ fn is_interrupt(e: &anyhow::Error) -> bool {
         .any(|io| io.kind() == io::ErrorKind::Interrupted)
 }
 
+/// A write error that means the volume ran out of room, however deep the
+/// decoder wrapped it. The next batch's pre-check can only see the space
+/// there was when it started, so a program filling the disk in between shows
+/// up here instead.
+fn is_disk_full(e: &anyhow::Error) -> bool {
+    const ENOSPC: i32 = 28;
+    const ERROR_HANDLE_DISK_FULL: i32 = 39;
+    const ERROR_DISK_FULL: i32 = 112;
+    e.chain()
+        .filter_map(|c| c.downcast_ref::<io::Error>())
+        .any(|io| {
+            io.kind() == io::ErrorKind::StorageFull
+                || matches!(
+                    io.raw_os_error(),
+                    Some(ENOSPC) | Some(ERROR_HANDLE_DISK_FULL) | Some(ERROR_DISK_FULL)
+                )
+        })
+}
+
+/// The batch never reached a commit, so its units are still whole in the
+/// archive and a rerun picks them up where this one stopped.
+fn out_of_space(e: anyhow::Error, what: &str) -> anyhow::Error {
+    if !is_disk_full(&e) {
+        return e;
+    }
+    anyhow!(
+        "not enough disk space to continue: {what} could not be written because the disk filled \
+         up.\nProgress is saved; free up space and resume the extraction."
+    )
+}
+
+fn describe(units: &[Unit]) -> String {
+    let items: usize = units.iter().map(|u| u.items.len()).sum();
+    match units {
+        [one] if one.items.len() == 1 => format!("'{}'", one.items[0].path.display()),
+        _ => format!("the next block of {items} files"),
+    }
+}
+
 /// Settings only the test suite uses. Release builds ignore them.
 fn test_knob(name: &str) -> Option<u32> {
     if !cfg!(debug_assertions) {
@@ -2606,5 +2654,36 @@ mod tests {
         assert_eq!(two.size(), u64::MAX);
         assert_eq!(on_disk(&two), u64::MAX);
         fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod space_errors {
+    use super::{is_disk_full, out_of_space};
+    use anyhow::Context;
+    use std::io;
+
+    #[test]
+    fn disk_full_errors_become_the_resume_stop() {
+        for code in [28, 39, 112] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from_raw_os_error(code))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(is_disk_full(&e), "code {code} not recognized as full");
+            let msg = out_of_space(e, "'game/a'").to_string();
+            assert!(msg.contains("not enough disk space to continue"), "{msg}");
+            assert!(msg.contains("Progress is saved"), "{msg}");
+        }
+    }
+
+    #[test]
+    fn other_write_errors_pass_through() {
+        let e: anyhow::Error = Err::<(), _>(io::Error::from_raw_os_error(5))
+            .context("extracting 'game/a'")
+            .unwrap_err();
+        assert!(!is_disk_full(&e));
+        let msg = out_of_space(e, "'game/a'").to_string();
+        assert!(msg.contains("extracting 'game/a'"), "{msg}");
+        assert!(!msg.contains("Progress is saved"), "{msg}");
     }
 }
