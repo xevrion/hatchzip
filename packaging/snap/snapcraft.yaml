@@ -3,7 +3,7 @@
 # updates. Build from this folder: `snapcraft pack`.
 name: hatchzip
 base: core24
-version: '0.1.9'
+version: '0.1.10'
 title: HatchZip
 summary: Extract huge archives in place
 description: |
@@ -83,7 +83,7 @@ parts:
   hatchzip:
     plugin: rust
     source: https://github.com/xevrion/hatchzip.git
-    source-tag: v0.1.9
+    source-tag: v0.1.10
     source-depth: 1
     # rust-toolchain.toml in the source pins the compiler the release
     # builds use, and the plugin installs that version through rustup.

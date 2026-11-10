@@ -4,13 +4,13 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>hatchzip</id>
-    <version>0.1.9</version>
+    <version>0.1.10</version>
     <packageSourceUrl>https://github.com/xevrion/hatchzip/tree/main/packaging/chocolatey</packageSourceUrl>
     <owners>xevrion</owners>
     <title>HatchZip</title>
     <authors>Yash Bavadiya</authors>
     <projectUrl>https://hatchzip.dev</projectUrl>
-    <iconUrl>https://cdn.jsdelivr.net/gh/xevrion/hatchzip@v0.1.9/assets/icon/png/hatchzip-256.png</iconUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/xevrion/hatchzip@v0.1.10/assets/icon/png/hatchzip-256.png</iconUrl>
     <copyright>Copyright (c) 2026 Yash Bavadiya</copyright>
     <licenseUrl>https://github.com/xevrion/hatchzip#license</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -41,7 +41,7 @@ Open a new terminal after installing for `hatchzip` to be on PATH, or run `refre
 
 RAR archives are decoded by UnRAR, under its own license: https://github.com/xevrion/hatchzip/blob/main/LICENSE-UNRAR
 ]]></description>
-    <releaseNotes>https://github.com/xevrion/hatchzip/releases/tag/v0.1.9</releaseNotes>
+    <releaseNotes>https://github.com/xevrion/hatchzip/releases/tag/v0.1.10</releaseNotes>
   </metadata>
   <files>
     <file src="tools\**" target="tools" />
