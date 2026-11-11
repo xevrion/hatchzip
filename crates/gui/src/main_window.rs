@@ -386,6 +386,14 @@ pub fn about_window() -> Option<AboutWindow> {
 
 fn wire(ui: &MainWindow, app: &Rc<App>) {
     let a = app.clone();
+    ui.on_navigate_entry(move |row, right| {
+        let entries = a.entries.borrow();
+        match (entries.as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.navigate(index, right) as i32,
+            _ => row,
+        }
+    });
+    let a = app.clone();
     ui.on_toggle_entry(move |row, action| {
         if let Some(tree) = a.entries.borrow().as_ref() {
             tree.toggle(

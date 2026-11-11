@@ -25,6 +25,7 @@ component EntryList inherits VerticalLayout {
     property <length> row-height: 26px;
     init => { scope.focus(); }
     callback toggle(int, int);
+    callback navigate(int, bool) -> int;
     function show-selection() {
         let y = list.content-y + root.selected * root.row-height;
         if y < 0px { list.content-y -= y; }
@@ -129,8 +130,13 @@ component EntryList inherits VerticalLayout {
                 }
                 return accept;
             }
-            if event.text == Key.LeftArrow { root.toggle(root.selected, -1); return accept; }
-            if event.text == Key.RightArrow { root.toggle(root.selected, 1); return accept; }
+            if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+                if root.selected >= 0 && root.selected < root.entries.length {
+                    root.selected = root.navigate(root.selected, event.text == Key.RightArrow);
+                    root.show-selection();
+                }
+                return accept;
+            }
             return reject;
         }
     }
@@ -245,6 +251,7 @@ export component MainWindow inherits Window {
 
     callback open-archive();
     callback toggle-entry(int, int);
+    callback navigate-entry(int, bool) -> int;
     callback password-ok(string);
     callback password-cancel();
     public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
@@ -473,6 +480,7 @@ export component MainWindow inherits Window {
                 entries: root.entries;
                 empty-text: root.mode == Mode.orphan ? @tr("All entries have been extracted.") : @tr("This archive is empty.");
                 toggle(row, action) => { root.toggle-entry(row, action); }
+                navigate(row, right) => { return root.navigate-entry(row, right); }
             }
             VLine { }
             // The plan can outgrow a small window; its content must not
