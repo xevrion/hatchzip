@@ -598,6 +598,49 @@ impl SpacePlan {
     }
 }
 
+/// Refuses a destination that cannot become a folder: a file or a dangling
+/// link at its path, or where one of its folders would go. Called before
+/// anything is written, so a run cannot leave a journal that only promises a
+/// resume that would fail the same way.
+fn check_destination(out: &Path, resuming: bool) -> Result<()> {
+    let untouched = if resuming {
+        ""
+    } else {
+        ". Nothing was modified"
+    };
+    // Walk up until something exists. `exists` follows links, so a dangling
+    // one looks absent and `create_dir_all` would fail on it later; metadata
+    // that is not a folder stops the run here instead.
+    let mut path = out.to_path_buf();
+    loop {
+        match path.symlink_metadata() {
+            Ok(meta) => {
+                if path.is_dir() {
+                    return Ok(());
+                }
+                let what = if meta.is_file() {
+                    "is a file, not a folder"
+                } else {
+                    "is not a folder"
+                };
+                if path == out {
+                    bail!("the destination {} {what}{untouched}", out.display());
+                }
+                bail!(
+                    "the destination {} cannot be created: {} {what}{untouched}",
+                    out.display(),
+                    path.display()
+                );
+            }
+            Err(_) => {
+                if !path.pop() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
 /// The space plan for extracting `job` into `out`, keeping the archive or
 /// not. For a half-extracted archive, `keep_archive` must be what its
 /// journal says; see [`keeps_archive`].
@@ -609,6 +652,7 @@ pub fn plan(
     keep_archive: bool,
 ) -> Result<SpacePlan> {
     job.check_case(out)?;
+    check_destination(out, resuming)?;
     let reclaims = fsutil::same_filesystem(job.storage.primary(), out);
     let stale: u64 =
         job.uncommitted(out).iter().map(|(_, n)| n).sum::<u64>() + job.past_resume_point(out);
@@ -667,6 +711,7 @@ pub fn begin(
 ) -> Result<Journal> {
     // Front ends ask earlier; the folder may have changed since.
     job.check_case(&output)?;
+    check_destination(&output, false)?;
     let found = existing(job, &output)?;
     if let Some(first) = found.first()
         && replace.is_none()
