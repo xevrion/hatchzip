@@ -99,7 +99,14 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
 }
 
 /// APFS allocates 4 KiB blocks; 64 KiB leaves a margin for anything coarser.
-pub fn punch_granule(_dir: &Path) -> u64 {
+pub fn punch_margin(_dir: &Path) -> u64 {
+    64 << 10
+}
+
+/// `F_PUNCHHOLE` rounds the start up and the end down to the block size, so
+/// the block holding the end stays, and the next punch reaches its start
+/// from 64 KiB before. APFS and HFS+ blocks are never larger than that.
+pub fn punch_overlap(_dir: &Path) -> u64 {
     64 << 10
 }
 

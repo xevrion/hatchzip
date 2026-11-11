@@ -22,6 +22,20 @@ pub use windows::*;
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 compile_error!("HatchZip has no platform module for this system yet; add one in src/platform/");
 
+/// The overlap is what the next punch steps back to free the block the last
+/// one kept, so it can never exceed the margin the space estimate reserves.
+#[cfg(test)]
+mod punch_tests {
+    #[test]
+    fn the_overlap_fits_inside_the_margin() {
+        let dir = std::env::temp_dir();
+        let margin = super::punch_margin(&dir);
+        let overlap = super::punch_overlap(&dir);
+        assert!(overlap > 0, "the overlap is {overlap}");
+        assert!(overlap <= margin, "overlap {overlap} > margin {margin}");
+    }
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     /// Every filesystem a Linux test run lands on (ext4, XFS, btrfs, tmpfs)

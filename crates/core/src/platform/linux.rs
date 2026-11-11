@@ -58,19 +58,42 @@ const ZFS_MAGIC: i64 = 0x2FC1_2FC1;
 /// data extents reach 128 MiB; ZFS frees whole records, up to 16 MiB.
 /// Everything else frees whole blocks, and 64 KiB covers every block size in
 /// use.
-pub fn punch_granule(dir: &Path) -> u64 {
-    let Ok(f) = File::open(dir) else {
-        return 128 << 20;
-    };
+pub fn punch_margin(dir: &Path) -> u64 {
+    match filesystem(dir) {
+        Some((BTRFS_MAGIC, _)) => 128 << 20,
+        Some((ZFS_MAGIC, _)) => 16 << 20,
+        Some((_, block)) => block.max(64 << 10),
+        None => 128 << 20,
+    }
+}
+
+/// How far before the last punch ended the next one starts to free the block
+/// it kept: one filesystem block. The kernel zeroes the partial blocks at
+/// either end and frees the whole ones in between, so only the block holding
+/// the end stays, and the next punch frees it by reaching its start.
+///
+/// ZFS zeroes partial records instead of freeing them, and a record is not
+/// `f_bsize`, so its margin stays the overlap until someone measures one.
+pub fn punch_overlap(dir: &Path) -> u64 {
+    match filesystem(dir) {
+        Some((ZFS_MAGIC, _)) => punch_margin(dir),
+        // A block size of zero would round every range away, and some FUSE
+        // filesystems report one.
+        Some((_, block)) => block.max(4096),
+        // Nothing is known about it, so keep the old value rather than
+        // punch a range that leaves a block behind.
+        None => 64 << 10,
+    }
+}
+
+/// The filesystem type where `dir` lives, and its block size.
+fn filesystem(dir: &Path) -> Option<(i64, u64)> {
+    let f = File::open(dir).ok()?;
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstatfs(f.as_raw_fd(), &mut st) } != 0 {
-        return 128 << 20;
+        return None;
     }
-    match st.f_type as i64 {
-        BTRFS_MAGIC => 128 << 20,
-        ZFS_MAGIC => 16 << 20,
-        _ => (st.f_bsize as u64).max(64 << 10),
-    }
+    Some((st.f_type as i64, st.f_bsize as u64))
 }
 
 /// Whether this system can treat different names as one file on a case-sensitive
@@ -160,5 +183,28 @@ impl RarName {
 
     pub fn open_data(&self, mode: std::ffi::c_uint) -> unrar_ng_sys::OpenArchiveDataEx {
         unrar_ng_sys::OpenArchiveDataEx::new(self.0.as_ptr(), mode)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The overlap is the block the next punch reaches back to free, so it has
+    /// to be that block. The old 64 KiB margin passed every other test and
+    /// punched up to 64 KiB of extra hole at every point.
+    #[test]
+    fn the_overlap_is_one_block() {
+        let dir = std::env::temp_dir();
+        let Some((fs, block)) = super::filesystem(&dir) else {
+            return;
+        };
+        // ZFS uses its margin here on purpose: no record size was measured.
+        if fs == super::ZFS_MAGIC {
+            return;
+        }
+        assert_eq!(
+            super::punch_overlap(&dir),
+            block.max(4096),
+            "block size {block}"
+        );
     }
 }

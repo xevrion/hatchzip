@@ -368,10 +368,10 @@ mod tests {
             assert!(platform::punch_hole(&f, from, to - from).unwrap());
             f.sync_all().unwrap();
             let after = platform::allocated_bytes(&path).unwrap();
-            let granule = platform::punch_granule(&dir);
+            let margin = platform::punch_margin(&dir);
             eprintln!("allocated before {before}, after {after}");
             assert!(
-                after + (to - from) - 2 * granule <= before,
+                after + (to - from) - 2 * margin <= before,
                 "allocation went from {before} to {after}"
             );
             let got = fs::read(&path).unwrap();
