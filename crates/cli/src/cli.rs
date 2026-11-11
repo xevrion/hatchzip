@@ -128,7 +128,10 @@ pub enum Command {
             took their path. A folder is never replaced.\n\n\
             Several archives are extracted one after another. The space for each one is \
             checked just before it starts, and the first one that does not complete stops \
-            the run."
+            the run.\n\n\
+            With --nested, once the archives given are done, each folder they extracted into \
+            is scanned for archives by their signature and those are extracted too, each in \
+            its own folder next to it. One level only: archives inside those are not scanned."
     )]
     Extract {
         #[command(flatten)]
@@ -146,6 +149,10 @@ pub enum Command {
         /// --keep-archive is given)
         #[arg(short, long)]
         yes: bool,
+        /// After extracting, look inside each folder for archives and extract
+        /// those too, one level deep
+        #[arg(long)]
+        nested: bool,
     },
     /// Show the space plan for an archive without modifying it
     #[command(visible_alias = "c")]

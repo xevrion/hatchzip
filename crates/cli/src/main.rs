@@ -188,6 +188,7 @@ fn run(command: Command) -> Result<u8> {
             verify_first,
             space,
             yes,
+            nested,
         } => {
             let opts = Options {
                 keep: keep.keep_archive,
@@ -197,6 +198,7 @@ fn run(command: Command) -> Result<u8> {
                 keep_free: space.keep_free,
                 yes,
                 several: false,
+                nested,
             };
             extract_all(target, opts)
         }
@@ -586,7 +588,7 @@ fn restore(archive: &Path, output: Option<&Path>) -> Result<u8> {
 
 /// How one archive of a run ended, for the summary of several.
 enum Ended {
-    Extracted,
+    Extracted(PathBuf),
     /// Stopped with the given status; `saved` if a journal holds progress.
     Stopped {
         code: u8,
@@ -594,6 +596,7 @@ enum Ended {
     },
 }
 
+#[derive(Clone)]
 struct Options {
     keep: bool,
     replace: bool,
@@ -603,6 +606,8 @@ struct Options {
     yes: bool,
     /// Several archives: the summary says how to continue, not each one.
     several: bool,
+    /// After extracting, find the archives inside and extract them too.
+    nested: bool,
 }
 
 fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
@@ -632,6 +637,7 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
     .context("installing Ctrl+C handler")?;
 
     let mut done = 0;
+    let mut outputs: Vec<PathBuf> = Vec::new();
     for (i, archive) in archives.iter().enumerate() {
         if opts.several {
             if i > 0 {
@@ -652,12 +658,71 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
             },
         };
         match ended {
-            Ended::Extracted => done += 1,
+            Ended::Extracted(output) => {
+                done += 1;
+                if !outputs.contains(&output) {
+                    outputs.push(output);
+                }
+            }
             Ended::Stopped { code, saved } => {
                 if opts.several {
                     summary(&archives, done, code, saved);
                 }
                 return Ok(code);
+            }
+        }
+    }
+    if opts.nested {
+        // One level only: the folders these extract into are not scanned.
+        let mut nested: Vec<PathBuf> = Vec::new();
+        for out in &outputs {
+            say!("Looking for archives inside {}…", out.display());
+            for path in hatchzip_core::archive::find_nested(out) {
+                if !nested.contains(&path) && !archives.contains(&path) {
+                    nested.push(path);
+                }
+            }
+        }
+        if !nested.is_empty() {
+            say!();
+            let mut nested_opts = opts.clone();
+            nested_opts.several = nested.len() > 1;
+            let mut nested_done = 0;
+            for (i, archive) in nested.iter().enumerate() {
+                if nested_opts.several {
+                    if i > 0 {
+                        say!();
+                    }
+                    say!(
+                        "{BOLD}Nested archive {} of {}:{BOLD:#} {}",
+                        i + 1,
+                        nested.len(),
+                        archive.display()
+                    );
+                }
+                let ended = match extract(archive, None, target.secret.clone(), &nested_opts) {
+                    Ok(e) => e,
+                    Err(e) => Ended::Stopped {
+                        code: fail(&e),
+                        saved: locate(archive).is_ok_and(|(_, p)| p.exists()),
+                    },
+                };
+                match ended {
+                    Ended::Extracted(_) => nested_done += 1,
+                    Ended::Stopped { code, saved } => {
+                        if nested_opts.several {
+                            summary(&nested, nested_done, code, saved);
+                        }
+                        return Ok(code);
+                    }
+                }
+            }
+            if nested_opts.several {
+                say!();
+                say!(
+                    "{GOOD}All {} nested archives extracted.{GOOD:#}",
+                    nested.len()
+                );
             }
         }
     }
@@ -729,7 +794,7 @@ fn extract(
                 "{GOOD}Extraction complete.{GOOD:#} Files are in {}.",
                 journal.output.display()
             );
-            return Ok(Ended::Extracted);
+            return Ok(Ended::Extracted(journal.output));
         }
         State::Resume(job, journal) => {
             let keep = session::keeps_archive(&journal, opts.keep)?;
@@ -850,7 +915,7 @@ fn extract(
                 entries(count),
                 output.display()
             );
-            Ok(Ended::Extracted)
+            Ok(Ended::Extracted(output))
         }
         Ok(Outcome::Paused) => {
             if !opts.several {
