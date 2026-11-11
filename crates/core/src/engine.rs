@@ -2208,19 +2208,17 @@ fn is_interrupt(e: &anyhow::Error) -> bool {
 /// A write error that means the volume ran out of room, however deep the
 /// decoder wrapped it. The next batch's pre-check can only see the space
 /// there was when it started, so a program filling the disk in between shows
-/// up here instead.
+/// up here instead. Matched by kind, which std maps from `ENOSPC`,
+/// `ERROR_DISK_FULL` and `ERROR_HANDLE_DISK_FULL`; the raw numbers for those
+/// differ per system and clash with unrelated errors elsewhere.
 fn is_disk_full(e: &anyhow::Error) -> bool {
-    const ENOSPC: i32 = 28;
-    const ERROR_HANDLE_DISK_FULL: i32 = 39;
-    const ERROR_DISK_FULL: i32 = 112;
     e.chain()
         .filter_map(|c| c.downcast_ref::<io::Error>())
         .any(|io| {
-            io.kind() == io::ErrorKind::StorageFull
-                || matches!(
-                    io.raw_os_error(),
-                    Some(ENOSPC) | Some(ERROR_HANDLE_DISK_FULL) | Some(ERROR_DISK_FULL)
-                )
+            matches!(
+                io.kind(),
+                io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded
+            )
         })
 }
 
@@ -2230,10 +2228,10 @@ fn out_of_space(e: anyhow::Error, what: &str) -> anyhow::Error {
     if !is_disk_full(&e) {
         return e;
     }
-    anyhow!(
+    e.context(format!(
         "not enough disk space to continue: {what} could not be written because the disk filled \
-         up.\nProgress is saved; free up space and resume the extraction."
-    )
+         up.\nProgress is saved; free up space and resume the extraction"
+    ))
 }
 
 fn describe(units: &[Unit]) -> String {
@@ -2665,25 +2663,34 @@ mod space_errors {
 
     #[test]
     fn disk_full_errors_become_the_resume_stop() {
-        for code in [28, 39, 112] {
-            let e: anyhow::Error = Err::<(), _>(io::Error::from_raw_os_error(code))
+        for kind in [io::ErrorKind::StorageFull, io::ErrorKind::QuotaExceeded] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
                 .context("extracting 'game/a'")
                 .unwrap_err();
-            assert!(is_disk_full(&e), "code {code} not recognized as full");
-            let msg = out_of_space(e, "'game/a'").to_string();
+            assert!(is_disk_full(&e), "{kind:?} not recognized as full");
+            let e = out_of_space(e, "'game/a'");
+            let msg = e.to_string();
             assert!(msg.contains("not enough disk space to continue"), "{msg}");
             assert!(msg.contains("Progress is saved"), "{msg}");
+            // The original error stays in the chain, so the OS text shows.
+            let full = format!("{e:#}");
+            assert!(full.contains("extracting 'game/a'"), "{full}");
         }
     }
 
     #[test]
     fn other_write_errors_pass_through() {
-        let e: anyhow::Error = Err::<(), _>(io::Error::from_raw_os_error(5))
-            .context("extracting 'game/a'")
-            .unwrap_err();
-        assert!(!is_disk_full(&e));
-        let msg = out_of_space(e, "'game/a'").to_string();
-        assert!(msg.contains("extracting 'game/a'"), "{msg}");
-        assert!(!msg.contains("Progress is saved"), "{msg}");
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::AlreadyExists,
+        ] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(!is_disk_full(&e), "{kind:?} taken for a full disk");
+            let msg = out_of_space(e, "'game/a'").to_string();
+            assert!(msg.contains("extracting 'game/a'"), "{msg}");
+            assert!(!msg.contains("Progress is saved"), "{msg}");
+        }
     }
 }
