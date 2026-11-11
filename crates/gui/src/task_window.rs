@@ -114,11 +114,11 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(task.view.clone());
+            ui.set_task(crate::text::localize(task, &ui));
             ui.set_plan(task.plan.clone());
         }
     });
-    ui.set_task(task.view.clone());
+    ui.set_task(crate::text::localize(task, &ui));
     if settings.close_when_done {
         // Hiding the only window ends the app, as the close button does.
         let weak = ui.as_weak();

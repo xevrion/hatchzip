@@ -412,3 +412,14 @@ msgstr "La reserva es lo único que lo impide: se necesitan {} y hay {} disponib
 
 msgid "Available: {}. Required: {}, plus {} reserved."
 msgstr "Disponible: {}. Necesario: {}, más {} reservados."
+
+msgid "Archive {} of {}"
+msgstr "Archivo {0} de {1}"
+
+msgid "All {} archives completed."
+msgstr "Se han completado los {} archivos."
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "Archivo {0} de {1}. Queda 1 archivo por empezar."
+msgstr[1] "Archivo {0} de {1}. Quedan {2} archivos por empezar."

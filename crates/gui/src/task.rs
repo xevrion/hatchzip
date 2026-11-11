@@ -12,6 +12,25 @@ use crate::text::{Rate, count, plan_view, reading_text};
 use crate::work::{Counters, Update};
 use crate::{Phase, PlanView, TaskView};
 
+/// Where this archive sits when several were queued from one right-click.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Queue {
+    #[default]
+    Single,
+    Of {
+        at: usize,
+        of: usize,
+    },
+    All {
+        of: usize,
+    },
+    Waiting {
+        at: usize,
+        of: usize,
+        left: usize,
+    },
+}
+
 pub struct Task {
     pub view: TaskView,
     pub plan: PlanView,
@@ -28,6 +47,8 @@ pub struct Task {
     /// The reserve the no-space state offers to go on with, when lowering it
     /// would fit. The window shows it in the button.
     pub lower_reserve: Option<u64>,
+    /// Where this one sits among several, for "Archive 2 of 3".
+    pub queue: Queue,
     name: String,
     is_test: bool,
     restoring: bool,
@@ -95,6 +116,7 @@ impl Task {
             resumable_failure: None,
             warning: None,
             lower_reserve: None,
+            queue: Queue::Single,
             name: name.to_string(),
             is_test,
             restoring: false,

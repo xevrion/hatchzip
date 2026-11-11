@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use slint::{Timer, TimerMode};
 
-use crate::task::Task;
+use crate::task::{Queue, Task};
 use crate::work::{self, Counters, Request, Update};
 use crate::{password, replace};
 
@@ -120,25 +120,20 @@ impl Runner {
     }
 
     /// "Archive 2 of 3" while several are queued, and what is left when one
-    /// stops them.
-    fn step(&self, task: &Task) -> String {
+    /// stops them. The window turns it into a sentence, in its language.
+    fn step(&self, task: &Task) -> Queue {
         let (at, of) = self.place.get();
         if of < 2 {
-            return String::new();
+            return Queue::Single;
         }
         let left = of - at;
         if task.view.phase == crate::Phase::Done && left == 0 {
-            return format!("All {of} archives completed.");
+            return Queue::All { of };
         }
         if task.running() || left == 0 {
-            return format!("Archive {at} of {of}");
+            return Queue::Of { at, of };
         }
-        let rest = if left == 1 {
-            "1 more archive has not started".to_string()
-        } else {
-            format!("{left} more archives have not started")
-        };
-        format!("Archive {at} of {of}. {rest}.")
+        Queue::Waiting { at, of, left }
     }
 
     /// Starts the next queued archive if the current one is done.
@@ -300,7 +295,7 @@ impl Runner {
         let mut task = self.task.borrow_mut();
         if let Some(t) = task.as_mut() {
             f(t);
-            t.view.step = self.step(t).into();
+            t.queue = self.step(t);
             (self.show)(t);
         }
     }

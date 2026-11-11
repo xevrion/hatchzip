@@ -250,6 +250,10 @@ export component MainWindow inherits Window {
 
     public function task-resumable-error(reason: string) -> string { return @tr("{} Progress is saved; the extraction can be resumed.", reason); }
 
+    public function queue-of(at: int, of: int) -> string { return @tr("Archive {} of {}", at, of); }
+    public function queue-all(of: int) -> string { return @tr("All {} archives completed.", of); }
+    public function queue-waiting(at: int, of: int, left: int) -> string { return @tr("Archive {} of {}. 1 more archive has not started." | "Archive {} of {}. {} more archives have not started." % left, at, of, left); }
+
     callback open-archive();
     callback toggle-entry(int, int);
     callback navigate-entry(int, bool) -> int;
