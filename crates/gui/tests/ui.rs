@@ -1213,6 +1213,11 @@ fn windows_end_to_end() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The windows follow the system language, and these flows read English
+    // labels. Slint registers its bundled catalogs with the first component,
+    // so one has to exist before the language can be pinned.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
         minimum_layout_flow(scheme, tag);
