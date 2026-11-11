@@ -137,7 +137,12 @@ fn refused(archive: &Path, out: &Path, says: &str) {
     refused_env(archive, out, says, &[]);
 }
 
-fn refused_env(archive: &Path, out: &Path, says: &str, env: &[(&str, &str)]) {
+fn refused_env(
+    archive: &Path,
+    out: &Path,
+    says: &str,
+    env: &[(&str, &str)],
+) -> std::process::Output {
     let before = fs::read(archive).unwrap();
     let run = extract(archive, out, env);
     assert!(!run.status.success(), "the archive should be refused");
@@ -145,6 +150,7 @@ fn refused_env(archive: &Path, out: &Path, says: &str, env: &[(&str, &str)]) {
     assert!(stderr.contains(says), "{stderr}");
     assert_eq!(fs::read(archive).unwrap(), before);
     assert_no_side_files(archive);
+    run
 }
 
 /// A block with no packed bytes starts where the next block does. Committed
@@ -314,20 +320,16 @@ fn a_7z_with_an_unsupported_method_is_refused_before_it_is_touched() {
     );
     let archive = tmp.path().join("lzs.7z");
     fs::write(&archive, sevenz_with_header_last(&[&first, &second], &h)).unwrap();
-    let before = fs::read(&archive).unwrap();
 
     // One unit per batch, so the Copy block would be committed on its own
     // before the LZS one is reached.
-    let out = tmp.path().join("out");
-    let run = extract(&archive, &out, &[("HATCHZIP_BATCH_ENTRIES", "1")]);
-    assert_eq!(run.status.code(), Some(1), "unsupported, not damaged");
-    let stderr = String::from_utf8_lossy(&run.stderr);
-    assert!(
-        stderr.contains("uses the LZS compression method"),
-        "{stderr}"
+    let run = refused_env(
+        &archive,
+        &tmp.path().join("out"),
+        "uses the LZS compression method",
+        &[("HATCHZIP_BATCH_ENTRIES", "1")],
     );
-    assert_eq!(fs::read(&archive).unwrap(), before);
-    assert_no_side_files(&archive);
+    assert_eq!(run.status.code(), Some(1), "unsupported, not damaged");
 }
 
 /// A tar entry whose data runs past the end of the file, the last thing in
