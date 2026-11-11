@@ -85,47 +85,6 @@ pub fn gb_text(bytes: u64) -> String {
 }
 
 pub fn plan_view(plan: &SpacePlan) -> PlanView {
-    let verdict = if plan.fits {
-        "Sufficient disk space".to_string()
-    } else {
-        let short = plan.needed + plan.keep_free - plan.free;
-        format!(
-            "Insufficient disk space. {} more is required.",
-            human(short)
-        )
-    };
-    let mut notes = Vec::new();
-    // Whichever way was not chosen, when it would change the answer or
-    // offers more. Only a fresh archive can still choose.
-    if plan.either && plan.keep_archive && !plan.fits && plan.in_place_fits() {
-        notes.push(format!(
-            "Removing the archive during extraction requires only {}.",
-            human(plan.in_place_needs)
-        ));
-    }
-    if plan.either && !plan.keep_archive && plan.fits && plan.normal_fits() {
-        notes.push("There is also enough space to keep the archive.".to_string());
-    }
-    if !plan.fits && plan.solid_block_bound {
-        notes.push(
-            "Most of the required space is one solid block, which can only be released after \
-             it is fully extracted."
-                .to_string(),
-        );
-    }
-    if !plan.reclaims && !plan.keep_archive {
-        notes.push(
-            "The destination is on another drive, so removing the archive does not free space there."
-                .to_string(),
-        );
-    }
-    if plan.archive_kept_whole {
-        notes.push(
-            "This drive cannot release space inside a file, so the compressed archive remains \
-             whole until extraction completes."
-                .to_string(),
-        );
-    }
     let used = plan.needed + plan.keep_free;
     PlanView {
         ready: true,
@@ -151,13 +110,40 @@ pub fn plan_view(plan: &SpacePlan) -> PlanView {
         },
         left: human(plan.free_after).into(),
         fits: plan.fits,
-        verdict: verdict.into(),
-        note: notes.join(" ").into(),
+        short: if plan.fits {
+            String::new()
+        } else {
+            human(plan.needed + plan.keep_free - plan.free)
+        }
+        .into(),
+        refusal: "".into(),
+        // Whichever way was not chosen, when it would change the answer or
+        // offers more. Only a fresh archive can still choose.
+        note_in_place: if plan.either && plan.keep_archive && !plan.fits && plan.in_place_fits() {
+            human(plan.in_place_needs)
+        } else {
+            String::new()
+        }
+        .into(),
+        note_keep: plan.either && !plan.keep_archive && plan.fits && plan.normal_fits(),
+        note_solid: !plan.fits && plan.solid_block_bound,
+        note_other_drive: !plan.reclaims && !plan.keep_archive,
+        note_kept_whole: plan.archive_kept_whole,
         meter: if plan.free == 0 {
             1.0
         } else {
             (used as f64 / plan.free as f64).min(1.0) as f32
         },
+    }
+}
+
+/// The first letter in upper case and nothing else touched. `sentence`
+/// also adds a final stop, which is wrong for text that already ends in one.
+pub fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -240,6 +226,16 @@ mod tests {
     }
 
     #[test]
+    fn capitalise_leaves_the_stop_alone() {
+        assert_eq!(
+            capitalise("this archive is solid: x"),
+            "This archive is solid: x"
+        );
+        assert_eq!(capitalise(""), "");
+        assert_eq!(capitalise("Élan"), "Élan");
+    }
+
+    #[test]
     fn keep_free_takes_gigabytes() {
         assert_eq!(parse_gb("2"), Some(2_000_000_000));
         assert_eq!(parse_gb(" 0.5 "), Some(500_000_000));
@@ -315,35 +311,26 @@ mod tests {
         let tight = plan(6_000_000_000, 3_000_000_000, 2_000_000_000);
         let v = plan_view(&kept(tight));
         assert!(!v.fits && v.keep_archive);
-        assert_eq!(
-            v.verdict,
-            "Insufficient disk space. 2.0 GB more is required."
-        );
+        assert_eq!(v.short, "2.0 GB");
         assert_eq!(v.needed, "6.0 GB");
         assert_eq!(v.normal, "6.0 GB");
         assert_eq!(v.in_place, "3.0 GB");
-        assert_eq!(
-            v.note,
-            "Removing the archive during extraction requires only 3.0 GB."
-        );
+        assert_eq!(v.note_in_place, "3.0 GB");
         // In place fits and says nothing about keeping, which doesn't.
         let v = plan_view(&plan(6_000_000_000, 3_000_000_000, 2_000_000_000));
         assert!(v.fits && !v.keep_archive);
-        assert_eq!(v.note, "");
+        assert!(v.note_in_place.is_empty() && !v.note_keep);
 
         let roomy = plan(20_000_000_000, 3_000_000_000, 2_000_000_000);
-        assert_eq!(
-            plan_view(&roomy).note,
-            "There is also enough space to keep the archive."
-        );
-        assert_eq!(plan_view(&kept(roomy)).note, "");
+        assert!(plan_view(&roomy).note_keep);
+        assert!(!plan_view(&kept(roomy)).note_keep);
 
         // Half extracted, a run goes on the way it started.
         let mut resumed = kept(plan(1_000_000_000, 3_000_000_000, 0));
         resumed.either = false;
         let v = plan_view(&resumed);
         assert_eq!(v.in_place, "-");
-        assert_eq!(v.note, "");
+        assert!(v.note_in_place.is_empty());
         let mut resumed = plan(1_000_000_000, 300_000_000, 0);
         resumed.either = false;
         assert_eq!(plan_view(&resumed).normal, "-");
@@ -353,11 +340,11 @@ mod tests {
     fn plans_read_plainly() {
         let fits = plan_view(&plan(10_000_000_000, 3_000_000_000, 2_000_000_000));
         assert!(fits.fits);
-        assert_eq!(fits.verdict, "Sufficient disk space");
+        assert!(fits.short.is_empty() && fits.refusal.is_empty());
         assert_eq!(fits.needed, "3.0 GB");
         assert_eq!(fits.in_place, "3.0 GB");
         assert_eq!(fits.normal, "6.0 GB");
-        assert_eq!(fits.note, "There is also enough space to keep the archive.");
+        assert!(fits.note_keep);
         assert!((fits.meter - 0.5).abs() < 1e-6);
 
         let mut tight = plan(4_000_000_000, 3_000_000_000, 2_000_000_000);
@@ -365,13 +352,10 @@ mod tests {
         tight.reclaims = false;
         let v = plan_view(&tight);
         assert!(!v.fits);
-        assert_eq!(
-            v.verdict,
-            "Insufficient disk space. 1.0 GB more is required."
-        );
+        assert_eq!(v.short, "1.0 GB");
         assert_eq!(v.after, "-");
-        assert!(v.note.contains("solid block"));
-        assert!(v.note.contains("another drive"));
+        assert!(v.note_solid);
+        assert!(v.note_other_drive);
         assert_eq!(v.meter, 1.0);
     }
 }

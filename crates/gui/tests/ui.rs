@@ -126,7 +126,7 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         let ui = w.unwrap();
         ui.get_screen() == Screen::Opened && ui.get_plan().ready
     });
-    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().verdict);
+    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().refusal);
     assert!(
         ui.get_summary().contains("35 entries"),
         "{}",
@@ -293,11 +293,8 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
     ui.invoke_keep_free_edited("100000".into());
     let w = ui.as_weak();
     wait_until("the plan to say no", move || !w.unwrap().get_plan().fits);
-    assert!(
-        ui.get_plan()
-            .verdict
-            .starts_with("Insufficient disk space. ")
-    );
+    assert!(!ui.get_plan().fits);
+    assert!(!ui.get_plan().short.is_empty());
     shot(ui.window(), &format!("{tag}-3-no-fit"));
 
     ui.invoke_keep_free_edited("not a number".into());
@@ -510,9 +507,9 @@ fn keep_flow(scheme: ColorScheme, tag: &str) {
         w.unwrap().get_plan().keep_archive
     });
     let plan = ui.get_plan();
-    assert!(plan.fits, "{}", plan.verdict);
+    assert!(plan.fits, "{}", plan.refusal);
     assert_eq!(plan.needed, plan.normal, "keeping needs every file");
-    assert_eq!(plan.verdict, "Sufficient disk space");
+    assert!(plan.short.is_empty());
     shot(ui.window(), &format!("{tag}-17-keep-opened"));
     wait_until("the choice to be saved", move || {
         Settings::load_from(&settings_file).keep_archive
@@ -952,16 +949,14 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
         free: "21.3 GB".into(),
         needed: "30.4 GB".into(),
         keep: "2.0 GB".into(),
-        note: "Most of this is one solid block, which can only be freed once all of it is out. \
-               Archives packed with smaller blocks need far less."
-            .into(),
+        short: "11.1 GB".into(),
+        note_solid: true,
         ..Default::default()
     });
     ui.set_task(TaskView {
         phase: Phase::NoSpace,
         heading: "Insufficient disk space".into(),
         can_retry: true,
-        message: "Insufficient disk space. 11.1 GB more is required.".into(),
         ..base
     });
     shot(ui.window(), &format!("{tag}-10-task-no-space"));
@@ -1171,8 +1166,7 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
         normal: "8 GB".into(),
         keep: "2 GB".into(),
         after: "38 GB".into(),
-        verdict: "Sufficient disk space".into(),
-        note: "There is also enough space to keep the archive.".into(),
+        note_keep: true,
         ..Default::default()
     };
     ui.set_plan(plan.clone());
@@ -1189,7 +1183,7 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
             fits: false,
             free: "1 GB".into(),
             after: "0 B".into(),
-            verdict: blocked.into(),
+            refusal: blocked.into(),
             ..plan.clone()
         });
         assert_eq!(
@@ -1231,14 +1225,22 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
         shot(ui.window(), &format!("{tag}-{size}-opened"));
 
         // A longer plan must stay scrollable without displacing the actions.
-        let long_note = "A longer disk-space explanation. ".repeat(20);
+        // The last note is the one to look for: only the visible part of a
+        // scroll view is laid out, and after scrolling to the bottom the
+        // notes above it can be out of view on some platforms.
+        let last_note = "This drive cannot release space inside a file, so the compressed \
+                         archive remains whole until extraction completes.";
         ui.set_plan(PlanView {
-            note: long_note.as_str().into(),
+            note_in_place: "500 MB".into(),
+            note_keep: true,
+            note_solid: true,
+            note_other_drive: true,
+            note_kept_whole: true,
             ..plan.clone()
         });
         inside_window(&ui, "Extract");
         scroll_plan(&ui, &pane, -10000.0);
-        let note = ElementHandle::find_by_accessible_label(&ui, &long_note)
+        let note = ElementHandle::find_by_accessible_label(&ui, last_note)
             .next()
             .unwrap();
         shot(ui.window(), &format!("{tag}-{size}-long-plan"));

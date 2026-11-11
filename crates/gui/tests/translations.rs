@@ -217,15 +217,15 @@ fn bundled_hindi_and_english_fallback() {
     assert!(
         window
             .get_plan()
-            .verdict
+            .refusal
             .contains("\"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\""),
         "{}",
-        window.get_plan().verdict
+        window.get_plan().refusal
     );
     assert!(
-        window.get_plan().verdict.ends_with('।'),
+        window.get_plan().refusal.ends_with('।'),
         "{}",
-        window.get_plan().verdict
+        window.get_plan().refusal
     );
     window.hide().unwrap();
     if let Some(dir) = std::env::var_os("HATCHZIP_TRANSLATION_SHOTS") {
@@ -313,7 +313,7 @@ fn bundled_hindi_and_english_fallback() {
     );
     assert_eq!(
         ui.invoke_keep_archive_hint("Reason".into()),
-        "Reason. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
+        "Reason. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
     );
     assert_eq!(ui.invoke_replace_remaining(0, "0".into()), "");
     assert_eq!(ui.invoke_entry_count("35".into(), 35), "35 entries");

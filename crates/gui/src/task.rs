@@ -216,7 +216,8 @@ impl Task {
             Update::NoSpace(plan) => {
                 self.plan = plan_view(&plan);
                 v.phase = Phase::NoSpace;
-                v.message = self.plan.verdict.clone();
+                // The verdict is shown from the plan itself, where it can be
+                // translated; nothing left for the message.
                 v.can_retry = true;
                 // The reserve is the only thing in the way: offer the largest
                 // one that still fits, in round numbers a person would type.
@@ -603,11 +604,10 @@ mod tests {
         t.apply(Update::NoSpace(plan));
         assert_eq!(t.view.phase, Phase::NoSpace);
         assert!(t.view.can_retry);
-        assert_eq!(
-            t.view.message,
-            "Insufficient disk space. 6.0 GB more is required."
-        );
-        assert!(t.plan.note.contains("solid block"));
+        // The plan carries the verdict now, and the window shows it from there.
+        assert_eq!(t.view.message, "");
+        assert_eq!(t.plan.short, "6.0 GB");
+        assert!(t.plan.note_solid);
         assert!(!t.running());
     }
 
