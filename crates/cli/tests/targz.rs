@@ -134,7 +134,7 @@ fn allocated_for_punch(path: &Path) -> Option<u64> {
     Some((u64::from(high) << 32) | u64::from(low))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn allocated_for_punch(path: &Path) -> Option<u64> {
     allocated(path)
 }
@@ -697,7 +697,7 @@ fn the_space_check_for_a_tar_gz_counts_freeing_only_where_it_works() {
     );
     assert!(whole >= total as f64, "without punching it needs {whole}");
     assert!(said.contains("remains whole"), "{said}");
-    // NTFS frees in units of up to 1 MiB, so the plan keeps a granule at each
+    // NTFS frees in units of up to 1 MiB, so the plan keeps a margin at each
     // end of the punched range there, which eats most of the saving on an
     // archive this small. It must still need less.
     let saving = if cfg!(windows) { 0.0 } else { 2e6 };
@@ -925,15 +925,14 @@ fn a_gzip_file_that_is_not_a_tar_is_refused() {
     assert_eq!(fs::read(&archive).unwrap(), bytes);
 }
 
-/// Points closer together than a punch granule still free space. NTFS aligns
-/// a punch to 64 KiB and APFS to 4 KiB, so with a point every 50 KiB NTFS
-/// freed nothing at all while the next punch started at the previous byte:
+/// Points closer together than the block a punch rounds to still free space.
+/// NTFS rounds a punch inwards to 64 KiB and APFS to its block size, so with
+/// a point every 50 KiB and the next punch starting at the previous byte,
 /// every range rounded inwards to nothing and the archive was only freed at
-/// the end. With the overlap each punch covers the granule the previous one
-/// left behind. The test runs where the allocation can be measured.
-#[cfg(any(windows, target_os = "macos"))]
+/// the end. Starting one overlap earlier covers the block the previous punch
+/// left behind.
 #[test]
-fn points_closer_than_a_punch_granule_still_free_space() {
+fn points_closer_than_a_block_still_free_space() {
     if std::env::var_os("HATCHZIP_EXPECT_PUNCH").is_none() {
         // The assertion needs a filesystem whose punch probe frees space;
         // CI sets this, a plain local run does not.
@@ -962,6 +961,6 @@ fn points_closer_than_a_punch_granule_still_free_space() {
     let freed = before.saturating_sub(used);
     assert!(
         freed >= 256 * 1024,
-        "only {freed} bytes freed of {before}; points 50 KiB apart inside a 64 KiB punch granule freed nothing"
+        "only {freed} bytes freed of {before}; points 50 KiB apart inside a 64 KiB punch unit freed nothing"
     );
 }

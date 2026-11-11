@@ -706,7 +706,7 @@ fn the_space_check_for_a_tar_xz_counts_freeing_only_where_it_works() {
     );
     assert!(whole >= total as f64, "without punching it needs {whole}");
     assert!(said.contains("remains whole"), "{said}");
-    // NTFS frees in units of up to 1 MiB, and the plan keeps a granule at each
+    // NTFS frees in units of up to 1 MiB, and the plan keeps a margin at each
     // end of the punched range: with 1 MiB blocks that eats the whole saving,
     // so there it may need as much as keeping, never more. Elsewhere it must
     // need less.
