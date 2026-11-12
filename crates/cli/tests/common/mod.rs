@@ -56,6 +56,18 @@ pub fn state_dir() -> PathBuf {
     Path::new(env!("CARGO_TARGET_TMPDIR")).join("chosen-outputs")
 }
 
+/// Puts a link at `path` that points nowhere. Windows can only make one with
+/// Developer Mode on or as admin, so tests step aside when this returns
+/// false.
+pub fn dangling_link(target: &Path, path: &Path) -> bool {
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, path).is_ok();
+    #[cfg(windows)]
+    return std::os::windows::fs::symlink_file(target, path).is_ok();
+    #[cfg(not(any(unix, windows)))]
+    return false;
+}
+
 pub fn hatchzip(args: &[&str], env: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_hatchzip"));
     cmd.args(args);

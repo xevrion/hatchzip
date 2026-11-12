@@ -277,6 +277,69 @@ fn refuses_when_a_file_sits_where_a_folder_must_go() {
     assert!(archive.exists());
 }
 
+/// A file where the destination goes used to fail after the tail and the
+/// journal were written, and the message promised a resume that would fail
+/// the same way every time.
+#[test]
+fn refuses_a_file_at_the_destination_before_writing_anything() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build_zip(tmp.path(), &sample_files());
+    let out = tmp.path().join("taken");
+    fs::write(&out, "a file, not a folder").unwrap();
+    let before = fs::read(&archive).unwrap();
+
+    let run = extract(&archive, &out, &[]);
+    assert_eq!(run.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("is a file, not a folder"), "{stderr}");
+    assert!(!stderr.contains("Progress is saved"), "{stderr}");
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    assert_no_side_files(&archive);
+    assert_eq!(fs::read_to_string(&out).unwrap(), "a file, not a folder");
+}
+
+#[test]
+fn refuses_a_file_above_the_destination() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build_zip(tmp.path(), &sample_files());
+    let above = tmp.path().join("taken");
+    fs::write(&above, "a file, not a folder").unwrap();
+    let out = above.join("out");
+    let before = fs::read(&archive).unwrap();
+
+    let run = extract(&archive, &out, &[]);
+    assert_eq!(run.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("cannot be created") && stderr.contains("is a file, not a folder"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    assert_no_side_files(&archive);
+}
+
+/// A dangling link at the path looks absent to `exists`, so it used to reach
+/// the same failure after the journal was written. Windows needs Developer
+/// Mode to create one; the test steps aside where the machine cannot.
+#[test]
+fn refuses_a_dangling_link_at_the_destination() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build_zip(tmp.path(), &sample_files());
+    let out = tmp.path().join("dangling");
+    if !dangling_link(&tmp.path().join("missing"), &out) {
+        return;
+    }
+    let before = fs::read(&archive).unwrap();
+
+    let run = extract(&archive, &out, &[]);
+    assert_eq!(run.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("is not a folder"), "{stderr}");
+    assert!(!stderr.contains("Progress is saved"), "{stderr}");
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    assert_no_side_files(&archive);
+}
+
 #[test]
 fn refuses_paths_that_escape_the_output_folder() {
     let tmp = TempDir::new().unwrap();
