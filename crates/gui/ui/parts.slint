@@ -26,6 +26,9 @@ export struct PlanView {
     needed: string,
     keep: string,
     after: string,
+    // What would be left once the extraction finishes, whatever the plan
+    // says about fitting. The offer to lower the reserve uses it too.
+    left: string,
     fits: bool,
     verdict: string,
     note: string,
@@ -53,6 +56,11 @@ export struct TaskView {
     can-retry: bool,
     // Paused or stopped halfway: offer to undo it.
     can-give-back: bool,
+    // The plan is short only because of the reserve, and the extraction
+    // would fit with less of it: whether there is such an offer, and the
+    // amount to name in it. An empty amount means it fits with no reserve.
+    lower-reserve: bool,
+    reserve-amount: string,
 }
 
 component Row inherits HorizontalLayout {
@@ -207,12 +215,16 @@ export component TaskButtons inherits HorizontalLayout {
     in property <TaskView> task;
     // The task window offers Close; the main window has its own way out.
     in property <bool> closable;
+    // The task window offers to go on with a smaller reserve; the main
+    // window has the field, so it does not.
+    in property <bool> offer-reserve: false;
     callback pause();
     callback resume();
     callback open-folder();
     callback close();
     callback back();
     callback give-back();
+    callback lower-reserve();
 
     alignment: end;
     spacing: 8px;
@@ -255,6 +267,13 @@ export component TaskButtons inherits HorizontalLayout {
         text: root.task.phase == Phase.no-space ? @tr("Check again") : @tr("Retry");
         clicked => {
             root.resume();
+        }
+    }
+    if root.offer-reserve && root.task.lower-reserve: Button {
+        text: root.task.reserve-amount == "" ? @tr("Extract without a reserve") : @tr("Extract with {} reserved", root.task.reserve-amount);
+        primary: true;
+        clicked => {
+            root.lower-reserve();
         }
     }
     if root.task.phase == Phase.done && root.task.can-open-folder: Button {

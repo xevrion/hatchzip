@@ -376,3 +376,15 @@ msgstr "लिंक"
 
 msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
 msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें।"
+
+msgid "Extract with {} reserved"
+msgstr "{} आरक्षित करके एक्सट्रैक्ट करें"
+
+msgid "Extract without a reserve"
+msgstr "बिना आरक्षित जगह के एक्सट्रैक्ट करें"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "रास्ते में केवल आरक्षित जगह है: {} चाहिए और {} उपलब्ध है, इसलिए {} आरक्षित रखकर इसे चलाया जा सकता है, और पूरा होने पर {} बचेगा।"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "रास्ते में केवल आरक्षित जगह है: {} चाहिए और {} उपलब्ध है, इसलिए इसे बिना आरक्षित जगह के चलाया जा सकता है, और पूरा होने पर {} बचेगा।"

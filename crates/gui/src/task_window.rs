@@ -142,6 +142,8 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
     });
     let r = runner.clone();
     ui.on_give_back(move || r.give_back());
+    let r = runner.clone();
+    ui.on_lower_reserve(move || r.lower_reserve());
     crate::password::host_in!(ui);
     crate::replace::host_in!(ui);
     let r = runner.clone();
