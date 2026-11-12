@@ -319,14 +319,16 @@ fn refuses_a_file_above_the_destination() {
 }
 
 /// A dangling link at the path looks absent to `exists`, so it used to reach
-/// the same failure after the journal was written.
-#[cfg(unix)]
+/// the same failure after the journal was written. Windows needs Developer
+/// Mode to create one; the test steps aside where the machine cannot.
 #[test]
 fn refuses_a_dangling_link_at_the_destination() {
     let tmp = TempDir::new().unwrap();
     let archive = build_zip(tmp.path(), &sample_files());
     let out = tmp.path().join("dangling");
-    std::os::unix::fs::symlink(tmp.path().join("missing"), &out).unwrap();
+    if !dangling_link(&tmp.path().join("missing"), &out) {
+        return;
+    }
     let before = fs::read(&archive).unwrap();
 
     let run = extract(&archive, &out, &[]);
