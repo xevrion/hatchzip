@@ -211,6 +211,22 @@ impl Solid {
     }
 }
 
+/// Whether the xz stream opens with a tar header, reading only as far as the
+/// first one. Used to tell a nested `.tar.xz` from a compressed file that is
+/// not an archive, before either is offered.
+pub(crate) fn holds_tar(storage: &Arc<Storage>) -> bool {
+    let Ok(solid) = Solid::new(storage.clone(), None) else {
+        return false;
+    };
+    let Ok(mut walk) = solid.walk(None) else {
+        return false;
+    };
+    matches!(
+        walk.next(usize::MAX),
+        Ok(crate::archive::targz::Event::Entry { .. })
+    )
+}
+
 /// Walks the archive from `from`, or from its start, listing what is left
 /// and measuring it. Damage anywhere is found here, before anything is
 /// touched.

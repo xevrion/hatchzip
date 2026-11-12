@@ -560,7 +560,8 @@ pub fn detect(path: &Path) -> Option<&'static str> {
         return Some("tar");
     }
     if starts(b"\xFD7zXZ\x00") {
-        return Some(tarxz::NAME);
+        let storage = Arc::new(Storage::open(path, false).ok()?);
+        return tarxz::holds_tar(&storage).then_some(tarxz::NAME);
     }
     if starts(b"Rar!\x1A\x07") {
         return cfg!(feature = "rar").then_some(RAR);
@@ -579,29 +580,35 @@ pub fn detect(path: &Path) -> Option<&'static str> {
     None
 }
 
-/// Every archive directly or indirectly inside `dir`, by signature, without
-/// following links. Sorted, so two runs see the same order.
-pub fn find_nested(dir: &Path) -> Vec<PathBuf> {
-    fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
-        let Ok(entries) = fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(meta) = fs::symlink_metadata(&path) else {
-                continue;
-            };
-            if meta.is_dir() {
-                walk(&path, found);
-            } else if meta.is_file() && detect(&path).is_some() {
-                found.push(path);
-            }
-        }
-    }
-    let mut found = Vec::new();
-    walk(dir, &mut found);
-    found.sort();
-    found
+/// The format `path` holds if its name claims an archive format and its
+/// signature agrees. Both matter: `.jar`, `.docx`, `.pk3` and `.apk` are
+/// ZIPs, and `.ova` and `.gem` are tars, and none of them should be offered.
+pub fn nested_kind(path: &Path) -> Option<&'static str> {
+    let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    let expected = if name.ends_with(".zip") {
+        "zip"
+    } else if name.ends_with(".7z") {
+        "7z"
+    } else if name.ends_with(".tar") {
+        "tar"
+    } else if [".tar.gz", ".tgz", ".taz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        targz::NAME
+    } else if [".tar.xz", ".txz"].iter().any(|e| name.ends_with(e)) {
+        tarxz::NAME
+    } else if [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        tarbz2::NAME
+    } else if name.ends_with(".rar") {
+        RAR
+    } else {
+        return None;
+    };
+    (detect(path)? == expected).then_some(expected)
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
