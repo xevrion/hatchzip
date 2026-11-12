@@ -94,11 +94,11 @@ msgstr "Reanudar extracción"
 msgid "Finish"
 msgstr "Finalizar"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
-msgstr "O arrastra un archivo a esta ventana. Formatos compatibles: ZIP, 7z, tar, tar.gz, tar.xz y archivos divididos."
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives."
+msgstr "O arrastra un archivo a esta ventana. Formatos compatibles: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz y archivos divididos."
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
-msgstr "O arrastra un archivo a esta ventana. Formatos compatibles: ZIP, 7z, tar, tar.gz, tar.xz, RAR y archivos divididos."
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives."
+msgstr "O arrastra un archivo a esta ventana. Formatos compatibles: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR y archivos divididos."
 
 msgid "Opening {}…"
 msgstr "Abriendo {}…"

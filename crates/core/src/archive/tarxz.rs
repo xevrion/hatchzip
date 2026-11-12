@@ -554,6 +554,8 @@ impl Feed for XzFeed {
                 member_len: 0,
                 window: Vec::new(),
                 block: self.block as u64,
+                level: None,
+                combined_crc: None,
                 tar_pos,
                 at,
             })),
@@ -600,6 +602,7 @@ impl Walker {
                         match s.kind {
                             CodecKind::Gzip => "a gzip member of a",
                             CodecKind::Xz => "an xz block of a",
+                            CodecKind::Bzip2 => "a bzip2 block of a",
                         }
                     );
                 }

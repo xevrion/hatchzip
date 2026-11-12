@@ -65,11 +65,11 @@ pub struct Resume {
     /// Bytes of output in `<name>.hatchzip-part`, flushed. Anything the file
     /// holds past this was written after the point and is thrown away.
     pub written: u64,
-    /// Where decoding restarts, in bits from the start of the archive. Only
-    /// deflate streams ever stop between two bytes.
+    /// Where decoding restarts, in bits from the start of the archive. Deflate
+    /// and bzip2 blocks can stop between two bytes.
     pub bit: u64,
     /// CRC-32 of the first `written` bytes of output. Unused for a
-    /// compressed tar, whose checksums are per gzip member, in `stream`.
+    /// compressed tar, whose checksums are per gzip member or bzip2 stream, in `stream`.
     pub crc: u32,
     /// For a compressed tar, where one stream holds every entry: the
     /// decoder's and the tar parser's state at `bit`. `written` is then how

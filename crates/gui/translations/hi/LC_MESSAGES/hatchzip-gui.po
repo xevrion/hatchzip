@@ -94,11 +94,11 @@ msgstr "एक्सट्रैक्शन फिर शुरू करें
 msgid "Finish"
 msgstr "पूरा करें"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz और विभाजित आर्काइव।"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz, RAR और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR और विभाजित आर्काइव।"
 
 msgid "Opening {}…"
 msgstr "{} खोला जा रहा है…"

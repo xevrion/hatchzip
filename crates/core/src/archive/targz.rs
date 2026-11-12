@@ -52,11 +52,11 @@ pub struct StreamPoint {
     /// codec then.
     #[serde(default, skip_serializing_if = "CodecKind::is_gzip")]
     pub kind: CodecKind,
-    /// Gzip: the point is where a gzip member's header begins, not a
-    /// deflate block boundary inside a member. Written even at its default,
-    /// and so are the three below: 0.1.8 reads this journal structure and
-    /// has no defaults, so a field left out makes it report the journal as
-    /// damaged. Only fields added after 0.1.8 may be omitted.
+    /// Gzip or bzip2: the point is where a gzip member's or a bzip2
+    /// stream's header begins, not a block boundary inside one. Written even
+    /// at its default, and so are the three below: 0.1.8 reads this journal
+    /// structure and has no defaults, so a field left out makes it report
+    /// the journal as damaged. Only fields added after 0.1.8 may be omitted.
     #[serde(default)]
     pub member_start: bool,
     /// Gzip: CRC-32 and length of the member's output before the point,
@@ -76,6 +76,12 @@ pub struct StreamPoint {
     /// begins. The blocks before it never need decoding again.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub block: u64,
+    /// Bzip2: the stream's level digit and the combined CRC of its blocks
+    /// before the point, which the stream trailer is checked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combined_crc: Option<u32>,
     /// Offset of the point in the uncompressed tar.
     pub tar_pos: u64,
     pub at: TarAt,
@@ -90,6 +96,7 @@ pub enum CodecKind {
     #[default]
     Gzip,
     Xz,
+    Bzip2,
 }
 
 impl CodecKind {
@@ -242,6 +249,8 @@ impl Feed for Gzip {
                 member_len: point.len,
                 window: point.window,
                 block: 0,
+                level: None,
+                combined_crc: None,
                 tar_pos,
                 at,
             })),
@@ -580,6 +589,7 @@ impl Walker {
                         match s.kind {
                             CodecKind::Gzip => "a gzip member of",
                             CodecKind::Xz => "an xz block of",
+                            CodecKind::Bzip2 => "a bzip2 block of",
                         }
                     );
                 }
@@ -787,6 +797,8 @@ mod tests {
             member_len: 0,
             window: Vec::new(),
             block: 0,
+            level: None,
+            combined_crc: None,
             tar_pos: 0,
             at: TarAt::Boundary,
         };
@@ -802,5 +814,10 @@ mod tests {
         }
         assert!(json.get("kind").is_none(), "kind is new and stays out");
         assert!(json.get("block").is_none(), "block is new and stays out");
+        assert!(json.get("level").is_none(), "level is new and stays out");
+        assert!(
+            json.get("combined_crc").is_none(),
+            "combined_crc is new and stays out"
+        );
     }
 }
