@@ -136,6 +136,31 @@ pub fn sync_dir(_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Truncates through `SetEndOfFile`, which makes NTFS free the clusters at
+/// once. Rust's `File::set_len` goes through `SetFileInformationByHandle`
+/// instead, and the freed space stays invisible to free-space queries until
+/// that handle closes.
+pub fn set_len_now(file: &File, len: u64) -> io::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_BEGIN, SetEndOfFile, SetFilePointerEx};
+
+    let mut f = file;
+    let at = f.stream_position()?;
+    let h = f.as_raw_handle() as HANDLE;
+    if unsafe { SetFilePointerEx(h, len as i64, std::ptr::null_mut(), FILE_BEGIN) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { SetEndOfFile(h) } == 0 {
+        let e = io::Error::last_os_error();
+        let _ = f.seek(SeekFrom::Start(at));
+        return Err(e);
+    }
+    f.seek(SeekFrom::Start(at))?;
+    Ok(())
+}
+
 pub fn same_filesystem(a: &Path, b: &Path) -> bool {
     let volume = |p: &Path| {
         fs::canonicalize(p)
@@ -435,6 +460,9 @@ unsafe extern "C" {}
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{self, File};
+    use std::io::Write;
+
     /// `GetFinalPathNameByHandleW` answers verbatim paths, which the volume
     /// queries below don't take everywhere.
     #[test]
@@ -446,5 +474,31 @@ mod tests {
         );
         assert_eq!(super::plain_path(r"C:\a"), r"C:\a");
         assert_eq!(super::plain_path(r"\\host\share\a"), r"\\host\share\a");
+    }
+
+    /// The archive handle stays open for the whole run, so a truncation has
+    /// to show up in free space before that handle closes. Rust's own
+    /// `File::set_len` only makes NTFS release the clusters on close, which
+    /// made the next batch believe the disk was full (#79).
+    #[test]
+    fn truncating_returns_space_before_the_handle_closes() {
+        let dir = std::env::temp_dir().join(format!("hatchzip-set-len-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("archive.bin");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(&vec![0u8; 32 << 20]).unwrap();
+        file.sync_all().unwrap();
+
+        let before = crate::fsutil::available_space(&dir).unwrap();
+        super::set_len_now(&file, 0).unwrap();
+        let after = crate::fsutil::available_space(&dir).unwrap();
+
+        drop(file);
+        let _ = fs::remove_dir_all(&dir);
+        assert!(
+            after >= before + (16 << 20),
+            "free space stayed at {before} (now {after}) until the handle closed"
+        );
     }
 }

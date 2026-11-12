@@ -82,6 +82,12 @@ pub fn allocated_bytes(path: &Path) -> io::Result<u64> {
     Ok(fs::metadata(path)?.blocks() * 512)
 }
 
+/// `ftruncate` gives the space back before it returns on the filesystems
+/// HatchZip runs on.
+pub fn set_len_now(file: &File, len: u64) -> io::Result<()> {
+    file.set_len(len)
+}
+
 /// The moment a wall-clock time names in the local zone, with the offset in
 /// effect at that date rather than today's.
 pub fn local_time(
