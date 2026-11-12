@@ -142,3 +142,41 @@ fn a_link_is_not_followed_or_extracted() {
     assert!(outside.exists(), "what it points at is untouched");
     assert!(!out.join("link").exists(), "nothing was extracted");
 }
+
+/// The scan must not follow a Windows link either. An archive cannot carry
+/// one, so the link is left in the output between two runs, the way a user
+/// would. Windows makes links only with Developer Mode on or as admin; the
+/// test steps aside where the machine cannot.
+#[cfg(windows)]
+#[test]
+fn a_windows_link_is_not_followed_or_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let outside = tmp.path().join("outside.zip");
+    fs::write(&outside, zip_bytes(&[("x.txt", b"x")])).unwrap();
+
+    let first = zip_bytes(&[("holder.zip", &zip_bytes(&[("y.txt", b"y")]))]);
+    let archive = tmp.path().join("outer1.zip");
+    fs::write(&archive, first).unwrap();
+    let out = tmp.path().join("out");
+    assert_ok(&extract_nested(&archive, &out));
+
+    if std::os::windows::fs::symlink_file(&outside, out.join("link.zip")).is_err() {
+        return;
+    }
+
+    let second = zip_bytes(&[("holder2.zip", &zip_bytes(&[("z.txt", b"z")]))]);
+    let archive = tmp.path().join("outer2.zip");
+    fs::write(&archive, second).unwrap();
+    assert_ok(&extract_nested(&archive, &out));
+
+    let link = out.join("link.zip");
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the link survives"
+    );
+    assert!(outside.exists(), "what it points at is untouched");
+    assert!(!out.join("link").exists(), "nothing was extracted");
+}
