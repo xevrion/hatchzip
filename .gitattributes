@@ -11,3 +11,4 @@
 
 # Generated. Collapsed in pull request diffs and excluded from language stats.
 Cargo.lock linguist-generated=true -diff
+*.zst binary

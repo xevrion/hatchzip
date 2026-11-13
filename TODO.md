@@ -27,7 +27,7 @@ Ticked when it is merged and tested, not when it is started.
 ## Requested after launch
 
 - [x] `.tar.gz`, for datasets
-- [ ] `.tar.zst` and `.tar.xz` (see Formats)
+- [x] `.tar.zst` and `.tar.xz` (see Formats)
 - [ ] RAR, single files and volume sets (`.part1.rar`, `.rar` with `.r00`, ...) (implemented, awaiting merge: freed file by file, volumes deleted as they empty, a big stored file freed while it is written; solid RAR only with `--keep-archive`; behind the `rar` cargo feature, on in the release builds; encrypted file names (`-hp`) with the password, but no `restore` for them; no links; see Formats)
 - [ ] Native split ZIP (`.z01`, ...) (see Formats)
 - [ ] Check the volumes against an `.sfv` file next to the archive before starting, and stop if one doesn't match
@@ -91,8 +91,8 @@ Ticked when it is merged and tested, not when it is started.
 - [x] Free space inside one large file while extracting it (hole punching plus durable resume points): stored and Deflate ZIP entries, tar entries; space really freed on ext4, APFS and NTFS (CI requires it)
 - [ ] The same inside a 7z solid block (LZMA2 resume points); fixes 7z made with 7-Zip's default settings
 - [x] `.tar.gz` and `.tgz`, freeing the compressed bytes behind the decoder, with resume points at deflate block and gzip member boundaries; space really freed on ext4, APFS and NTFS (CI)
-- [ ] `.tar.xz`: every xz block start is a free resume point (xz 5.8 writes 24 MiB blocks by default); a single-block file needs the LZMA state saved. See `docs/formats.md`
-- [ ] `.tar.zst`: easy for multi-frame files (`pzstd`), but the usual single frame needs a decoder that can save its window. See `docs/formats.md`
+- [x] `.tar.xz`: every xz block start is a free resume point (xz 5.8 writes 24 MiB blocks by default); a single-block file needs the LZMA state saved. See `docs/formats.md`
+- [x] `.tar.zst`: a frame start is a free resume point, so multi-frame files are freed frame by frame and the usual single frame is extracted only while the archive is kept. See `docs/formats.md`
 - [ ] RAR (implemented, awaiting merge: per file, not per volume, with the crash tests at every commit for RAR 5 and RAR 4 sets and single files; RAR 5 passwords proven by the check value, RAR 4 by decoding the smallest encrypted file; `restore`; fixtures from RAR 6.24 including real RAR 4; tests pass on Linux, CI runs them on macOS and Windows; x86_64 musl release build linked and run locally, aarch64 linked locally but only run in CI)
 - [ ] RAR: symbolic links and hard links, and solid archives in place, which needs a decoder whose state can be saved (UnRAR's can't)
 - [ ] RAR encrypted file names (`-hp`) (implemented, awaiting merge: headers decrypted in Rust, RAR 5 with AES-256 and the check value of the archive encryption header, RAR 4 with AES-128 and RAR 3's SHA-1 key derivation; fixtures from RAR 6.24, single and multi-volume, crash tests at every commit; Windows and macOS only in CI)

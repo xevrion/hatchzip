@@ -1990,6 +1990,7 @@ dependencies = [
  "tempfile",
  "winresource",
  "zip",
+ "zstd",
 ]
 
 [[package]]
@@ -2017,6 +2018,7 @@ dependencies = [
  "unrar-ng-sys",
  "windows-sys 0.61.2",
  "zip",
+ "zstd",
 ]
 
 [[package]]

@@ -29,12 +29,13 @@ const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
 /// RAR set; any volume opens the whole set.
 const ARCHIVE_EXTENSIONS: &[&str] = if hatchzip_core::archive::RAR_SUPPORTED {
     &[
-        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "rar", "r00", "exe",
-        "001",
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "rar",
+        "r00", "exe", "001",
     ]
 } else {
     &[
-        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "exe", "001",
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "exe",
+        "001",
     ]
 };
 

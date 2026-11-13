@@ -165,7 +165,7 @@ export component MainWindow inherits Window {
     in-out property <bool> close-when-done: true;
     // The formats line under the Open button; RAR only in builds with it.
     in property <bool> supports-rar;
-    in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives.");
+    in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives.");
     // The half-extracted run being resumed keeps its archive.
     in property <bool> kept-run;
     in property <TaskView> task;
