@@ -44,6 +44,9 @@ pub struct Task {
     pub resumable_failure: Option<String>,
     /// What the finished run could not do, shown after its result.
     pub warning: Option<String>,
+    /// The person closed the password or replace prompt, so the run never
+    /// started.
+    pub cancelled: bool,
     /// The reserve the no-space state offers to go on with, when lowering it
     /// would fit. The window shows it in the button.
     pub lower_reserve: Option<u64>,
@@ -115,6 +118,7 @@ impl Task {
             restore_result: None,
             resumable_failure: None,
             warning: None,
+            cancelled: false,
             lower_reserve: None,
             queue: Queue::Single,
             name: name.to_string(),
@@ -218,6 +222,7 @@ impl Task {
                 self.restore_result = None;
                 self.resumable_failure = None;
                 self.warning = None;
+                self.cancelled = false;
                 v.fraction = 0.0;
                 v.amounts = "".into();
                 v.rate = "".into();
@@ -228,12 +233,8 @@ impl Task {
             Update::Unlocked(_) => {}
             Update::Planned(plan) => {
                 self.plan = plan_view(&plan);
-                v.space = format!(
-                    "Required: {}. Available: {}.",
-                    human(plan.needed),
-                    human(plan.free)
-                )
-                .into();
+                // The window builds "Required / Available" from the plan, in
+                // its own language, when it shows the view.
             }
             Update::NoSpace(plan) => {
                 self.plan = plan_view(&plan);
@@ -342,6 +343,7 @@ impl Task {
                 v.message = message.into();
             }
             Update::Failed(f) => {
+                self.cancelled = f.cancelled;
                 self.resumable_failure = f.resumable.then(|| f.message.clone());
                 v.phase = Phase::Failed;
                 v.rate = "".into();
@@ -459,7 +461,10 @@ mod tests {
             2_000_000_000,
             41_500_000,
         )));
-        assert_eq!(t.view.space, "Required: 3.5 MB. Available: 7.8 GB.");
+        // The window builds the "Required / Available" line from the plan.
+        assert_eq!(t.view.space, "");
+        assert_eq!(t.plan.needed, "3.5 MB");
+        assert_eq!(t.plan.free, "7.8 GB");
         assert_eq!(t.view.phase, Phase::Checking, "it fits, so it carries on");
 
         t.apply(working(false));
@@ -523,6 +528,7 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "Disk full.".into(),
             resumable: true,
+            cancelled: false,
         }));
         assert!(!t.view.can_give_back);
         assert!(t.view.can_retry);
@@ -692,6 +698,7 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "Disk full.".into(),
             resumable: true,
+            cancelled: false,
         }));
         assert_eq!(t.view.phase, Phase::Failed);
         assert_eq!(t.view.heading, "Extraction failed");
@@ -705,6 +712,7 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "The archive is damaged".into(),
             resumable: false,
+            cancelled: false,
         }));
         assert!(!t.view.can_retry);
         assert_eq!(t.view.message, "The archive is damaged");

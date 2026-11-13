@@ -22,8 +22,8 @@ use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
 use crate::{
-    AboutWindow, LanguageItem, MainWindow, Mode, PlanView, Screen, TaskView, locale, platform,
-    shell,
+    AboutWindow, LanguageItem, MainWindow, Messages, Mode, PlanView, Screen, TaskView, locale,
+    platform, shell,
 };
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
@@ -215,7 +215,7 @@ pub fn build(
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(text::localize(task, &ui));
+            ui.set_task(text::localize(task, &ui.global::<Messages>()));
         }
     });
     let app = Rc::new(App {
@@ -412,7 +412,10 @@ impl App {
                     && f < 1.0
                     && start.elapsed() >= Duration::from_millis(500)
                 {
-                    ui.set_loading_detail(ui.invoke_reading_archive((f * 100.0).floor() as i32));
+                    ui.set_loading_detail(
+                        ui.global::<Messages>()
+                            .invoke_reading_archive((f * 100.0).floor() as i32),
+                    );
                 }
             });
         // Opening the same archive again, after a run, needn't ask again.
@@ -484,23 +487,31 @@ impl App {
             return;
         };
         let ui = self.ui();
+        let messages = ui.global::<Messages>();
         let mut parts = Vec::new();
         if let Some((format, count, size)) = &facts.archive {
-            parts.push(ui.invoke_archive_kind(format.as_str().into()).to_string());
-            let entries = ui.invoke_entry_count(text::count(*count).into(), plural_count(*count));
+            parts.push(
+                messages
+                    .invoke_archive_kind(format.as_str().into())
+                    .to_string(),
+            );
+            let entries =
+                messages.invoke_entry_count(text::count(*count).into(), plural_count(*count));
             match facts.left {
                 None => {
                     parts.push(human(*size));
                     parts.push(entries.to_string());
                 }
                 Some(left) => parts.push(
-                    ui.invoke_remaining_summary(human(left).into(), entries)
+                    messages
+                        .invoke_remaining_summary(human(left).into(), entries)
                         .to_string(),
                 ),
             }
         }
         parts.push(
-            ui.invoke_uncompressed_summary(human(facts.total).into())
+            messages
+                .invoke_uncompressed_summary(human(facts.total).into())
                 .to_string(),
         );
         ui.set_summary(parts.join(" \u{b7} ").into());
@@ -533,7 +544,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                refusal: ui.invoke_no_entries(),
+                refusal: ui.global::<Messages>().invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -571,7 +582,9 @@ impl App {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
-                        view.refusal = ui.invoke_keep_archive_hint(text::capitalise(&why).into());
+                        view.refusal = ui
+                            .global::<Messages>()
+                            .invoke_keep_archive_hint(text::capitalise(&why).into());
                     }
                     ui.set_plan(view);
                 }
@@ -616,8 +629,20 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (app.ui().invoke_menu_added().to_string(), false),
-                    Ok(()) => (app.ui().invoke_menu_removed().to_string(), false),
+                    Ok(()) if on => (
+                        app.ui()
+                            .global::<Messages>()
+                            .invoke_menu_added()
+                            .to_string(),
+                        false,
+                    ),
+                    Ok(()) => (
+                        app.ui()
+                            .global::<Messages>()
+                            .invoke_menu_removed()
+                            .to_string(),
+                        false,
+                    ),
                     Err(e) => {
                         // Show the box as it really is.
                         app.ui().set_shell_menu_on(!on);
@@ -649,9 +674,15 @@ impl App {
         }
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_open_archive_title().as_str())
-            .add_filter(ui.invoke_archives_filter().as_str(), &picker_extensions())
-            .add_filter(ui.invoke_all_files_filter().as_str(), &["*"])
+            .set_title(ui.global::<Messages>().invoke_open_archive_title().as_str())
+            .add_filter(
+                ui.global::<Messages>().invoke_archives_filter().as_str(),
+                &picker_extensions(),
+            )
+            .add_filter(
+                ui.global::<Messages>().invoke_all_files_filter().as_str(),
+                &["*"],
+            )
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
             dialog = dialog.set_directory(dir);
@@ -672,7 +703,7 @@ impl App {
         // looking that up needs no disk access on this thread.
         let start = current.parent();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_destination_title().as_str())
+            .set_title(ui.global::<Messages>().invoke_destination_title().as_str())
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);
@@ -803,9 +834,9 @@ impl App {
 
 fn show_shell_menu_label(ui: &MainWindow) {
     ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
-        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
-        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
-        platform::ShellMenuName::Files => ui.invoke_shell_files(),
+        platform::ShellMenuName::Explorer => ui.global::<Messages>().invoke_shell_explorer(),
+        platform::ShellMenuName::Finder => ui.global::<Messages>().invoke_shell_finder(),
+        platform::ShellMenuName::Files => ui.global::<Messages>().invoke_shell_files(),
     });
 }
 
