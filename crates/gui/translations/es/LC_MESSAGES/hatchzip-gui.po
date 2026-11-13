@@ -423,3 +423,15 @@ msgid "Archive {} of {}. 1 more archive has not started."
 msgid_plural "Archive {} of {}. {} more archives have not started."
 msgstr[0] "Archivo {0} de {1}. Queda 1 archivo por empezar."
 msgstr[1] "Archivo {0} de {1}. Quedan {2} archivos por empezar."
+
+msgid "Required: {}. Available: {}."
+msgstr "Necesario: {}. Disponible: {}."
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "Prueba cancelada. El archivo no se ha modificado."
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "Se ha cancelado la extracción. El archivo no se ha modificado."
+
+msgid "{} {}"
+msgstr "{} {}"

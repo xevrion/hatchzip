@@ -10,12 +10,12 @@ use anyhow::Result;
 use hatchzip_core::session;
 use slint::{CloseRequestResponse, ComponentHandle};
 
-use crate::TaskWindow;
 use crate::args::{TaskArgs, TaskKind};
 use crate::runner::Runner;
 use crate::settings::Settings;
 use crate::task::Task;
 use crate::work::Request;
+use crate::{Messages, TaskWindow};
 
 /// Where each kind of task puts the files. `None` for a test, and for files
 /// whose folder is not chosen yet.
@@ -29,8 +29,13 @@ pub fn output_for(kind: &TaskKind, primary: &Path) -> Option<PathBuf> {
 }
 
 pub fn run(mut args: TaskArgs) -> Result<()> {
+    // The window exists before the picker so its title comes from the same
+    // translated messages as the rest, and the picker still runs on the
+    // thread that will show it.
+    let ui = TaskWindow::new()?;
     if args.kind == TaskKind::ExtractFiles(None) {
-        let mut dialog = rfd::FileDialog::new().set_title("Select destination folder");
+        let title = ui.global::<Messages>().invoke_destination_title();
+        let mut dialog = rfd::FileDialog::new().set_title(title.as_str());
         if let Some(dir) = args
             .archives
             .first()
@@ -45,7 +50,7 @@ pub fn run(mut args: TaskArgs) -> Result<()> {
         };
         args.kind = TaskKind::ExtractFiles(Some(folder));
     }
-    let (ui, start) = build(args, Settings::saved())?;
+    let (ui, start) = build_in(ui, args, Settings::saved())?;
     crate::backend::when_drawn(ui.window(), start);
     ui.run()?;
     Ok(())
@@ -95,10 +100,19 @@ fn job_for(
 /// The window, shown, and the function that starts the task. Nothing
 /// touches an archive until that is called.
 pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnOnce() + 'static)> {
+    build_in(TaskWindow::new()?, args, settings)
+}
+
+/// Fills a window made outside, so `run` can reach the picker's title through
+/// it before the folder is known.
+fn build_in(
+    ui: TaskWindow,
+    args: TaskArgs,
+    settings: Settings,
+) -> Result<(TaskWindow, impl FnOnce() + 'static)> {
     if args.kind == TaskKind::ExtractFiles(None) {
         anyhow::bail!("no destination folder was chosen");
     }
-    let ui = TaskWindow::new()?;
     let jobs: Vec<(Task, Request)> = args
         .archives
         .iter()
@@ -114,11 +128,11 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(crate::text::localize(task, &ui));
+            ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
             ui.set_plan(task.plan.clone());
         }
     });
-    ui.set_task(crate::text::localize(task, &ui));
+    ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
     if settings.close_when_done {
         // Hiding the only window ends the app, as the close button does.
         let weak = ui.as_weak();

@@ -123,11 +123,13 @@ macro_rules! host_in {
         let (p, weak) = (pending.clone(), $ui.as_weak());
         $crate::replace::set_host(move |q| {
             if let Some(ui) = weak.upgrade() {
+                let messages = ui.global::<crate::Messages>();
                 ui.set_replace_text(
-                    ui.invoke_replace_question(q.file.as_str().into(), q.folder.as_str().into()),
+                    messages
+                        .invoke_replace_question(q.file.as_str().into(), q.folder.as_str().into()),
                 );
-                ui.set_replace_note(ui.invoke_replace_instructions(q.removing));
-                ui.set_replace_rest(ui.invoke_replace_remaining(
+                ui.set_replace_note(messages.invoke_replace_instructions(q.removing));
+                ui.set_replace_rest(messages.invoke_replace_remaining(
                     i32::try_from(q.left).unwrap_or(i32::MAX),
                     $crate::text::count(q.left).into(),
                 ));
