@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use hatchzip_gui::args::{Args, Launch};
-use hatchzip_gui::{APP_ID, backend, main_window, shell, task_window};
+use hatchzip_gui::{APP_ID, backend, locale, main_window, shell, task_window};
 
 fn main() -> ExitCode {
     match run(Args::parse().launch()) {
@@ -40,6 +40,7 @@ fn run(launch: Launch) -> Result<()> {
     let drops = Rc::new(backend::Drops::default());
     backend::select(drops.clone())?;
     slint::set_xdg_app_id(APP_ID)?;
+    locale::follow_system();
     match launch {
         Launch::Main(archive) => main_window::run(archive, drops),
         Launch::Task(task) => task_window::run(task),
