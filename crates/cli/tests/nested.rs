@@ -66,10 +66,15 @@ fn the_archives_inside_are_extracted_one_level() {
     files.insert("second.txt".into(), b"two".to_vec());
     let second = targz_of(tmp.path(), "second.tar.gz", &files);
     let second = fs::read(second).unwrap();
+    let mut mods_files = Files::new();
+    mods_files.insert("mods/inner.txt".into(), b"zstd".to_vec());
+    let nested_zst = tarzst_of(tmp.path(), "mods.tar.zst", &mods_files);
+    let nested_zst = fs::read(nested_zst).unwrap();
     let outer = zip_bytes(&[
         ("first.zip", &first),
         ("second.tar.gz", &second),
         ("third.tar.bz2", &fixture("third.tar.bz2")),
+        ("mods.tar.zst", &nested_zst),
         ("fake.tar.xz", &fixture("fake.tar.xz")),
         ("notes.zip", b"not an archive at all"),
         ("patch.dat", &disguised),
@@ -86,10 +91,12 @@ fn the_archives_inside_are_extracted_one_level() {
         fs::read(out.join("third/third.txt")).unwrap(),
         b"three-bz\n"
     );
+    assert_eq!(fs::read(out.join("mods/mods/inner.txt")).unwrap(), b"zstd");
     assert!(
         !out.join("first.zip").exists()
             && !out.join("second.tar.gz").exists()
-            && !out.join("third.tar.bz2").exists(),
+            && !out.join("third.tar.bz2").exists()
+            && !out.join("mods.tar.zst").exists(),
         "the nested archives are removed in place"
     );
     assert!(

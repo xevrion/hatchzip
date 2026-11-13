@@ -391,7 +391,7 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
         (
             "game.tar.zst",
             &b"\x28\xB5\x2F\xFDpretend zstd"[..],
-            "compressed stream",
+            "zstd stream's structure",
         ),
         (
             "game.tar.xz",
@@ -412,8 +412,8 @@ fn compressed_tar_streams_are_refused_without_touching_them() {
         assert!(!run.status.success(), "{name}");
         let stderr = String::from_utf8_lossy(&run.stderr);
         assert!(stderr.contains(says), "{name}: {stderr}");
-        if name == "game.tar.bz2" {
-            assert_eq!(run.status.code(), Some(4), "reported as damaged");
+        if name == "game.tar.bz2" || name == "game.tar.zst" {
+            assert_eq!(run.status.code(), Some(4), "{name}: reported as damaged");
         }
         assert_eq!(fs::read(&archive).unwrap(), bytes, "{name}");
         assert!(!side_files(&archive)[0].exists());

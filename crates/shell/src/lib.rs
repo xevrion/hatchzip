@@ -50,23 +50,25 @@ pub const ACTIONS: &[Action] = &[
 
 /// File types the menu appears on. `.001` covers the first part of split
 /// archives, which is the part HatchZip is opened with. Windows sees only the
-/// last extension of `game.tar.gz`, so `.gz` and `.xz` are listed; one that
-/// holds no tar is refused before anything changes.
+/// last extension of `game.tar.gz`, so `.gz`, `.xz` and `.zst` are listed;
+/// one that holds no tar is refused before anything changes.
 /// With RAR support, `.rar` and `.r00`, the second volume of an old-style
 /// set; any volume opens the whole set.
 #[cfg(not(feature = "rar"))]
 pub const EXTENSIONS: &[&str] = &[
-    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "001",
+    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "zst", "tzst", "001",
 ];
 #[cfg(feature = "rar")]
 pub const EXTENSIONS: &[&str] = &[
-    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "001", "rar", "r00",
+    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "zst", "tzst", "001",
+    "rar", "r00",
 ];
 
 /// Every extension any build registers, so that unregistering from a build
 /// without RAR support still removes what a build with it wrote.
 pub const ALL_EXTENSIONS: &[&str] = &[
-    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "001", "rar", "r00",
+    "zip", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz", "zst", "tzst", "001",
+    "rar", "r00",
 ];
 
 /// Where the per-user menu entries live. [`Dirs::current`] is the real

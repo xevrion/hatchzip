@@ -502,8 +502,8 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name.truncate(stem.len() - digits.len() - ".part".len());
     } else {
         for ext in [
-            ".zip", ".7z", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz", ".tar", ".tar.gz",
-            ".tgz", ".rar", ".exe",
+            ".zip", ".7z", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz", ".tar.zst", ".tzst",
+            ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
         ] {
             if lower.ends_with(ext) && name.len() > ext.len() {
                 name.truncate(name.len() - ext.len());
@@ -868,6 +868,8 @@ mod tests {
         assert_eq!(name("game.rar"), Path::new("game"));
         assert_eq!(name("game.tar.xz"), Path::new("game"));
         assert_eq!(name("game.txz"), Path::new("game"));
+        assert_eq!(name("game.tar.zst"), Path::new("game"));
+        assert_eq!(name("game.tzst"), Path::new("game"));
         assert_eq!(name("game.part.rar"), Path::new("game.part"));
         assert_eq!(name("notes.txt"), Path::new("notes.txt-extracted"));
     }

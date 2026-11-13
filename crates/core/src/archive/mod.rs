@@ -11,6 +11,7 @@ mod tar;
 mod tarbz2;
 pub mod targz;
 pub mod tarxz;
+pub mod tarzst;
 mod xz;
 mod zip;
 
@@ -284,6 +285,7 @@ pub fn open(
         targz::NAME => targz::open(storage, point),
         tarbz2::NAME => tarbz2::open(storage, point),
         tarxz::NAME => tarxz::open(storage, point),
+        tarzst::NAME => tarzst::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
 }
@@ -448,10 +450,20 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
             "this is a bzip2-compressed file that does not contain a tar archive; the file was not changed. Decompress it with bzip2, or use a .tar.bz2 archive"
         );
     }
-    if starts(b"\x28\xB5\x2F\xFD") {
+    let zstd_magic = head.len() >= 4 && {
+        let magic = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
+        magic == 0xFD2F_B528 || (magic & 0xFFFF_FFF0) == 0x184D_2A50
+    };
+    if zstd_magic {
+        // Look inside, as for gzip: a plain .zst of one file is not an
+        // archive. pzstd puts a skippable frame first, so the magic alone
+        // does not say where the first real frame is.
+        if named_zstd(&ext) || tarzst::holds_tar(storage)? {
+            return Ok(tarzst::NAME);
+        }
         bail!(
-            "this is a compressed stream (.zst). In-place extraction of these \
-             compressed streams is not supported yet"
+            "this is a zstd-compressed file that does not contain a tar archive. Only \
+             compressed tar archives (.tar.zst) can be extracted"
         );
     }
     if starts(b"Rar!\x1A\x07") {
@@ -476,6 +488,17 @@ fn named_bzip2(name: &str) -> bool {
     [".tar.bz2", ".tbz2", ".tbz"]
         .iter()
         .any(|e| base.ends_with(e))
+}
+
+/// The file's own name says `.tar.zst`, alone or before a numeric split
+/// suffix such as `.001`. The folders it sits in don't count.
+fn named_zstd(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let base = match name.rsplit_once('.') {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => &name,
+    };
+    [".tar.zst", ".tzst"].iter().any(|e| base.ends_with(e))
 }
 
 /// Whether the gzip stream `storage` opens with a tar header.
@@ -574,6 +597,14 @@ pub fn detect(path: &Path) -> Option<&'static str> {
         let storage = Storage::open(path, false).ok()?;
         return bzip2_holds_tar(&storage).ok()?.then_some(tarbz2::NAME);
     }
+    let zstd = head.len() >= 4 && {
+        let magic = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
+        magic == 0xFD2F_B528 || (magic & 0xFFFF_FFF0) == 0x184D_2A50
+    };
+    if zstd {
+        let storage = Arc::new(Storage::open(path, false).ok()?);
+        return tarzst::holds_tar(&storage).ok()?.then_some(tarzst::NAME);
+    }
     if starts(b"PK\x03\x04") || starts(b"PK\x05\x06") {
         return zip_has_an_index(path).then_some("zip");
     }
@@ -598,6 +629,8 @@ pub fn nested_kind(path: &Path) -> Option<&'static str> {
         targz::NAME
     } else if [".tar.xz", ".txz"].iter().any(|e| name.ends_with(e)) {
         tarxz::NAME
+    } else if [".tar.zst", ".tzst"].iter().any(|e| name.ends_with(e)) {
+        tarzst::NAME
     } else if [".tar.bz2", ".tbz2", ".tbz"]
         .iter()
         .any(|e| name.ends_with(e))
