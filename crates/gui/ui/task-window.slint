@@ -1,6 +1,6 @@
 import { Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Phase, PlanView, TaskView, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt } from "parts.slint";
+import { Phase, PlanView, TaskView, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt, SpaceVerdict, SpaceNotes } from "parts.slint";
 
 // The small window a right-click opens. It does one thing and closes.
 export component TaskWindow inherits Window {
@@ -73,9 +73,12 @@ export component TaskWindow inherits Window {
         if root.task.phase == Phase.verifying || root.task.phase == Phase.working || root.task.phase == Phase.pausing || root.task.phase == Phase.paused: Progress {
             task: root.task;
         }
+        if root.task.phase == Phase.no-space: SpaceVerdict {
+            plan: root.plan;
+        }
         if root.task.phase == Phase.no-space: Text {
             text: !root.task.lower-reserve
-                ? "Available: " + root.plan.free + ". Required: " + root.plan.needed + ", plus " + root.plan.keep + " reserved."
+                ? @tr("Available: {}. Required: {}, plus {} reserved.", root.plan.free, root.plan.needed, root.plan.keep)
                 : root.task.reserve-amount == ""
                     ? @tr("The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes.", root.plan.needed, root.plan.free, root.plan.left)
                     : @tr("The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes.", root.plan.needed, root.plan.free, root.task.reserve-amount, root.plan.left);
@@ -85,11 +88,8 @@ export component TaskWindow inherits Window {
         Outcome {
             task: root.task;
         }
-        if root.task.phase == Phase.no-space && root.plan.note != "": Text {
-            text: root.plan.note;
-            wrap: word-wrap;
-            color: Theme.muted;
-            font-size: Theme.small-size;
+        if root.task.phase == Phase.no-space: SpaceNotes {
+            plan: root.plan;
         }
 
         Rectangle {

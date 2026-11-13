@@ -228,6 +228,12 @@ pub fn build(
                     view.message = ui.invoke_verifying_message()
                 }
                 crate::Phase::Paused => view.message = ui.invoke_paused_message(),
+                // The pane showed the plan from before the run; a stop for
+                // space needs the amount the run found, and the pane too.
+                crate::Phase::NoSpace => {
+                    view.message = ui.invoke_task_no_space(task.plan.short.clone());
+                    ui.set_plan(task.plan.clone());
+                }
                 crate::Phase::Done if !view.is_test && !task.is_restoring() => {
                     view.message = if task.keeps_archive() {
                         ui.invoke_extracted_kept()
@@ -595,7 +601,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                verdict: ui.invoke_no_entries(),
+                refusal: ui.invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -617,14 +623,14 @@ impl App {
                     // Such as a solid RAR: it can only be extracted kept.
                     Some(why) => PlanView {
                         fits: false,
-                        verdict: why.into(),
+                        refusal: why.into(),
                         ..plan_view(&plan)
                     },
                     None => plan_view(&plan),
                 },
                 Err(e) => PlanView {
                     ready: true,
-                    verdict: sentence(&format!("{e:#}")).into(),
+                    refusal: sentence(&format!("{e:#}")).into(),
                     ..Default::default()
                 },
             };
@@ -633,7 +639,7 @@ impl App {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
-                        view.verdict = sentence(&ui.invoke_keep_archive_hint(why.into())).into();
+                        view.refusal = ui.invoke_keep_archive_hint(text::capitalise(&why).into());
                     }
                     ui.set_plan(view);
                 }

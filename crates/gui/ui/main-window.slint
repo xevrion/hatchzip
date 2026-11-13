@@ -196,7 +196,7 @@ export component MainWindow inherits Window {
     public function menu-added() -> string { return @tr("Context menu entries added."); }
     public function menu-removed() -> string { return @tr("Context menu entries removed."); }
     public function no-entries() -> string { return @tr("No entries remaining"); }
-    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive", reason); }
+    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive.", reason); }
     public function checking-space() -> string { return @tr("Checking disk space…"); }
     public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
     public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
@@ -236,6 +236,7 @@ export component MainWindow inherits Window {
     public function task-archive-left(size: string) -> string { return @tr("Archive remaining: {}", size); }
 
     public function task-test-result(n: int, count: string) -> string { return @tr("Test passed: 1 entry verified." | "Test passed: {} entries verified." % n, count); }
+    public function task-no-space(short: string) -> string { return @tr("Insufficient disk space. {} more is required.", short); }
 
     public function task-rate(speed: string, time: string) -> string { return @tr("{}/s, {} remaining", speed, time); }
     public function time-short() -> string { return @tr("less than 5 seconds"); }

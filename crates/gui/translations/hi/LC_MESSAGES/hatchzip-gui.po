@@ -374,7 +374,7 @@ msgstr "फ़ोल्डर"
 msgid "Link"
 msgstr "लिंक"
 
-msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
 msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें।"
 
 msgid "Extract with {} reserved"
@@ -388,3 +388,27 @@ msgstr "रास्ते में केवल आरक्षित जग�
 
 msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
 msgstr "रास्ते में केवल आरक्षित जगह है: {} चाहिए और {} उपलब्ध है, इसलिए इसे बिना आरक्षित जगह के चलाया जा सकता है, और पूरा होने पर {} बचेगा।"
+
+msgid "Sufficient disk space"
+msgstr "पर्याप्त डिस्क जगह"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "डिस्क में पर्याप्त जगह नहीं है। {} और चाहिए।"
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "एक्सट्रैक्शन के दौरान आर्काइव हटाने पर केवल {} चाहिए।"
+
+msgid "There is also enough space to keep the archive."
+msgstr "आर्काइव रखने के लिए भी पर्याप्त जगह है।"
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "ज़रूरी जगह का ज़्यादातर हिस्सा एक ठोस ब्लॉक है, जो पूरी तरह एक्सट्रैक्ट होने के बाद ही खाली हो सकता है।"
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "गंतव्य दूसरी ड्राइव पर है, इसलिए आर्काइव हटाने से वहाँ जगह खाली नहीं होगी।"
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "यह ड्राइव किसी फ़ाइल के अंदर जगह खाली नहीं कर सकती, इसलिए एक्सट्रैक्शन पूरा होने तक संपीड़ित आर्काइव पूरा रहता है।"
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "उपलब्ध: {}। ज़रूरी: {}, और {} आरक्षित।"

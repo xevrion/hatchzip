@@ -30,8 +30,18 @@ export struct PlanView {
     // says about fitting. The offer to lower the reserve uses it too.
     left: string,
     fits: bool,
-    verdict: string,
-    note: string,
+    // What is missing when it does not fit, such as "1.4 GB".
+    short: string,
+    // A refusal or error to show instead of the verdict. Engine text stays
+    // English; "no entries remaining" is translated before it gets here.
+    refusal: string,
+    // The reasons under the plan, one whole sentence each so a translation
+    // can be a sentence too.
+    note-in-place: string,
+    note-keep: bool,
+    note-solid: bool,
+    note-other-drive: bool,
+    note-kept-whole: bool,
     meter: float,
 }
 
@@ -72,12 +82,69 @@ component Row inherits HorizontalLayout {
         text: root.label;
         color: Theme.muted;
         horizontal-stretch: 1;
-        overflow: elide;
+        // Translations run longer than the English label, and a cut-off one
+        // is no use, so the label wraps instead.
+        wrap: word-wrap;
+        height: self.preferred-height;
     }
     Text {
         text: root.value;
         horizontal-alignment: right;
         font-weight: root.strong ? 600 : 400;
+    }
+}
+
+// The one-line answer of a plan, shared by the space panel and the small
+// task window.
+export component SpaceVerdict inherits Text {
+    in property <PlanView> plan;
+    text: root.plan.refusal != "" ? root.plan.refusal : root.plan.fits ? @tr("Sufficient disk space") : @tr("Insufficient disk space. {} more is required.", root.plan.short);
+    wrap: word-wrap;
+    height: self.preferred-height;
+    font-weight: 600;
+    color: root.plan.fits ? Palette.foreground : Theme.danger;
+}
+
+// The reasons under a plan, one whole sentence each, so a translation can
+// be a sentence rather than pieces glued with spaces.
+export component SpaceNotes inherits VerticalLayout {
+    in property <PlanView> plan;
+    spacing: 2px;
+
+    if root.plan.note-in-place != "": Text {
+        text: @tr("Removing the archive during extraction requires only {}.", root.plan.note-in-place);
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+    }
+    if root.plan.note-keep: Text {
+        text: @tr("There is also enough space to keep the archive.");
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+    }
+    if root.plan.note-solid: Text {
+        text: @tr("Most of the required space is one solid block, which can only be released after it is fully extracted.");
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+    }
+    if root.plan.note-other-drive: Text {
+        text: @tr("The destination is on another drive, so removing the archive does not free space there.");
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+    }
+    if root.plan.note-kept-whole: Text {
+        text: @tr("This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes.");
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
     }
 }
 
@@ -109,12 +176,8 @@ export component SpacePanel inherits VerticalLayout {
     }
     if root.plan.ready: VerticalLayout {
         spacing: 8px;
-        Text {
-            text: root.plan.verdict;
-            wrap: word-wrap;
-            height: self.preferred-height;
-            font-weight: 600;
-            color: root.plan.fits ? Palette.foreground : Theme.danger;
+        SpaceVerdict {
+            plan: root.plan;
         }
         Row {
             label: @tr("Available");
@@ -147,12 +210,8 @@ export component SpacePanel inherits VerticalLayout {
             value: root.plan.meter;
             bad: !root.plan.fits;
         }
-        if root.plan.note != "": Text {
-            text: root.plan.note;
-            wrap: word-wrap;
-            height: self.preferred-height;
-            color: Theme.muted;
-            font-size: Theme.small-size;
+        if root.plan.note-in-place != "" || root.plan.note-keep || root.plan.note-solid || root.plan.note-other-drive || root.plan.note-kept-whole: SpaceNotes {
+            plan: root.plan;
         }
     }
 }
