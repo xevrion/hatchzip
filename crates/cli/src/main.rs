@@ -188,6 +188,7 @@ fn run(command: Command) -> Result<u8> {
             verify_first,
             space,
             yes,
+            nested,
         } => {
             let opts = Options {
                 keep: keep.keep_archive,
@@ -197,6 +198,7 @@ fn run(command: Command) -> Result<u8> {
                 keep_free: space.keep_free,
                 yes,
                 several: false,
+                nested,
             };
             extract_all(target, opts)
         }
@@ -586,14 +588,17 @@ fn restore(archive: &Path, output: Option<&Path>) -> Result<u8> {
 
 /// How one archive of a run ended, for the summary of several.
 enum Ended {
-    Extracted,
-    /// Stopped with the given status; `saved` if a journal holds progress.
-    Stopped {
-        code: u8,
-        saved: bool,
+    Extracted {
+        output: PathBuf,
+        /// Archives this run wrote, found by extension and signature. Empty
+        /// without `--nested`.
+        nested: Vec<PathBuf>,
     },
+    /// Stopped with the given status; `saved` if a journal holds progress.
+    Stopped { code: u8, saved: bool },
 }
 
+#[derive(Clone)]
 struct Options {
     keep: bool,
     replace: bool,
@@ -603,6 +608,8 @@ struct Options {
     yes: bool,
     /// Several archives: the summary says how to continue, not each one.
     several: bool,
+    /// After extracting, find the archives inside and extract them too.
+    nested: bool,
 }
 
 fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
@@ -632,6 +639,8 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
     .context("installing Ctrl+C handler")?;
 
     let mut done = 0;
+    let mut outputs: Vec<PathBuf> = Vec::new();
+    let mut nested_candidates: Vec<PathBuf> = Vec::new();
     for (i, archive) in archives.iter().enumerate() {
         if opts.several {
             if i > 0 {
@@ -652,7 +661,13 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
             },
         };
         match ended {
-            Ended::Extracted => done += 1,
+            Ended::Extracted { output, nested } => {
+                done += 1;
+                if !outputs.contains(&output) {
+                    outputs.push(output);
+                }
+                nested_candidates.extend(nested);
+            }
             Ended::Stopped { code, saved } => {
                 if opts.several {
                     summary(&archives, done, code, saved);
@@ -661,11 +676,143 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
             }
         }
     }
+    if opts.nested {
+        let parents: Vec<PathBuf> = archives
+            .iter()
+            .filter_map(|a| locate(a).ok().map(|(p, _)| p))
+            .collect();
+        let mut nested: Vec<PathBuf> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for path in nested_candidates {
+            // A split set counts once, by its first volume, and the parent
+            // archives are never nested.
+            let Ok((primary, _)) = locate(&path) else {
+                continue;
+            };
+            if parents.contains(&primary) || !seen.insert(primary) {
+                continue;
+            }
+            nested.push(path);
+        }
+        if nested.is_empty() {
+            say!("No archives among the extracted files.");
+        } else {
+            say!();
+            say!("{BOLD}Archives inside:{BOLD:#}");
+            for path in &nested {
+                say!("  {}", path.display());
+            }
+            if !opts.yes && !opts.keep {
+                confirm_nested(nested.len())?;
+            }
+            let mut nested_opts = opts.clone();
+            // A nested run is its own extraction: the parent's replace and
+            // skip choices must not touch the files it left.
+            nested_opts.replace = false;
+            nested_opts.skip_existing = false;
+            // One summary for the phase, not one per archive.
+            nested_opts.several = true;
+            // The list above was the confirmation; each one is not asked
+            // again.
+            nested_opts.yes = true;
+            let mut nested_done = 0;
+            for (i, archive) in nested.iter().enumerate() {
+                say!();
+                if nested.len() == 1 {
+                    say!("{BOLD}Nested archive:{BOLD:#} {}", archive.display());
+                } else {
+                    say!(
+                        "{BOLD}Nested archive {} of {}:{BOLD:#} {}",
+                        i + 1,
+                        nested.len(),
+                        archive.display()
+                    );
+                }
+                let ended = match extract(archive, None, target.secret.clone(), &nested_opts) {
+                    Ok(e) => e,
+                    Err(e) => Ended::Stopped {
+                        code: fail(&e),
+                        saved: locate(archive).is_ok_and(|(_, p)| p.exists()),
+                    },
+                };
+                match ended {
+                    Ended::Extracted { .. } => nested_done += 1,
+                    Ended::Stopped { code, saved } => {
+                        nested_summary(&nested, nested_done, code, saved);
+                        return Ok(code);
+                    }
+                }
+            }
+            say!();
+            if nested.len() == 1 {
+                say!("{GOOD}The nested archive was extracted.{GOOD:#}");
+            } else {
+                say!(
+                    "{GOOD}All {} nested archives extracted.{GOOD:#}",
+                    nested.len()
+                );
+            }
+        }
+    }
     if opts.several {
         say!();
         say!("{GOOD}All {} archives extracted.{GOOD:#}", archives.len());
     }
     Ok(0)
+}
+
+/// What the nested phase did when one archive stopped it. The command that
+/// started the phase cannot be rerun to continue, since the parent archive is
+/// gone, so this names the archive to run instead.
+fn nested_summary(archives: &[PathBuf], done: usize, code: u8, saved: bool) {
+    let stopped = if code == EXIT_PAUSED {
+        "paused"
+    } else {
+        "not extracted"
+    };
+    println!();
+    println!(
+        "{ERROR}Stopped at nested archive {} of {}.{ERROR:#}",
+        done + 1,
+        archives.len()
+    );
+    for (i, a) in archives.iter().enumerate() {
+        let state = match i.cmp(&done) {
+            std::cmp::Ordering::Less => "extracted",
+            std::cmp::Ordering::Equal if saved => &format!("{stopped}, progress saved"),
+            std::cmp::Ordering::Equal => stopped,
+            std::cmp::Ordering::Greater => "not started",
+        };
+        println!("  {}  {DIM}({state}){DIM:#}", a.display());
+    }
+    println!(
+        "To continue, run `hatchzip extract <archive>` on each one that is not extracted. An \
+         archive with saved progress resumes where it stopped."
+    );
+}
+
+/// The phase extracts and removes the archives by default, so it asks once
+/// for all of them.
+fn confirm_nested(count: usize) -> Result<()> {
+    if !io::stdin().is_terminal() {
+        bail!(
+            "HatchZip removes each nested archive during extraction; pass --yes to confirm, \
+             or --keep-archive to keep them"
+        );
+    }
+    let what = if count == 1 {
+        "the archive inside".to_string()
+    } else {
+        format!("{count} archives inside")
+    };
+    print!("\nExtract {what} and remove them during extraction? [y/N] ");
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().lock().read_line(&mut answer)?;
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        bail!("extraction cancelled. Nothing was modified");
+    }
+    Ok(())
 }
 
 /// What a run of several archives did, after `archives[done]` stopped it.
@@ -717,6 +864,7 @@ fn extract(
         }
     }
     let (state, paths) = open(archive, output, true, secret)?;
+    let mut kept: Vec<PathBuf> = Vec::new();
     let (job, journal) = match state {
         State::Orphan(mut journal) => {
             if let Some(warning) = engine::finish_orphaned(&mut journal, &paths)? {
@@ -729,7 +877,10 @@ fn extract(
                 "{GOOD}Extraction complete.{GOOD:#} Files are in {}.",
                 journal.output.display()
             );
-            return Ok(Ended::Extracted);
+            return Ok(Ended::Extracted {
+                output: journal.output,
+                nested: Vec::new(),
+            });
         }
         State::Resume(job, journal) => {
             let keep = session::keeps_archive(&journal, opts.keep)?;
@@ -748,6 +899,9 @@ fn extract(
         State::Fresh(job, out) => {
             in_place_possible(&job, opts.keep)?;
             let found = session::existing(&job, &out)?;
+            if opts.skip_existing {
+                kept.clone_from(&found);
+            }
             if !found.is_empty() && !opts.replace && !opts.skip_existing {
                 return Err(refuse_existing(&out, &found));
             }
@@ -820,6 +974,16 @@ fn extract(
 
     let output = journal.output.clone();
     let count = job.item_count();
+    // Every file this run may write, before the job moves into the run. Only
+    // these are candidates for --nested: a folder scan would find archives
+    // the person already had there.
+    let candidates: Vec<PathBuf> = job
+        .units
+        .iter()
+        .flat_map(|u| &u.items)
+        .filter(|i| i.kind == hatchzip_core::archive::Kind::File)
+        .map(|i| i.path.clone())
+        .collect();
     let (b1, b2) = (bar.clone(), bar.clone());
     let run = Run {
         job,
@@ -850,7 +1014,13 @@ fn extract(
                 entries(count),
                 output.display()
             );
-            Ok(Ended::Extracted)
+            let nested = candidates
+                .into_iter()
+                .filter(|p| !kept.contains(p))
+                .map(|p| output.join(p))
+                .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
+                .collect();
+            Ok(Ended::Extracted { output, nested })
         }
         Ok(Outcome::Paused) => {
             if !opts.several {

@@ -14,7 +14,8 @@ pub mod tarxz;
 mod xz;
 mod zip;
 
-use std::io::Read;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -386,26 +387,10 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     let ext = storage.primary().to_string_lossy().to_ascii_lowercase();
     if starts(b"\x1F\x8B") {
         // Look inside: a plain .gz of one file is not an archive.
-        let mut gz = resumable::Gzip::new(
-            storage.reader(None),
-            storage.original_len(),
-            &resumable::GzPoint::start(),
-        )?;
-        let mut first = [0u8; 512];
-        let mut n = 0;
-        while n < first.len() {
-            match gz
-                .read(&mut first[n..])
-                .context("reading the start of the compressed stream")?
-            {
-                0 => break,
-                k => n += k,
-            }
-        }
         let named = [".tar.gz", ".tgz", ".taz"]
             .iter()
             .any(|e| ext.ends_with(e) || ext.contains(&format!("{e}.")));
-        if is_tar(&first[..n]) || named {
+        if gzip_holds_tar(storage)? || named {
             return Ok(targz::NAME);
         }
         bail!(
@@ -491,6 +476,139 @@ fn named_bzip2(name: &str) -> bool {
     [".tar.bz2", ".tbz2", ".tbz"]
         .iter()
         .any(|e| base.ends_with(e))
+}
+
+/// Whether the gzip stream `storage` opens with a tar header.
+fn gzip_holds_tar(storage: &Storage) -> Result<bool> {
+    let mut gz = resumable::Gzip::new(
+        storage.reader(None),
+        storage.original_len(),
+        &resumable::GzPoint::start(),
+    )?;
+    let mut first = [0u8; 512];
+    let mut n = 0;
+    while n < first.len() {
+        match gz
+            .read(&mut first[n..])
+            .context("reading the start of the compressed stream")?
+        {
+            0 => break,
+            k => n += k,
+        }
+    }
+    Ok(first[..n].len() >= 263 && &first[257..262] == b"ustar")
+}
+
+/// Whether the bzip2 stream `storage` opens with a tar header.
+fn bzip2_holds_tar(storage: &Storage) -> Result<bool> {
+    let mut bz = tarbz2::Bzip2::new(
+        storage.reader(None),
+        storage.original_len(),
+        &tarbz2::BzPoint::start(),
+    )?;
+    let mut first = [0u8; 512];
+    let mut n = 0;
+    while n < first.len() {
+        match bz.read(&mut first[n..])? {
+            0 => break,
+            k => n += k,
+        }
+    }
+    Ok(first[..n].len() >= 263 && &first[257..262] == b"ustar")
+}
+
+/// Whether a ZIP's end record sits in its last 64 KiB, which every archive
+/// this crate can open has.
+fn zip_has_an_index(path: &Path) -> bool {
+    const MAX: u64 = 22 + 0xFFFF;
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let Ok(len) = file.metadata().map(|m| m.len()) else {
+        return false;
+    };
+    if len < 22 {
+        return false;
+    }
+    let start = len.saturating_sub(MAX);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let mut tail = Vec::with_capacity((len - start) as usize);
+    if file.take(len - start).read_to_end(&mut tail).is_err() {
+        return false;
+    }
+    let has = |magic: &[u8]| tail.windows(magic.len()).any(|w| w == magic);
+    has(b"PK\x05\x06") || has(b"PK\x06\x06")
+}
+
+/// The format `path` holds, from its signature, or `None` when it is not a
+/// file this build can extract. Links and folders are not considered.
+pub fn detect(path: &Path) -> Option<&'static str> {
+    let meta = fs::symlink_metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let mut head = [0u8; 512];
+    let n = read_up_to(&mut fs::File::open(path).ok()?, &mut head).ok()?;
+    let head = &head[..n];
+    let starts = |magic: &[u8]| head.starts_with(magic);
+    if starts(b"7z\xBC\xAF\x27\x1C") {
+        return Some("7z");
+    }
+    if head.len() >= 263 && &head[257..262] == b"ustar" {
+        return Some("tar");
+    }
+    if starts(b"\xFD7zXZ\x00") {
+        let storage = Arc::new(Storage::open(path, false).ok()?);
+        return tarxz::holds_tar(&storage).then_some(tarxz::NAME);
+    }
+    if starts(b"Rar!\x1A\x07") {
+        return cfg!(feature = "rar").then_some(RAR);
+    }
+    if starts(b"\x1F\x8B") {
+        let storage = Storage::open(path, false).ok()?;
+        return gzip_holds_tar(&storage).ok()?.then_some(targz::NAME);
+    }
+    if starts(b"BZh") {
+        let storage = Storage::open(path, false).ok()?;
+        return bzip2_holds_tar(&storage).ok()?.then_some(tarbz2::NAME);
+    }
+    if starts(b"PK\x03\x04") || starts(b"PK\x05\x06") {
+        return zip_has_an_index(path).then_some("zip");
+    }
+    None
+}
+
+/// The format `path` holds if its name claims an archive format and its
+/// signature agrees. Both matter: `.jar`, `.docx`, `.pk3` and `.apk` are
+/// ZIPs, and `.ova` and `.gem` are tars, and none of them should be offered.
+pub fn nested_kind(path: &Path) -> Option<&'static str> {
+    let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    let expected = if name.ends_with(".zip") {
+        "zip"
+    } else if name.ends_with(".7z") {
+        "7z"
+    } else if name.ends_with(".tar") {
+        "tar"
+    } else if [".tar.gz", ".tgz", ".taz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        targz::NAME
+    } else if [".tar.xz", ".txz"].iter().any(|e| name.ends_with(e)) {
+        tarxz::NAME
+    } else if [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        tarbz2::NAME
+    } else if name.ends_with(".rar") {
+        RAR
+    } else {
+        return None;
+    };
+    (detect(path)? == expected).then_some(expected)
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {

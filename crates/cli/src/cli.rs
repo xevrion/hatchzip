@@ -128,7 +128,12 @@ pub enum Command {
             took their path. A folder is never replaced.\n\n\
             Several archives are extracted one after another. The space for each one is \
             checked just before it starts, and the first one that does not complete stops \
-            the run."
+            the run.\n\n\
+            With --nested, once the archives given are done, the files each one wrote are \
+            checked by name and signature for archives, and those are extracted too, each in \
+            its own folder next to it. One level only: archives inside those are not scanned. \
+            A split set counts once, by its first volume, and only names with an archive \
+            extension are considered, so a .jar or a .docx is left alone."
     )]
     Extract {
         #[command(flatten)]
@@ -146,6 +151,10 @@ pub enum Command {
         /// --keep-archive is given)
         #[arg(short, long)]
         yes: bool,
+        /// After extracting, extract the archives among the files it wrote,
+        /// one level deep
+        #[arg(long)]
+        nested: bool,
     },
     /// Show the space plan for an archive without modifying it
     #[command(visible_alias = "c")]
