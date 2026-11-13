@@ -26,7 +26,7 @@
 - Checks that the extraction fits before it changes anything
 - Keeps a margin of free space the whole way through
 - Can be stopped or crash at any moment and continues where it left off
-- Reads ZIP, 7z, tar, tar.gz, RAR and split archives
+- Reads ZIP, 7z, tar, tar.gz, tar.xz, RAR and split archives
 - Can extract and keep the archive, like any other extractor
 
 The archive is gone when an in-place extraction finishes. For an archive that cannot be downloaded again, HatchZip can verify every file first.

@@ -78,11 +78,28 @@ instead. Windows Sandbox also gives a clean machine for a quick check.
    ```powershell
    choco apikey --key <api key> --source https://push.chocolatey.org/
    choco pack
-   choco push hatchzip.0.1.8.nupkg --source https://push.chocolatey.org/
+   choco push hatchzip.0.1.10.nupkg --source https://push.chocolatey.org/
    ```
 
 3. Follow the package's page on community.chocolatey.org through moderation,
    below.
+
+### Without Windows
+
+The website no longer takes uploads, but `choco push` is one HTTP request,
+so a package can be built and pushed from macOS or Linux. `pack.py` builds
+the same `.nupkg` as `choco pack`, and `curl` sends it with the API key read
+from the clipboard (macOS), so the key never lands in the shell history:
+
+```sh
+python3 packaging/chocolatey/pack.py
+curl -sS -w "\nHTTP %{http_code}\n" -X PUT -H "X-NuGet-ApiKey: $(pbpaste)" \
+  -F "package=@hatchzip.0.1.10.nupkg" https://push.chocolatey.org/api/v2/package/
+pbcopy < /dev/null
+```
+
+`HTTP 201` means it was accepted. 0.1.10 was the first version published
+this way, on 2026-11-13.
 
 ## Moderation
 
