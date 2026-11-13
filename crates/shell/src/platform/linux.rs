@@ -14,12 +14,14 @@ use crate::{ACTIONS, Dirs, EXTENSIONS};
 const MIME_TYPES: &str = "application/zip;application/x-zip-compressed;application/x-7z-compressed;\
                           application/x-tar;application/x-compressed-tar;\
                           application/x-bzip2-compressed-tar;application/x-bzip-compressed-tar;\
-                          application/x-xz-compressed-tar;";
+                          application/x-xz-compressed-tar;application/zstd;\
+                          application/x-zstd-compressed-tar;";
 #[cfg(feature = "rar")]
 const MIME_TYPES: &str = "application/zip;application/x-zip-compressed;application/x-7z-compressed;\
                           application/x-tar;application/x-compressed-tar;\
                           application/x-bzip2-compressed-tar;application/x-bzip-compressed-tar;\
-                          application/x-xz-compressed-tar;application/vnd.rar;\
+                          application/x-xz-compressed-tar;application/zstd;\
+                          application/x-zstd-compressed-tar;application/vnd.rar;\
                           application/x-rar;application/x-rar-compressed;";
 const MARK: &str = "Added by HatchZip; `hatchzip-gui --unregister-shell` removes it.";
 

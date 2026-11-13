@@ -86,4 +86,6 @@ serde_json.workspace = true
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
 tar.workspace = true
 tempfile.workspace = true
+# Writes the .tar.zst test archives, same crate the format decodes with.
+zstd.workspace = true
 zip.workspace = true

@@ -273,6 +273,25 @@ pub fn targz_of(dir: &Path, name: &str, files: &Files) -> PathBuf {
     path
 }
 
+/// In two frames, since a single frame can't be extracted in place.
+pub fn tarzst_of(dir: &Path, name: &str, files: &Files) -> PathBuf {
+    use std::io::Write;
+
+    let tar = tar_bytes_of(files);
+    let half = tar.len() / 2 / 512 * 512;
+    let mut out = Vec::new();
+    for part in [&tar[..half], &tar[half..]] {
+        let mut e = zstd::stream::write::Encoder::new(Vec::new(), 3).unwrap();
+        e.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true))
+            .unwrap();
+        e.write_all(part).unwrap();
+        out.extend_from_slice(&e.finish().unwrap());
+    }
+    let path = dir.join(name);
+    fs::write(&path, out).unwrap();
+    path
+}
+
 /// In blocks small enough to make several of a tiny tree, since a single one
 /// can't be extracted in place. A block is never smaller than the dictionary.
 pub fn tarxz_of(dir: &Path, name: &str, files: &Files) -> PathBuf {
