@@ -412,3 +412,26 @@ msgstr "यह ड्राइव किसी फ़ाइल के अंद�
 
 msgid "Available: {}. Required: {}, plus {} reserved."
 msgstr "उपलब्ध: {}। ज़रूरी: {}, और {} आरक्षित।"
+
+msgid "Archive {} of {}"
+msgstr "{1} में से आर्काइव {0}"
+
+msgid "All {} archives completed."
+msgstr "सभी {} आर्काइव पूरे हुए।"
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "{1} में से आर्काइव {0}। 1 और आर्काइव शुरू नहीं हुआ।"
+msgstr[1] "{1} में से आर्काइव {0}। {2} और आर्काइव शुरू नहीं हुए।"
+
+msgid "Required: {}. Available: {}."
+msgstr "ज़रूरी: {}। उपलब्ध: {}।"
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "जाँच रद्द हुई। आर्काइव नहीं बदला गया।"
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "एक्सट्रैक्शन रद्द हुआ। आर्काइव नहीं बदला गया।"
+
+msgid "{} {}"
+msgstr "{} {}"

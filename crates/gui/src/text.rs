@@ -7,8 +7,10 @@ use std::time::{Duration, Instant};
 
 use hatchzip_core::human;
 use hatchzip_core::session::SpacePlan;
+use slint::SharedString;
 
-use crate::PlanView;
+use crate::task::Task;
+use crate::{Messages, PlanView, TaskView};
 
 /// What a long open says while it reads through the archive. Rounded down,
 /// so it never claims 100% before the read is done.
@@ -198,6 +200,169 @@ impl Rate {
             None => String::new(),
         }
     }
+}
+
+/// Converts a count to Slint's `int`, saturating like the rest.
+pub(crate) fn plural_count(n: usize) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
+/// The task view with every message in the window's language. The engine's
+/// text stays English; everything the app builds itself comes from `@tr`.
+pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
+    let mut view = task.view.clone();
+    view.space = if task.plan.ready && !task.plan.needed.is_empty() {
+        messages.invoke_task_space(task.plan.needed.clone(), task.plan.free.clone())
+    } else {
+        Default::default()
+    };
+    view.heading = messages.invoke_task_heading(
+        view.phase,
+        view.is_test,
+        task.is_restoring(),
+        task.name().into(),
+    );
+    view.busy = messages.invoke_checking_space();
+    view.detail = if task.is_restoring() {
+        messages.invoke_restore_detail()
+    } else if view.is_test {
+        messages.invoke_test_detail()
+    } else if let Some(path) = &task.output {
+        messages.invoke_task_destination(path.display().to_string().into())
+    } else {
+        Default::default()
+    };
+    if task.waiting_for_disk() && !view.rate.is_empty() {
+        view.rate = messages.invoke_waiting_disk();
+    }
+    match view.phase {
+        crate::Phase::Pausing => view.message = messages.invoke_pausing_message(),
+        crate::Phase::Verifying if !view.is_test => {
+            view.message = messages.invoke_verifying_message()
+        }
+        crate::Phase::Paused => view.message = messages.invoke_paused_message(),
+        // The pane showed the plan from before the run; a stop for space
+        // needs the amount the run found.
+        crate::Phase::NoSpace => {
+            view.message = messages.invoke_task_no_space(task.plan.short.clone());
+        }
+        crate::Phase::Done if !view.is_test && !task.is_restoring() => {
+            view.message = if task.keeps_archive() {
+                messages.invoke_extracted_kept()
+            } else {
+                messages.invoke_extracted_removed()
+            };
+            if let Some(warning) = &task.warning {
+                view.warning = warning.as_str().into();
+            }
+        }
+        _ => {}
+    }
+    if task.cancelled {
+        let cancelled = if view.is_test {
+            messages.invoke_test_cancelled()
+        } else {
+            messages.invoke_extraction_cancelled()
+        };
+        // A prompt closed on a resume leaves a journal, so the hint that the
+        // run can go on still applies.
+        view.message = if task.resumable_failure.is_some() {
+            messages.invoke_task_resumable_error(cancelled)
+        } else {
+            cancelled
+        };
+    } else if let Some(reason) = &task.resumable_failure {
+        view.message = messages.invoke_task_resumable_error(reason.as_str().into());
+    }
+    if let Some((entries, output, kept, aside)) = &task.restore_result {
+        let held = messages.invoke_restore_held(plural_count(*entries), count(*entries).into());
+        let mut message = messages
+            .invoke_restore_result(*kept, held, output.display().to_string().into())
+            .to_string();
+        if *aside > 0 {
+            message = messages
+                .invoke_joined(
+                    message.into(),
+                    messages.invoke_restore_aside(
+                        plural_count(*aside),
+                        count(*aside).into(),
+                        hatchzip_core::replace::folder(output)
+                            .display()
+                            .to_string()
+                            .into(),
+                    ),
+                )
+                .to_string();
+        }
+        view.message = message.into();
+    }
+    if let Some(entries) = task.tested_entries {
+        view.message =
+            messages.invoke_task_test_result(plural_count(entries), count(entries).into());
+    }
+    if let Some(percent) = task.reading_percent {
+        view.busy = messages.invoke_reading_archive(percent);
+    }
+    if !view.amounts.is_empty()
+        && let Some((done, total)) = task.progress_bytes
+    {
+        view.amounts = messages.invoke_task_amounts(human(done).into(), human(total).into());
+    }
+    if !view.archive_left.is_empty()
+        && let Some(left) = task.remaining_archive_bytes
+    {
+        view.archive_left = messages.invoke_task_archive_left(human(left).into());
+    }
+    if !view.rate.is_empty()
+        && let Some((speed, seconds)) = task.rate_estimate
+    {
+        let duration = match seconds {
+            0..=4 => messages.invoke_time_short().to_string(),
+            5..=59 => messages
+                .invoke_time_seconds(
+                    i32::try_from(seconds).unwrap_or(i32::MAX),
+                    seconds.to_string().into(),
+                )
+                .to_string(),
+            60..=3599 => {
+                let minutes = seconds.div_ceil(60);
+                messages
+                    .invoke_time_minutes(
+                        i32::try_from(minutes).unwrap_or(i32::MAX),
+                        minutes.to_string().into(),
+                    )
+                    .to_string()
+            }
+            _ => {
+                let hours = seconds / 3600;
+                let minutes = (seconds % 3600) / 60;
+                messages
+                    .invoke_joined(
+                        messages.invoke_time_hours(
+                            i32::try_from(hours).unwrap_or(i32::MAX),
+                            hours.to_string().into(),
+                        ),
+                        messages.invoke_time_minutes(
+                            i32::try_from(minutes).unwrap_or(i32::MAX),
+                            minutes.to_string().into(),
+                        ),
+                    )
+                    .to_string()
+            }
+        };
+        view.rate = messages.invoke_task_rate(human(speed).into(), duration.into());
+    }
+    view.step = match task.queue {
+        crate::task::Queue::Single => SharedString::new(),
+        crate::task::Queue::Of { at, of } => {
+            messages.invoke_queue_of(plural_count(at), plural_count(of))
+        }
+        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(of)),
+        crate::task::Queue::Waiting { at, of, left } => {
+            messages.invoke_queue_waiting(plural_count(at), plural_count(of), plural_count(left))
+        }
+    };
+    view
 }
 
 #[cfg(test)]

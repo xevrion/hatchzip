@@ -1,5 +1,5 @@
 //! Exercises the bundled catalog through the same Slint component as the app.
-use hatchzip_gui::{MainWindow, Screen, backend::Drops, main_window, settings::Settings};
+use hatchzip_gui::{MainWindow, Messages, Screen, backend::Drops, main_window, settings::Settings};
 use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
 use slint::{ComponentHandle, Timer, TimerMode};
 use std::cell::Cell;
@@ -49,11 +49,20 @@ fn bundled_hindi_and_english_fallback() {
     .unwrap();
     let ui = MainWindow::new().unwrap();
     slint::select_bundled_translation("hi").unwrap();
-    assert_eq!(ui.invoke_open_archive_title(), "आर्काइव खोलें");
-    assert_eq!(ui.invoke_reading_archive(37), "आर्काइव पढ़ा जा रहा है… 37%");
-    assert_eq!(ui.invoke_entry_count("35".into(), 35), "35 प्रविष्टियाँ");
     assert_eq!(
-        ui.invoke_task_heading(
+        ui.global::<Messages>().invoke_open_archive_title(),
+        "आर्काइव खोलें"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_reading_archive(37),
+        "आर्काइव पढ़ा जा रहा है… 37%"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_entry_count("35".into(), 35),
+        "35 प्रविष्टियाँ"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_task_heading(
             hatchzip_gui::Phase::Working,
             false,
             false,
@@ -68,15 +77,18 @@ fn bundled_hindi_and_english_fallback() {
         assert_eq!(ui.get_formats().contains("RAR"), rar);
     }
     assert!(
-        ui.invoke_keep_archive_hint("Reason".into())
+        ui.global::<Messages>()
+            .invoke_keep_archive_hint("Reason".into())
             .contains("\"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\"")
     );
     assert_eq!(
-        ui.invoke_remaining_summary("3.2 GB".into(), "120 प्रविष्टियाँ".into()),
+        ui.global::<Messages>()
+            .invoke_remaining_summary("3.2 GB".into(), "120 प्रविष्टियाँ".into()),
         "3.2 GB शेष (120 प्रविष्टियाँ)"
     );
     assert_eq!(
-        ui.invoke_uncompressed_summary("3.2 GB".into()),
+        ui.global::<Messages>()
+            .invoke_uncompressed_summary("3.2 GB".into()),
         "असंपीड़ित आकार: 3.2 GB"
     );
     for (n, number, entry, hour) in [
@@ -86,11 +98,11 @@ fn bundled_hindi_and_english_fallback() {
         (1200, "1,200", "प्रविष्टियाँ", "घंटे"),
     ] {
         assert_eq!(
-            ui.invoke_entry_count(number.into(), n),
+            ui.global::<Messages>().invoke_entry_count(number.into(), n),
             format!("{number} {entry}")
         );
         assert_eq!(
-            ui.invoke_time_hours(n, number.into()),
+            ui.global::<Messages>().invoke_time_hours(n, number.into()),
             format!("{number} {hour}")
         );
         let expected = if n == 1 {
@@ -98,46 +110,96 @@ fn bundled_hindi_and_english_fallback() {
         } else {
             format!("जाँच सफल: {number} प्रविष्टियाँ सत्यापित हुईं।")
         };
-        assert_eq!(ui.invoke_task_test_result(n, number.into()), expected);
+        assert_eq!(
+            ui.global::<Messages>()
+                .invoke_task_test_result(n, number.into()),
+            expected
+        );
     }
     assert_eq!(
-        ui.invoke_restore_result(false, ui.invoke_restore_held(1, "1".into()), "out".into()),
+        ui.global::<Messages>().invoke_restore_result(
+            false,
+            ui.global::<Messages>().invoke_restore_held(1, "1".into()),
+            "out".into()
+        ),
         "आर्काइव पुनर्स्थापित हुआ। अभी एक्सट्रैक्ट होनी बाकी: 1 प्रविष्टि। एक्सट्रैक्ट की गई फ़ाइलें out में बनी रहेंगी।"
     );
     assert!(
-        ui.invoke_restore_aside(1, "1".into(), "out".into())
+        ui.global::<Messages>()
+            .invoke_restore_aside(1, "1".into(), "out".into())
             .contains("out")
     );
-    assert_eq!(ui.invoke_checking_space(), "डिस्क की जगह जाँची जा रही है…");
     assert_eq!(
-        ui.invoke_paused_message(),
+        ui.global::<Messages>().invoke_checking_space(),
+        "डिस्क की जगह जाँची जा रही है…"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_paused_message(),
         "प्रगति सहेज ली गई है। एक्सट्रैक्शन अभी या बाद में फिर शुरू किया जा सकता है।"
     );
-    assert_eq!(ui.invoke_menu_added(), "संदर्भ मेन्यू प्रविष्टियाँ जोड़ दी गई हैं।");
-    assert_eq!(ui.invoke_menu_removed(), "संदर्भ मेन्यू प्रविष्टियाँ हटा दी गई हैं।");
+    assert_eq!(
+        ui.global::<Messages>().invoke_menu_added(),
+        "संदर्भ मेन्यू प्रविष्टियाँ जोड़ दी गई हैं।"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_menu_removed(),
+        "संदर्भ मेन्यू प्रविष्टियाँ हटा दी गई हैं।"
+    );
     assert!(
-        ui.invoke_restore_result(false, ui.invoke_restore_held(2, "2".into()), "out".into())
+        ui.global::<Messages>()
+            .invoke_restore_result(
+                false,
+                ui.global::<Messages>().invoke_restore_held(2, "2".into()),
+                "out".into()
+            )
             .contains("आर्काइव पुनर्स्थापित हुआ")
     );
     assert_eq!(
-        ui.invoke_task_test_result(2, "2".into()),
+        ui.global::<Messages>()
+            .invoke_task_test_result(2, "2".into()),
         "जाँच सफल: 2 प्रविष्टियाँ सत्यापित हुईं।"
     );
     assert_eq!(
-        ui.invoke_task_amounts("5 MB".into(), "10 MB".into()),
+        ui.global::<Messages>()
+            .invoke_task_amounts("5 MB".into(), "10 MB".into()),
         "10 MB में से 5 MB"
     );
-    assert_eq!(ui.invoke_task_destination("folder".into()), "गंतव्य: folder");
     assert_eq!(
-        ui.invoke_replace_question("file".into(), "folder".into()),
+        ui.global::<Messages>()
+            .invoke_task_space("3.5 MB".into(), "7.8 GB".into()),
+        "ज़रूरी: 3.5 MB। उपलब्ध: 7.8 GB।"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_test_cancelled(),
+        "जाँच रद्द हुई। आर्काइव नहीं बदला गया।"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_extraction_cancelled(),
+        "एक्सट्रैक्शन रद्द हुआ। आर्काइव नहीं बदला गया।"
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_joined("पहला।".into(), "दूसरा।".into()),
+        "पहला। दूसरा।"
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_task_destination("folder".into()),
+        "गंतव्य: folder"
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_replace_question("file".into(), "folder".into()),
         "'file' पहले से folder में मौजूद है।"
     );
     assert_eq!(
-        ui.invoke_replace_remaining(2, "2".into()),
+        ui.global::<Messages>()
+            .invoke_replace_remaining(2, "2".into()),
         "अगली 2 फ़ाइलों के लिए भी यही करें"
     );
     assert!(
-        ui.invoke_replace_instructions(true)
+        ui.global::<Messages>()
+            .invoke_replace_instructions(true)
             .contains("आर्काइव की प्रति")
     );
     if let Some(path) = std::env::var_os("HATCHZIP_TRANSLATION_EMPTY_SHOT") {
@@ -258,64 +320,114 @@ fn bundled_hindi_and_english_fallback() {
     // GB is deliberately absent from the catalog and falls back to English.
     assert_eq!(ui.get_storage_unit(), "GB");
     slint::select_bundled_translation("en").unwrap();
-    assert_eq!(ui.invoke_open_archive_title(), "Open archive");
-    assert_eq!(ui.invoke_reading_archive(37), "Reading archive… 37%");
     assert_eq!(
-        ui.invoke_restore_result(false, ui.invoke_restore_held(2, "2".into()), "out".into()),
+        ui.global::<Messages>().invoke_open_archive_title(),
+        "Open archive"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_reading_archive(37),
+        "Reading archive… 37%"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_restore_result(
+            false,
+            ui.global::<Messages>().invoke_restore_held(2, "2".into()),
+            "out".into()
+        ),
         "Archive restored. It contains the 2 entries not yet extracted. Extracted files remain in out."
     );
     assert_eq!(
-        ui.invoke_task_test_result(2, "2".into()),
+        ui.global::<Messages>()
+            .invoke_task_test_result(2, "2".into()),
         "Test passed: 2 entries verified."
     );
     assert_eq!(
-        ui.invoke_task_amounts("5 MB".into(), "10 MB".into()),
+        ui.global::<Messages>()
+            .invoke_task_amounts("5 MB".into(), "10 MB".into()),
         "5 MB of 10 MB"
     );
     assert_eq!(
-        ui.invoke_replace_question("file".into(), "folder".into()),
+        ui.global::<Messages>()
+            .invoke_task_space("3.5 MB".into(), "7.8 GB".into()),
+        "Required: 3.5 MB. Available: 7.8 GB."
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_test_cancelled(),
+        "Test cancelled. The archive was not modified."
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_joined("First.".into(), "Second.".into()),
+        "First. Second."
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_replace_question("file".into(), "folder".into()),
         "'file' already exists in folder."
     );
     assert_eq!(
-        ui.invoke_replace_remaining(1, "1".into()),
+        ui.global::<Messages>()
+            .invoke_replace_remaining(1, "1".into()),
         "Do the same for the next file"
     );
     assert_eq!(
-        ui.invoke_replace_remaining(1200, "1,200".into()),
+        ui.global::<Messages>()
+            .invoke_replace_remaining(1200, "1,200".into()),
         "Do the same for the next 1,200 files"
     );
     assert!(
-        ui.invoke_replace_instructions(true)
+        ui.global::<Messages>()
+            .invoke_replace_instructions(true)
             .contains("the archive's copy is not kept")
     );
 
     for (n, number) in [(0, "0"), (1, "1"), (2, "2"), (1200, "1,200")] {
         let unit = if n == 1 { "entry" } else { "entries" };
         assert_eq!(
-            ui.invoke_entry_count(number.into(), n),
+            ui.global::<Messages>().invoke_entry_count(number.into(), n),
             format!("{number} {unit}")
         );
         assert_eq!(
-            ui.invoke_restore_held(n, number.into()),
+            ui.global::<Messages>()
+                .invoke_restore_held(n, number.into()),
             format!("the {number} {unit}")
         );
     }
-    assert_eq!(ui.invoke_time_minutes(0, "0".into()), "0 minutes");
-    assert_eq!(ui.invoke_time_minutes(1, "1".into()), "1 minute");
-    assert_eq!(ui.invoke_time_seconds(2, "2".into()), "2 seconds");
     assert_eq!(
-        ui.invoke_restore_aside(1, "1".into(), "out".into()),
+        ui.global::<Messages>().invoke_time_minutes(0, "0".into()),
+        "0 minutes"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_time_minutes(1, "1".into()),
+        "1 minute"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_time_seconds(2, "2".into()),
+        "2 seconds"
+    );
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_restore_aside(1, "1".into(), "out".into()),
         "1 replaced file remains in out, since the file extracted at its path is no longer in the archive."
     );
     assert_eq!(
-        ui.invoke_restore_aside(2, "2".into(), "out".into()),
+        ui.global::<Messages>()
+            .invoke_restore_aside(2, "2".into(), "out".into()),
         "2 replaced files remain in out, since the files extracted at their paths are no longer in the archive."
     );
     assert_eq!(
-        ui.invoke_keep_archive_hint("Reason".into()),
+        ui.global::<Messages>()
+            .invoke_keep_archive_hint("Reason".into()),
         "Reason. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
     );
-    assert_eq!(ui.invoke_replace_remaining(0, "0".into()), "");
-    assert_eq!(ui.invoke_entry_count("35".into(), 35), "35 entries");
+    assert_eq!(
+        ui.global::<Messages>()
+            .invoke_replace_remaining(0, "0".into()),
+        ""
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_entry_count("35".into(), 35),
+        "35 entries"
+    );
     assert!(ui.get_formats().starts_with("Or drag an archive"));
 }

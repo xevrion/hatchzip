@@ -1,4 +1,5 @@
 import { Palette } from "std-widgets.slint";
+import { Messages } from "messages.slint";
 import { Theme } from "theme.slint";
 import { Phase, PlanView, TaskView, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt, SpaceVerdict, SpaceNotes } from "parts.slint";
 
@@ -22,10 +23,6 @@ export component TaskWindow inherits Window {
     callback lower-reserve();
     callback password-ok(string);
     callback password-cancel();
-    public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
-    public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
-    public function replace-remaining(left: int, count: string) -> string { return left == 0 ? "" : @tr("Do the same for the next file" | "Do the same for the next {} files" % left, count); }
-
     callback replace-answer(int, bool);
     callback replace-cancel();
 

@@ -19,9 +19,9 @@ use crate::entries::{self, Entries, EntriesModel};
 use crate::runner::Runner;
 use crate::settings::{self, Settings};
 use crate::task::Task;
-use crate::text::{self, gb_text, parse_gb, plan_view};
+use crate::text::{self, gb_text, parse_gb, plan_view, plural_count};
 use crate::work::{Request, sentence};
-use crate::{AboutWindow, MainWindow, Mode, PlanView, Screen, TaskView, platform, shell};
+use crate::{AboutWindow, MainWindow, Messages, Mode, PlanView, Screen, TaskView, platform, shell};
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
 const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
@@ -115,11 +115,6 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
 /// one, so it never waits on them.
 type SharedJob = Arc<Mutex<Option<Job>>>;
 
-// Slint's plural selector is an int; the formatted count is passed separately.
-fn plural_count(n: usize) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
 struct App {
     ui: slint::Weak<MainWindow>,
     entries: RefCell<Option<Rc<EntriesModel>>>,
@@ -194,137 +189,15 @@ pub fn build(
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
     ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
-        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
-        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
-        platform::ShellMenuName::Files => ui.invoke_shell_files(),
+        platform::ShellMenuName::Explorer => ui.global::<Messages>().invoke_shell_explorer(),
+        platform::ShellMenuName::Finder => ui.global::<Messages>().invoke_shell_finder(),
+        platform::ShellMenuName::Files => ui.global::<Messages>().invoke_shell_files(),
     });
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            let mut view = task.view.clone();
-            view.heading = ui.invoke_task_heading(
-                view.phase,
-                view.is_test,
-                task.is_restoring(),
-                task.name().into(),
-            );
-            view.busy = ui.invoke_checking_space();
-            view.detail = if task.is_restoring() {
-                ui.invoke_restore_detail()
-            } else if view.is_test {
-                ui.invoke_test_detail()
-            } else if let Some(path) = &task.output {
-                ui.invoke_task_destination(path.display().to_string().into())
-            } else {
-                Default::default()
-            };
-            if task.waiting_for_disk() && !view.rate.is_empty() {
-                view.rate = ui.invoke_waiting_disk();
-            }
-            match view.phase {
-                crate::Phase::Pausing => view.message = ui.invoke_pausing_message(),
-                crate::Phase::Verifying if !view.is_test => {
-                    view.message = ui.invoke_verifying_message()
-                }
-                crate::Phase::Paused => view.message = ui.invoke_paused_message(),
-                // The pane showed the plan from before the run; a stop for
-                // space needs the amount the run found, and the pane too.
-                crate::Phase::NoSpace => {
-                    view.message = ui.invoke_task_no_space(task.plan.short.clone());
-                    ui.set_plan(task.plan.clone());
-                }
-                crate::Phase::Done if !view.is_test && !task.is_restoring() => {
-                    view.message = if task.keeps_archive() {
-                        ui.invoke_extracted_kept()
-                    } else {
-                        ui.invoke_extracted_removed()
-                    };
-                    if let Some(warning) = &task.warning {
-                        view.message = format!("{} {warning}.", view.message).into();
-                    }
-                }
-                _ => {}
-            }
-            if let Some(reason) = &task.resumable_failure {
-                view.message = ui.invoke_task_resumable_error(reason.as_str().into());
-            }
-            if let Some((entries, output, kept, aside)) = &task.restore_result {
-                let held =
-                    ui.invoke_restore_held(plural_count(*entries), text::count(*entries).into());
-                let mut message = ui
-                    .invoke_restore_result(*kept, held, output.display().to_string().into())
-                    .to_string();
-                if *aside > 0 {
-                    message.push(' ');
-                    message.push_str(
-                        &ui.invoke_restore_aside(
-                            plural_count(*aside),
-                            text::count(*aside).into(),
-                            hatchzip_core::replace::folder(output)
-                                .display()
-                                .to_string()
-                                .into(),
-                        ),
-                    );
-                }
-                view.message = message.into();
-            }
-            if let Some(count) = task.tested_entries {
-                view.message =
-                    ui.invoke_task_test_result(plural_count(count), text::count(count).into());
-            }
-            if let Some(percent) = task.reading_percent {
-                view.busy = ui.invoke_reading_archive(percent);
-            }
-            if !view.amounts.is_empty()
-                && let Some((done, total)) = task.progress_bytes
-            {
-                view.amounts = ui.invoke_task_amounts(human(done).into(), human(total).into());
-            }
-            if !view.archive_left.is_empty()
-                && let Some(left) = task.remaining_archive_bytes
-            {
-                view.archive_left = ui.invoke_task_archive_left(human(left).into());
-            }
-            if !view.rate.is_empty()
-                && let Some((speed, seconds)) = task.rate_estimate
-            {
-                let duration = match seconds {
-                    0..=4 => ui.invoke_time_short().to_string(),
-                    5..=59 => ui
-                        .invoke_time_seconds(
-                            i32::try_from(seconds).unwrap_or(i32::MAX),
-                            seconds.to_string().into(),
-                        )
-                        .to_string(),
-                    60..=3599 => {
-                        let minutes = seconds.div_ceil(60);
-                        ui.invoke_time_minutes(
-                            i32::try_from(minutes).unwrap_or(i32::MAX),
-                            minutes.to_string().into(),
-                        )
-                        .to_string()
-                    }
-                    _ => {
-                        let hours = seconds / 3600;
-                        let minutes = (seconds % 3600) / 60;
-                        format!(
-                            "{} {}",
-                            ui.invoke_time_hours(
-                                i32::try_from(hours).unwrap_or(i32::MAX),
-                                hours.to_string().into()
-                            ),
-                            ui.invoke_time_minutes(
-                                i32::try_from(minutes).unwrap_or(i32::MAX),
-                                minutes.to_string().into()
-                            )
-                        )
-                    }
-                };
-                view.rate = ui.invoke_task_rate(human(speed).into(), duration.into());
-            }
-            ui.set_task(view);
+            ui.set_task(text::localize(task, &ui.global::<Messages>()));
         }
     });
     let app = Rc::new(App {
@@ -517,7 +390,10 @@ impl App {
                     && f < 1.0
                     && start.elapsed() >= Duration::from_millis(500)
                 {
-                    ui.set_loading_detail(ui.invoke_reading_archive((f * 100.0).floor() as i32));
+                    ui.set_loading_detail(
+                        ui.global::<Messages>()
+                            .invoke_reading_archive((f * 100.0).floor() as i32),
+                    );
                 }
             });
         // Opening the same archive again, after a run, needn't ask again.
@@ -558,24 +434,29 @@ impl App {
         let mut summary = Vec::new();
         if let Some(job) = &loaded.job {
             summary.push(
-                ui.invoke_archive_kind(job.format_name.to_uppercase().into())
+                ui.global::<Messages>()
+                    .invoke_archive_kind(job.format_name.to_uppercase().into())
                     .to_string(),
             );
             let count = job.item_count();
-            let entries = ui.invoke_entry_count(text::count(count).into(), plural_count(count));
+            let entries = ui
+                .global::<Messages>()
+                .invoke_entry_count(text::count(count).into(), plural_count(count));
             match loaded.left {
                 None => {
                     summary.push(human(job.storage.original_len()));
                     summary.push(entries.to_string());
                 }
                 Some(left) => summary.push(
-                    ui.invoke_remaining_summary(human(left).into(), entries)
+                    ui.global::<Messages>()
+                        .invoke_remaining_summary(human(left).into(), entries)
                         .to_string(),
                 ),
             }
         }
         summary.push(
-            ui.invoke_uncompressed_summary(human(loaded.total).into())
+            ui.global::<Messages>()
+                .invoke_uncompressed_summary(human(loaded.total).into())
                 .to_string(),
         );
         ui.set_summary(summary.join(" \u{b7} ").into());
@@ -601,7 +482,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                refusal: ui.invoke_no_entries(),
+                refusal: ui.global::<Messages>().invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -639,7 +520,9 @@ impl App {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
-                        view.refusal = ui.invoke_keep_archive_hint(text::capitalise(&why).into());
+                        view.refusal = ui
+                            .global::<Messages>()
+                            .invoke_keep_archive_hint(text::capitalise(&why).into());
                     }
                     ui.set_plan(view);
                 }
@@ -684,8 +567,20 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (app.ui().invoke_menu_added().to_string(), false),
-                    Ok(()) => (app.ui().invoke_menu_removed().to_string(), false),
+                    Ok(()) if on => (
+                        app.ui()
+                            .global::<Messages>()
+                            .invoke_menu_added()
+                            .to_string(),
+                        false,
+                    ),
+                    Ok(()) => (
+                        app.ui()
+                            .global::<Messages>()
+                            .invoke_menu_removed()
+                            .to_string(),
+                        false,
+                    ),
                     Err(e) => {
                         // Show the box as it really is.
                         app.ui().set_shell_menu_on(!on);
@@ -717,9 +612,15 @@ impl App {
         }
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_open_archive_title().as_str())
-            .add_filter(ui.invoke_archives_filter().as_str(), &picker_extensions())
-            .add_filter(ui.invoke_all_files_filter().as_str(), &["*"])
+            .set_title(ui.global::<Messages>().invoke_open_archive_title().as_str())
+            .add_filter(
+                ui.global::<Messages>().invoke_archives_filter().as_str(),
+                &picker_extensions(),
+            )
+            .add_filter(
+                ui.global::<Messages>().invoke_all_files_filter().as_str(),
+                &["*"],
+            )
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
             dialog = dialog.set_directory(dir);
@@ -740,7 +641,7 @@ impl App {
         // looking that up needs no disk access on this thread.
         let start = current.parent();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_destination_title().as_str())
+            .set_title(ui.global::<Messages>().invoke_destination_title().as_str())
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);

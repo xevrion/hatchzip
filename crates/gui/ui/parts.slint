@@ -62,6 +62,9 @@ export struct TaskView {
     rate: string,
     archive-left: string,
     message: string,
+    // What the finished run could not do, in the engine's words. Shown after
+    // the message, as its own sentence.
+    warning: string,
     can-open-folder: bool,
     can-retry: bool,
     // Paused or stopped halfway: offer to undo it.
@@ -249,7 +252,7 @@ export component Progress inherits VerticalLayout {
 // The message under a finished, paused or failed run.
 export component Outcome inherits Text {
     in property <TaskView> task;
-    text: root.task.message;
+    text: root.task.warning == "" ? root.task.message : @tr("{} {}", root.task.message, root.task.warning);
     wrap: word-wrap;
     color: root.task.phase == Phase.failed || root.task.phase == Phase.no-space ? Theme.danger : Palette.foreground;
 }
