@@ -52,11 +52,8 @@ fn the_archives_inside_are_extracted_one_level() {
     fs::create_dir_all(&out).unwrap();
     // An archive the person already had in the destination, and one the
     // archive itself carries under an extension that is not an archive.
-    fs::write(
-        out.join("existing.zip"),
-        zip_bytes(&[("user.txt", b"mine")]),
-    )
-    .unwrap();
+    let existing = zip_bytes(&[("user.txt", b"mine")]);
+    fs::write(out.join("existing.zip"), &existing).unwrap();
     let mods = zip_bytes(&[("mod.class", b"x")]);
     let disguised = zip_bytes(&[("payload.txt", b"inside")]);
 
@@ -106,7 +103,7 @@ fn the_archives_inside_are_extracted_one_level() {
     );
     assert_eq!(
         fs::read(out.join("existing.zip")).unwrap(),
-        zip_bytes(&[("user.txt", b"mine")]),
+        existing,
         "the file that was already there is untouched"
     );
     assert!(
