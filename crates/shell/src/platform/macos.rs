@@ -2,7 +2,7 @@
 //! bundles in `~/Library/Services`. They are not written yet: nobody can
 //! test them without a Mac, and a broken one fails silently in Finder.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
@@ -12,6 +12,8 @@ pub fn current_dirs() -> Result<Dirs> {
     let home = std::env::home_dir().ok_or_else(|| anyhow!("no home folder"))?;
     Ok(Dirs {
         data: home.join("Library/Services"),
+        config: PathBuf::new(),
+        system_config: Vec::new(),
     })
 }
 

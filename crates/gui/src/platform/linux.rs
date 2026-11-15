@@ -3,7 +3,7 @@ use std::path::PathBuf;
 /// The settings switch, named after this system's file manager.
 pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Files;
 
-/// The file managers hatchzip-shell knows (Dolphin, GNOME Files, Nemo).
+/// The file managers hatchzip-shell knows (Dolphin, GNOME Files, Nemo, Thunar).
 pub const SHELL_MENU: bool = true;
 
 /// `$XDG_CONFIG_HOME/hatchzip`, or `~/.config/hatchzip`.

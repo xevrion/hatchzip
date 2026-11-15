@@ -78,6 +78,12 @@ pub struct Dirs {
     /// `$XDG_DATA_HOME` on Linux. Unused on Windows, where entries go to the
     /// per-user registry hive.
     pub data: PathBuf,
+    /// `$XDG_CONFIG_HOME` on Linux, where Thunar keeps its actions. Unused
+    /// elsewhere.
+    pub config: PathBuf,
+    /// `$XDG_CONFIG_DIRS` on Linux, where Thunar's default actions come
+    /// from. Unused elsewhere.
+    pub system_config: Vec<PathBuf>,
 }
 
 impl Dirs {

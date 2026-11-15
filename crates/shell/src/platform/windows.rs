@@ -4,7 +4,7 @@
 //! Windows 11 shows the classic menu under "Show more options"; a top-level
 //! entry there needs a packaged shell extension.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use winreg::RegKey;
@@ -21,6 +21,8 @@ fn menu_key(ext: &str) -> String {
 pub fn current_dirs() -> Result<Dirs> {
     Ok(Dirs {
         data: std::env::temp_dir(),
+        config: PathBuf::new(),
+        system_config: Vec::new(),
     })
 }
 

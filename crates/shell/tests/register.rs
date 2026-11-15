@@ -14,7 +14,9 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
 
     let tmp = tempfile::TempDir::new().unwrap();
     let dirs = Dirs {
-        data: tmp.path().to_path_buf(),
+        data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: Vec::new(),
     };
     // A path with a space and a quote, the classic way to break Exec lines.
     let gui = Path::new("/opt/Hatch Zip/it's/hatchzip-gui");
@@ -23,7 +25,7 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
     register(&dirs, gui).unwrap();
     assert!(is_registered(&dirs));
 
-    let kde = tmp.path().join("kio/servicemenus/hatchzip.desktop");
+    let kde = dirs.data.join("kio/servicemenus/hatchzip.desktop");
     let text = std::fs::read_to_string(&kde).unwrap();
     for a in ACTIONS {
         assert!(
@@ -42,12 +44,12 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
         0o111
     );
 
-    let script = tmp.path().join("nautilus/scripts/HatchZip - Extract here");
+    let script = dirs.data.join("nautilus/scripts/HatchZip - Extract here");
     let text = std::fs::read_to_string(&script).unwrap();
     assert!(text.contains("'/opt/Hatch Zip/it'\\''s/hatchzip-gui' --extract-here"));
     assert!(std::fs::metadata(&script).unwrap().permissions().mode() & 0o100 != 0);
-    let keep = tmp
-        .path()
+    let keep = dirs
+        .data
         .join("nautilus/scripts/HatchZip - Extract here (keep archive)");
     assert!(
         std::fs::read_to_string(&keep)
@@ -55,21 +57,32 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
             .contains("'/opt/Hatch Zip/it'\\''s/hatchzip-gui' --keep-archive --extract-here")
     );
 
-    let nemo = tmp.path().join("nemo/actions/hatchzip-test.nemo_action");
+    let nemo = dirs.data.join("nemo/actions/hatchzip-test.nemo_action");
     assert!(
         std::fs::read_to_string(&nemo)
             .unwrap()
             .contains("Extensions=zip;7z;tar;tgz;gz;tbz2;tbz;bz2;txz;xz;zst;tzst;001;")
     );
-    let nemo = tmp
-        .path()
+    let nemo = dirs
+        .data
         .join("nemo/actions/hatchzip-extract-here-keep.nemo_action");
     let text = std::fs::read_to_string(&nemo).unwrap();
     assert!(text.contains("Name=Extract here (keep archive) with HatchZip"));
     assert!(text.contains("--keep-archive --extract-here %F\nSelection=notnone\n"));
 
+    let thunar = std::fs::read_to_string(dirs.config.join("Thunar/uca.xml")).unwrap();
+    assert_eq!(thunar.matches("<action>").count(), ACTIONS.len());
+    assert!(thunar.contains(
+        "<name>Extract here (keep archive)</name>\n    <submenu>HatchZip</submenu>\n    \
+         <unique-id>hatchzip-extract-here-keep</unique-id>\n    \
+         <command>'/opt/Hatch Zip/it'\\''s/hatchzip-gui' --keep-archive --extract-here %F</command>"
+    ));
+    assert!(thunar.contains("<patterns>*.zip;*.7z;*.tar;"));
+
     // Running it twice is harmless, and so is unregistering twice.
     register(&dirs, gui).unwrap();
+    let again = std::fs::read_to_string(dirs.config.join("Thunar/uca.xml")).unwrap();
+    assert_eq!(again, thunar, "a second register adds nothing");
     unregister(&dirs).unwrap();
     unregister(&dirs).unwrap();
     assert!(!is_registered(&dirs));
@@ -87,6 +100,8 @@ fn gnome_files_passes_every_selected_archive_at_once() {
     let tmp = tempfile::TempDir::new().unwrap();
     let dirs = Dirs {
         data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: Vec::new(),
     };
     // Stands in for the GUI: writes its arguments, one per line.
     let gui = tmp.path().join("fake gui");
@@ -124,6 +139,71 @@ fn gnome_files_passes_every_selected_archive_at_once() {
         .unwrap();
     assert!(run.success());
     assert!(!log.exists());
+}
+
+/// Thunar reads only the user's `uca.xml` once there is one, so the system's
+/// default actions are copied in, and the user's own actions survive both a
+/// register and an unregister untouched.
+#[cfg(target_os = "linux")]
+#[test]
+fn thunar_keeps_every_action_that_is_not_hatchzips() {
+    use hatchzip_shell::{ACTIONS, unregister};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let system = tmp.path().join("xdg");
+    std::fs::create_dir_all(system.join("Thunar")).unwrap();
+    let defaults = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE actions [\n\
+                    <!ELEMENT actions (action)+>\n]>\n<actions>\n  <action>\n    \
+                    <name>Open Terminal Here</name>\n    <unique-id>terminal</unique-id>\n  \
+                    </action>\n</actions>\n";
+    std::fs::write(system.join("Thunar/uca.xml"), defaults).unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: vec![tmp.path().join("missing"), system],
+    };
+    let uca = dirs.config.join("Thunar/uca.xml");
+    let gui = Path::new("/usr/bin/hatchzip-gui");
+
+    // No file of the user's yet: the defaults come along.
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    assert!(text.contains("<name>Open Terminal Here</name>"));
+    assert_eq!(text.matches("<action>").count(), 1 + ACTIONS.len());
+    unregister(&dirs).unwrap();
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), defaults);
+
+    // The user's own file, as Thunar writes it, with an action of theirs on
+    // either side of an older HatchZip entry.
+    let mine = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n<action>\n\
+                \t<name>Mine</name>\n\t<unique-id>1-1</unique-id>\n</action>\n<action>\n\
+                \t<name>Old</name>\n\t<unique-id>hatchzip-test</unique-id>\n\t\
+                <command>/old/hatchzip-gui --test %F</command>\n</action>\n<action>\n\
+                \t<name>Also mine</name>\n\t<unique-id>2-2</unique-id>\n</action>\n</actions>\n";
+    std::fs::write(&uca, mine).unwrap();
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    assert!(!text.contains("/old/hatchzip-gui"));
+    assert!(text.contains("<name>Mine</name>") && text.contains("<name>Also mine</name>"));
+    assert!(!text.contains("Open Terminal Here"), "the user's file wins");
+    assert_eq!(text.matches("<action>").count(), 2 + ACTIONS.len());
+    unregister(&dirs).unwrap();
+    let left = std::fs::read_to_string(&uca).unwrap();
+    assert_eq!(
+        left,
+        mine.replace(
+            "<action>\n\t<name>Old</name>\n\t<unique-id>hatchzip-test</unique-id>\n\t\
+             <command>/old/hatchzip-gui --test %F</command>\n</action>\n",
+            ""
+        )
+    );
+
+    // Something that is not an actions file is never overwritten.
+    std::fs::write(&uca, "not xml").unwrap();
+    std::fs::remove_dir_all(&dirs.data).unwrap();
+    assert!(register(&dirs, gui).is_err());
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), "not xml");
+    assert!(!dirs.data.exists(), "no other menu is written either");
 }
 
 #[cfg(target_os = "linux")]
