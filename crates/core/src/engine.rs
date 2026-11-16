@@ -869,10 +869,21 @@ impl Job {
     /// is the entry its point is in; the files after the point are still in
     /// the archive.
     pub fn uncommitted(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, true)
+    }
+
+    /// A kept run being discarded has the whole archive, so its open file
+    /// can go too. Earlier files committed by a stream point stay out of
+    /// this list, just as they do on resume.
+    pub(crate) fn discarded_output(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, false)
+    }
+
+    fn uncommitted_files(&self, out: &Path, preserve_open: bool) -> Vec<(PathBuf, u64)> {
         if !self.started {
             return Vec::new();
         }
-        let open = self.open_entry().is_some();
+        let open = preserve_open && self.open_entry().is_some();
         let mut found = Vec::new();
         for (i, u) in self.units.iter().enumerate() {
             for (k, item) in u.items.iter().enumerate() {

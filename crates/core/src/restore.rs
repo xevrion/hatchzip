@@ -250,8 +250,8 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
 }
 
 /// An extraction that keeps the archive never changed it, so there is
-/// nothing to rebuild: what a crashed batch left half written is deleted, as
-/// a resume would, and the progress files go. Finished files stay, except
+/// nothing to rebuild: uncommitted output, including the open streamed file,
+/// is deleted, and the progress files go. Committed files stay, except
 /// where they replaced a file: the archive still holds them, so the
 /// replaced file goes back.
 fn discard(journal: &mut Journal, tail: Arc<Tail>, paths: &Paths) -> Result<Restored> {
@@ -269,7 +269,7 @@ fn discard(journal: &mut Journal, tail: Arc<Tail>, paths: &Paths) -> Result<Rest
     if primary.exists() {
         let job = Job::resume(journal, tail, true, None, Default::default())
             .map_err(|e| names_encrypted(e, &primary, "discarded"))?;
-        session::clear_uncommitted(&job, &journal.output)?;
+        session::clear_discarded(&job, &journal.output)?;
         restored.format = job.format_name;
         restored.entries = job.item_count();
     }
