@@ -82,7 +82,7 @@ export component TaskWindow inherits Window {
             color: Theme.muted;
             wrap: word-wrap;
         }
-        Outcome {
+        if root.task.phase != Phase.no-space: Outcome {
             task: root.task;
         }
         if root.task.phase == Phase.no-space: SpaceNotes {
