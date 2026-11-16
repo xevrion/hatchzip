@@ -13,9 +13,13 @@ use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 fn zip_bytes(files: &[(&str, &[u8])]) -> Vec<u8> {
+    // A fixed time, not `default_for_write`: the test writes one of these
+    // before the run and compares the file with a fresh one after it, and a
+    // clock tick between the two would change the bytes.
+    let options = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (name, data) in files {
-        zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+        zip.start_file(*name, options).unwrap();
         zip.write_all(data).unwrap();
     }
     zip.finish().unwrap().into_inner()
