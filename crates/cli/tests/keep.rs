@@ -224,6 +224,67 @@ fn restore_discards_the_progress_of_a_kept_run() {
     assert_unchanged(&before);
 }
 
+#[test]
+fn restore_of_a_kept_gzip_removes_the_open_part_and_allows_a_fresh_run() {
+    const FILE: &str = "game/data.bin";
+    let files = Files::from([(FILE.into(), noise(3_000_000, 113))]);
+    let tmp = TempDir::new().unwrap();
+    let archive = targz_of(tmp.path(), "game.tar.gz", &files);
+    let before = snapshot(&archive);
+    let out = tmp.path().join("out");
+    let crashed = keep(
+        &archive,
+        &out,
+        &[
+            STEP,
+            ("HATCHZIP_CRASH_AT", "stream-after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "0"),
+        ],
+    );
+    assert!(!crashed.status.success(), "the run should have crashed");
+    let journal = journal(&archive);
+    assert_eq!(journal["keep"], true);
+    let resume = &journal["resume"];
+    let written = resume["written"].as_u64().unwrap() as usize;
+    assert!(written > 0 && written < files[FILE].len());
+    assert_eq!(
+        Path::new(resume["stream"]["at"]["file"]["path"].as_str().unwrap()),
+        Path::new(FILE)
+    );
+    let part = out.join("game/data.bin.hatchzip-part");
+    let partial = fs::read(&part).unwrap();
+    assert_eq!(partial.len(), written);
+    assert_eq!(partial, files[FILE][..written]);
+    assert_unchanged(&before);
+
+    let restored = hatchzip(
+        &[
+            "restore",
+            archive.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ],
+        &[],
+    );
+    assert_ok(&restored);
+    assert_unchanged(&before);
+    assert_no_side_files(&archive);
+
+    // The journal is gone, so a fresh run cannot recognize the old part
+    // as its own. Restore must remove it while it still has that record.
+    let part_remains = part.exists();
+    let fresh = keep(&archive, &out, &[]);
+    assert_unchanged(&before);
+    assert!(
+        !part_remains,
+        "restore left its open part file; fresh extraction reported: {}",
+        String::from_utf8_lossy(&fresh.stderr)
+    );
+    assert_ok(&fresh);
+    assert_tree(&out, &files);
+    assert_no_side_files(&archive);
+}
+
 fn walk_files(dir: &Path) -> Vec<PathBuf> {
     let mut all = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
