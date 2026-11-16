@@ -113,12 +113,13 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 
 ### Package managers
 
-Homebrew and Scoop are live. winget is in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
+Homebrew and Scoop are live. winget and Chocolatey are in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
 
 | System | Command | Installs |
 |---|---|---|
 | Arch Linux (AUR) | Not published yet. Until then, use the AppImage or the install script | App and CLI |
 | Windows (winget) | In review; until it is accepted, use the setup | App and CLI, same as the setup |
+| Windows (Chocolatey) | In review; until it is accepted, use the setup | App and CLI, same as the setup |
 | Windows (Scoop) | `scoop bucket add xevrion https://github.com/xevrion/scoop-bucket`, then `scoop install xevrion/hatchzip` | CLI |
 | macOS and Linux (Homebrew) | `brew install xevrion/tap/hatchzip` | CLI |
 | macOS (Homebrew) | `brew install --cask xevrion/tap/hatchzip` | App and CLI |
