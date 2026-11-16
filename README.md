@@ -15,6 +15,11 @@
 </h4>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily" alt="#10 Repository Of The Day on Trendshift" width="250" height="55" /></a>
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily?language=Rust" alt="#2 Rust Repository Of The Day on Trendshift" width="250" height="55" /></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml"><img src="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/xevrion/hatchzip"><img src="https://api.scorecard.dev/projects/github.com/xevrion/hatchzip/badge" alt="OpenSSF Scorecard" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0 licensed" /></a>
