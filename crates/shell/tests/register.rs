@@ -206,6 +206,69 @@ fn thunar_keeps_every_action_that_is_not_hatchzips() {
     assert!(!dirs.data.exists(), "no other menu is written either");
 }
 
+/// Files that would trip a plain text search: a comment naming the end tag, an
+/// unclosed action, a spaced empty root, and an empty file the user keeps on
+/// purpose to hide the system's actions.
+#[cfg(target_os = "linux")]
+#[test]
+fn thunar_reads_the_file_as_xml_not_text() {
+    use hatchzip_shell::{ACTIONS, unregister};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let system = tmp.path().join("xdg");
+    std::fs::create_dir_all(system.join("Thunar")).unwrap();
+    std::fs::write(
+        system.join("Thunar/uca.xml"),
+        "<actions><action><name>Default</name></action></actions>\n",
+    )
+    .unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: vec![system],
+    };
+    std::fs::create_dir_all(dirs.config.join("Thunar")).unwrap();
+    let uca = dirs.config.join("Thunar/uca.xml");
+    let gui = Path::new("/usr/bin/hatchzip-gui");
+
+    // The real end tag is the one outside the comment.
+    let commented = "<actions></actions><!-- Mentions </actions> here. -->\n";
+    std::fs::write(&uca, commented).unwrap();
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    assert!(text.ends_with("</actions><!-- Mentions </actions> here. -->\n"));
+    assert_eq!(text.matches("<action>").count(), ACTIONS.len());
+    unregister(&dirs).unwrap();
+    let left = std::fs::read_to_string(&uca).unwrap();
+    assert!(!left.contains("hatchzip-"));
+    assert!(left.ends_with("</actions><!-- Mentions </actions> here. -->\n"));
+
+    // A broken file is refused before any menu is written.
+    let broken = "<actions><action><name>Incomplete</name></actions>";
+    std::fs::write(&uca, broken).unwrap();
+    std::fs::remove_dir_all(&dirs.data).unwrap();
+    assert!(register(&dirs, gui).is_err());
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), broken);
+    assert!(!dirs.data.exists());
+
+    // Both spellings of an empty root.
+    for empty in ["<actions/>\n", "<actions />\n"] {
+        std::fs::write(&uca, empty).unwrap();
+        register(&dirs, gui).unwrap();
+        let text = std::fs::read_to_string(&uca).unwrap();
+        assert_eq!(text.matches("<action>").count(), ACTIONS.len(), "{empty}");
+        unregister(&dirs).unwrap();
+        assert!(uca.exists(), "{empty}");
+    }
+
+    // The user's own empty file is theirs, even when it matches HatchZip's.
+    let own_empty = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n</actions>\n";
+    std::fs::write(&uca, own_empty).unwrap();
+    register(&dirs, gui).unwrap();
+    unregister(&dirs).unwrap();
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), own_empty);
+}
+
 #[cfg(target_os = "linux")]
 fn walk(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
