@@ -71,7 +71,7 @@ fn thunar_file(dirs: &Dirs) -> PathBuf {
     dirs.config.join("Thunar/uca.xml")
 }
 
-const THUNAR_ID: &str = "<unique-id>hatchzip-";
+const THUNAR_ID_PREFIX: &str = "hatchzip-";
 const THUNAR_EMPTY: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n</actions>\n";
 
 /// What Thunar reads today. It reads only the first `uca.xml` it finds, the
@@ -102,8 +102,9 @@ struct Uca {
     self_closing: bool,
     /// Where `</actions>` starts.
     root_close: usize,
-    /// Each element directly under the root named `action`, start to end.
-    actions: Vec<Range<usize>>,
+    /// Each element directly under the root named `action`, start to end, and
+    /// whether its own `<unique-id>` child names it as HatchZip's.
+    actions: Vec<(Range<usize>, bool)>,
 }
 
 /// Reads just enough XML to know where the root and its actions are. Comments,
@@ -112,15 +113,20 @@ struct Uca {
 /// anything that isn't a well formed `<actions>` document, since writing into
 /// a broken file would only break it further.
 fn parse_uca(xml: &str) -> Option<Uca> {
-    let mut stack: Vec<(&str, usize)> = Vec::new();
+    let mut stack: Vec<(&str, usize, usize)> = Vec::new();
     let mut root: Option<(Range<usize>, bool)> = None;
     let mut root_close = None;
     let mut actions = Vec::new();
+    let mut ours = false;
     let mut i = 0;
     while let Some(off) = xml[i..].find('<') {
         let at = i + off;
         // Outside the root only whitespace is allowed.
         if stack.is_empty() && !xml[i..at].trim().is_empty() {
+            return None;
+        }
+        // Thunar's parser refuses a bare `&`, and would then drop the file.
+        if !entities_ok(&xml[i..at]) {
             return None;
         }
         let rest = &xml[at..];
@@ -150,14 +156,21 @@ fn parse_uca(xml: &str) -> Option<Uca> {
         // An element's start or end tag.
         let end = at + tag_len(rest)?;
         let tag = &xml[at + 1..end - 1];
+        if !entities_ok(tag) {
+            return None;
+        }
         if let Some(name) = tag.strip_prefix('/') {
-            let (open, start) = stack.pop()?;
+            let (open, start, content) = stack.pop()?;
             if open != name.trim_end() {
                 return None;
             }
             match stack.len() {
                 0 => root_close = Some(at),
-                1 if open == "action" => actions.push(start..end),
+                1 if open == "action" => actions.push((start..end, ours)),
+                // Only the action's own id counts, not text elsewhere in it.
+                2 if open == "unique-id" && stack[1].0 == "action" => {
+                    ours = xml[content..at].trim().starts_with(THUNAR_ID_PREFIX);
+                }
                 _ => {}
             }
         } else {
@@ -179,10 +192,13 @@ fn parse_uca(xml: &str) -> Option<Uca> {
                     root_close = Some(end);
                 }
             }
+            if stack.len() == 1 && name == "action" {
+                ours = false;
+            }
             if !self_closing {
-                stack.push((name, at));
+                stack.push((name, at, end));
             } else if stack.len() == 1 && name == "action" {
-                actions.push(at..end);
+                actions.push((at..end, false));
             }
         }
         i = end;
@@ -196,6 +212,30 @@ fn parse_uca(xml: &str) -> Option<Uca> {
         self_closing,
         root_close: root_close?,
         actions,
+    })
+}
+
+/// Whether every `&` starts a reference like `&amp;` or `&#38;`.
+fn entities_ok(text: &str) -> bool {
+    text.split('&').skip(1).all(|after| {
+        let Some(semi) = after.find(';') else {
+            return false;
+        };
+        let name = &after[..semi];
+        match name.strip_prefix('#') {
+            Some(n) => match n.strip_prefix('x') {
+                Some(h) => !h.is_empty() && h.chars().all(|c| c.is_ascii_hexdigit()),
+                None => !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()),
+            },
+            None => {
+                name.chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                    && name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'))
+            }
+        }
     })
 }
 
@@ -233,11 +273,7 @@ fn doctype_len(rest: &str) -> Option<usize> {
 fn thunar_without_ours(xml: &str, uca: &Uca) -> String {
     let mut out = String::with_capacity(xml.len());
     let mut from = 0;
-    for r in uca
-        .actions
-        .iter()
-        .filter(|r| xml[r.start..r.end].contains(THUNAR_ID))
-    {
+    for (r, _) in uca.actions.iter().filter(|(_, ours)| *ours) {
         let line = xml[..r.start].rfind('\n').map_or(0, |i| i + 1).max(from);
         let indent_only = xml[line..r.start].trim().is_empty();
         out.push_str(&xml[from..if indent_only { line } else { r.start }]);
@@ -311,6 +347,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<()> {
 fn thunar_register(dirs: &Dirs, gui: &Path) -> Result<()> {
     let (current, own) = thunar_current(dirs)?;
     let uca = parse_uca(&current).ok_or_else(|| not_an_actions_file(dirs))?;
+    let current_had_ours = uca.actions.iter().any(|(_, ours)| *ours);
     let mut xml = thunar_without_ours(&current, &uca);
     let uca = parse_uca(&xml).ok_or_else(|| not_an_actions_file(dirs))?;
     let ours = thunar_actions(gui);
@@ -323,20 +360,28 @@ fn thunar_register(dirs: &Dirs, gui: &Path) -> Result<()> {
         xml.insert_str(uca.root_close, &ours);
     }
     write_atomic(&thunar_file(dirs), &xml)?;
+    let mark = thunar_created_mark(dirs);
     if !own {
-        write(&thunar_created_mark(dirs), "", false)?;
+        write(&mark, "", false)?;
+    } else if !current_had_ours {
+        // A file HatchZip made would still hold its actions, so a mark next to
+        // one without them is left from a file the user deleted since.
+        remove_mark(&mark)?;
     }
     Ok(())
 }
 
 fn thunar_unregister(dirs: &Dirs) -> Result<()> {
     let (current, own) = thunar_current(dirs)?;
-    if !own || !current.contains(THUNAR_ID) {
-        return Ok(());
+    let mark = thunar_created_mark(dirs);
+    if !own || !current.contains(THUNAR_ID_PREFIX) {
+        return remove_mark(&mark);
     }
     let uca = parse_uca(&current).ok_or_else(|| not_an_actions_file(dirs))?;
+    if !uca.actions.iter().any(|(_, ours)| *ours) {
+        return remove_mark(&mark);
+    }
     let left = thunar_without_ours(&current, &uca);
-    let mark = thunar_created_mark(dirs);
     // A file HatchZip started from nothing goes away with its last action,
     // so Thunar falls back to what it read before.
     if left == THUNAR_EMPTY && mark.exists() {
@@ -345,7 +390,11 @@ fn thunar_unregister(dirs: &Dirs) -> Result<()> {
     } else {
         write_atomic(&thunar_file(dirs), &left)?;
     }
-    match fs::remove_file(&mark) {
+    remove_mark(&mark)
+}
+
+fn remove_mark(mark: &Path) -> Result<()> {
+    match fs::remove_file(mark) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => {
             Err(e).with_context(|| format!("removing {}", mark.display()))
         }

@@ -267,6 +267,54 @@ fn thunar_reads_the_file_as_xml_not_text() {
     register(&dirs, gui).unwrap();
     unregister(&dirs).unwrap();
     assert_eq!(std::fs::read_to_string(&uca).unwrap(), own_empty);
+
+    // A user action is judged by its own id, not by what a comment says.
+    let user = "<actions><action><unique-id>user-preview</unique-id>\
+                <!-- <unique-id>hatchzip-test</unique-id> --></action></actions>\n";
+    std::fs::write(&uca, user).unwrap();
+    register(&dirs, gui).unwrap();
+    assert!(
+        std::fs::read_to_string(&uca)
+            .unwrap()
+            .contains("user-preview")
+    );
+    unregister(&dirs).unwrap();
+    let left = std::fs::read_to_string(&uca).unwrap();
+    assert!(left.contains("user-preview"));
+    assert_eq!(left.matches("<action>").count(), 1);
+
+    // An unescaped `&` is not XML, so the file is refused.
+    let amp = "<actions><action><name>Preview & open</name></action></actions>\n";
+    std::fs::write(&uca, amp).unwrap();
+    assert!(register(&dirs, gui).is_err());
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), amp);
+    let escaped = "<actions><action><name>Preview &amp; open &#38;</name></action></actions>\n";
+    std::fs::write(&uca, escaped).unwrap();
+    register(&dirs, gui).unwrap();
+    unregister(&dirs).unwrap();
+    assert!(
+        std::fs::read_to_string(&uca)
+            .unwrap()
+            .contains("Preview &amp; open &#38;")
+    );
+
+    // A mark left after the user deleted HatchZip's file doesn't claim the next one.
+    std::fs::remove_file(&uca).unwrap();
+    register(&dirs, gui).unwrap();
+    std::fs::remove_file(&uca).unwrap();
+    unregister(&dirs).unwrap();
+    std::fs::write(&uca, own_empty).unwrap();
+    register(&dirs, gui).unwrap();
+    unregister(&dirs).unwrap();
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), own_empty);
+
+    // The same when the user replaces the file without unregistering first.
+    std::fs::remove_file(&uca).unwrap();
+    register(&dirs, gui).unwrap();
+    std::fs::write(&uca, own_empty).unwrap();
+    register(&dirs, gui).unwrap();
+    unregister(&dirs).unwrap();
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), own_empty);
 }
 
 #[cfg(target_os = "linux")]
