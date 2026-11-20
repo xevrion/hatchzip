@@ -12,12 +12,14 @@ The desktop app is translated with Slint's `@tr()` and gettext catalogs. Each la
 
 `src/locale.rs` reads the system's preferred languages in order and takes the first one with a catalog; anything without one falls back to the English source text. English ahead of a translated language keeps the app in English. Chinese is matched by script: `zh-CN`, `zh-Hans`, `zh-SG` and a bare `zh` get `zh_CN`, while `zh-TW`, `zh-HK` and `zh-Hant` never get Simplified Chinese (they move on to the next preferred language until a `zh_TW` catalog exists).
 
+Settings > Language overrides the system. It lists "Use the system language" (the default), then English and every catalog by its name in its own language, from `NAMES` in `src/locale.rs`. The choice is saved as `language` in the settings file (`en` or a folder name) and applies at once, to the main window and to the windows the right-click menu opens. A saved name this build has no catalog for follows the system again.
+
 ## Adding a language
 
 1. Copy `es/LC_MESSAGES/hatchzip-gui.po` to `<language>/LC_MESSAGES/hatchzip-gui.po`. Use the language code (`fr`, `de`, `ja`), or language and region when the script or spelling differs (`pt_BR`, `zh_TW`).
 2. In the header, set `Language:` to the folder name and `Plural-Forms:` to your language's rule. The [gettext plural forms](https://www.gnu.org/software/gettext/manual/html_node/Plural-forms.html) list has them; Chinese, Japanese and Korean use `nplurals=1; plural=0;`.
 3. Translate every `msgstr`. Leave each `msgid` exactly as it is.
-4. Add the folder name to `LANGUAGES` in `src/locale.rs`, and a row to the table above.
+4. Add the folder name to `LANGUAGES` in `src/locale.rs`, and the language's name, written in that language, to `NAMES` next to it, for Settings > Language. Add a row to the table above too.
 5. Run `cargo test -p hatchzip-gui --test catalog`. It lists every entry that needs fixing.
 6. Open a pull request. Screenshots of the main window in your language are welcome.
 

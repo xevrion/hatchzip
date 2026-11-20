@@ -25,6 +25,10 @@ pub struct Settings {
     /// Close the right-click window once everything in it is extracted, as
     /// other extractors do. A test, a pause or a failure keeps it open.
     pub close_when_done: bool,
+    /// The language picked in Settings > Language: `en` or a folder name in
+    /// `translations/`. `None` follows the system.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 impl Default for Settings {
@@ -34,6 +38,7 @@ impl Default for Settings {
             verify_first: false,
             keep_archive: false,
             close_when_done: true,
+            language: None,
         }
     }
 }
@@ -106,6 +111,7 @@ mod tests {
             verify_first: true,
             keep_archive: true,
             close_when_done: false,
+            language: Some("zh_CN".into()),
         };
         s.save_to(&path).unwrap();
         assert_eq!(Settings::load_from(&path), s);
@@ -128,6 +134,7 @@ mod tests {
                 verify_first: true,
                 keep_archive: false,
                 close_when_done: true,
+                language: None,
             }
         );
         // Files saved before keeping the archive was a choice remove it, as
@@ -135,5 +142,8 @@ mod tests {
         std::fs::write(&path, br#"{"keep_free": 0, "verify_first": false}"#).unwrap();
         assert!(!Settings::load_from(&path).keep_archive);
         assert!(Settings::load_from(&path).close_when_done);
+        assert_eq!(Settings::load_from(&path).language, None);
+        std::fs::write(&path, br#"{"language": "hi"}"#).unwrap();
+        assert_eq!(Settings::load_from(&path).language.as_deref(), Some("hi"));
     }
 }

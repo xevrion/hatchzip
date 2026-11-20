@@ -99,6 +99,14 @@ impl Runner {
         self.start(Task::restore(&name), Request::Restore { archive });
     }
 
+    /// Shows the task again as it stands, such as after the language
+    /// changed, without touching it.
+    pub fn redraw(&self) {
+        if let Some(t) = self.task.borrow().as_ref() {
+            (self.show)(t);
+        }
+    }
+
     pub fn running(&self) -> bool {
         self.task.borrow().as_ref().is_some_and(Task::running)
     }
