@@ -291,7 +291,7 @@ msgid "Pausing after the current batch…"
 msgstr "将在当前批次完成后暂停…"
 
 msgid "Verifying archive before extracting…"
-msgstr "正在解压前校验压缩包…"
+msgstr "解压前正在校验压缩包…"
 
 msgid "Progress is saved. The extraction can be resumed now or later."
 msgstr "进度已保存。可以立即或稍后继续解压。"

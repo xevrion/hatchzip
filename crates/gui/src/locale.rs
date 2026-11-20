@@ -5,8 +5,8 @@
 //! would get the Simplified catalog. This walks the whole list the system
 //! reports, in order, and keeps the scripts apart.
 
-/// The folders under `translations/`. `tests/catalog.rs` checks that they
-/// match.
+/// The folders under `translations/`. `every_translation_folder_is_listed`
+/// below checks that they match.
 pub const LANGUAGES: &[&str] = &["es", "hi", "zh_CN"];
 
 /// The translation for a list of preferred locales, most preferred first, as
@@ -14,19 +14,25 @@ pub const LANGUAGES: &[&str] = &["es", "hi", "zh_CN"];
 /// `""` is English: the first language with a translation wins, and English
 /// ahead of any of them keeps the app in English.
 pub fn pick(preferred: impl IntoIterator<Item = String>, available: &[&str]) -> String {
+    // Linux lists a Traditional locale with a bare `zh` after it as the
+    // fallback (`LANGUAGE=zh_TW:zh`): that `zh` means the same reader.
+    let mut traditional_seen = false;
     for locale in preferred {
         let locale = locale.to_ascii_lowercase().replace('_', "-");
         let locale = locale.split(['.', '@']).next().unwrap_or_default();
         let mut parts = locale.split('-');
         let language = parts.next().unwrap_or_default();
-        if language == "en" {
+        // `C` and `POSIX` are how a Unix user asks for untranslated output.
+        if matches!(language, "en" | "c" | "posix") {
             return String::new();
         }
         if language == "zh" {
             let rest: Vec<&str> = parts.collect();
             let traditional = rest.contains(&"hant")
                 || (!rest.contains(&"hans")
-                    && rest.iter().any(|p| matches!(*p, "tw" | "hk" | "mo")));
+                    && (rest.iter().any(|p| matches!(*p, "tw" | "hk" | "mo"))
+                        || (rest.is_empty() && traditional_seen)));
+            traditional_seen |= traditional;
             let wanted = if traditional { "zh_TW" } else { "zh_CN" };
             if available.contains(&wanted) {
                 return wanted.to_string();
@@ -61,8 +67,8 @@ pub fn apply() {
         return;
     }
     let language = pick(sys_locale::get_locales(), LANGUAGES);
-    // Every name in LANGUAGES is bundled, so this only fails if the catalog
-    // list and the folders disagree, which tests/catalog.rs catches.
+    // Every name in LANGUAGES is bundled, so this only fails if the list and
+    // the folders disagree, which `every_translation_folder_is_listed` catches.
     let _ = slint::select_bundled_translation(&language);
 }
 
@@ -101,6 +107,19 @@ mod tests {
             assert_eq!(first(&[l]), "", "{l}");
         }
         assert_eq!(first(&["zh-TW", "hi-IN"]), "hi");
+        // Ubuntu's fallback chains for Taiwan and Hong Kong end in a bare `zh`.
+        assert_eq!(first(&["zh-TW", "zh"]), "");
+        assert_eq!(first(&["zh-HK", "zh-TW", "zh"]), "");
+        assert_eq!(first(&["zh-Hant", "zh", "hi-IN"]), "hi");
+        // A bare `zh` on its own is still Simplified.
+        assert_eq!(first(&["zh"]), "zh_CN");
+    }
+
+    #[test]
+    fn c_and_posix_mean_english() {
+        assert_eq!(first(&["C", "zh-CN"]), "");
+        assert_eq!(first(&["POSIX", "hi-IN"]), "");
+        assert_eq!(first(&["C.UTF-8", "es-ES"]), "");
     }
 
     #[test]
