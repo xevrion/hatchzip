@@ -58,6 +58,13 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - [WinRAR says not enough space on disk when there is: the causes](https://hatchzip.dev/winrar-not-enough-space.html): WinRAR's temporary folder on drag and drop, the FAT32 4 GiB file limit, disk quotas, and archives that really don't fit
 - [7-Zip says there is not enough space on the disk: the causes](https://hatchzip.dev/7zip-not-enough-space.html): drag and drop through the Windows temp folder, the FAT32 4 GiB file limit, and solid blocks
 
+## In Simplified Chinese
+
+- [HatchZip 中文主页](https://hatchzip.dev/zh.html): the homepage in Simplified Chinese
+- [磁盘空间不足无法解压](https://hatchzip.dev/zh-not-enough-space-to-extract.html): the not-enough-space guide in Simplified Chinese
+- [WinRAR 提示磁盘空间不足](https://hatchzip.dev/zh-winrar-not-enough-space.html): the WinRAR guide in Simplified Chinese
+- [7-Zip 提示磁盘空间不足](https://hatchzip.dev/zh-7zip-not-enough-space.html): the 7-Zip guide in Simplified Chinese
+
 ## Docs
 
 - [Home page](https://hatchzip.dev/)
