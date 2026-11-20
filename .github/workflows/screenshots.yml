@@ -40,14 +40,15 @@ jobs:
           persist-credentials: false
       # rustup is on the runner, rust-toolchain.toml picks the version
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # fontconfig to link, a virtual X server to open windows on, and fonts
+      # fontconfig to link, xkbcommon-x11 that winit loads for the keyboard
+      # on X11, a virtual X server to open windows on, and fonts
       # for Hindi (Devanagari, in fonts-noto-core) and Simplified Chinese
       # (fonts-noto-cjk), which the runner image lacks. macOS and Windows
       # ship fonts for both.
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev xvfb fonts-noto-core fonts-noto-cjk
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-x11-0 xvfb fonts-noto-core fonts-noto-cjk
           fc-list :lang=hi family | sort -u | head -5
           fc-list :lang=zh-cn family | sort -u | head -5
       # xvfb-run's default screen is 640x480 at 8 bits, smaller than the
