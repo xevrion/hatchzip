@@ -252,7 +252,7 @@ export component Progress inherits VerticalLayout {
 // The message under a finished, paused or failed run.
 export component Outcome inherits Text {
     in property <TaskView> task;
-    text: root.task.warning == "" ? root.task.message : @tr("{} {}", root.task.message, root.task.warning);
+    text: root.task.warning == "" ? root.task.message : @tr("{} {}.", root.task.message, root.task.warning);
     wrap: word-wrap;
     color: root.task.phase == Phase.failed || root.task.phase == Phase.no-space ? Theme.danger : Palette.foreground;
 }

@@ -34,6 +34,9 @@ pub enum Queue {
 pub struct Task {
     pub view: TaskView,
     pub plan: PlanView,
+    /// The "Required / Available" line, kept from the plan until a run
+    /// starts or is given back. `None` hides it.
+    pub space: Option<(String, String)>,
     pub output: Option<PathBuf>,
     pub progress_bytes: Option<(u64, u64)>,
     pub remaining_archive_bytes: Option<u64>,
@@ -109,6 +112,7 @@ impl Task {
                 ..Default::default()
             },
             plan: PlanView::default(),
+            space: None,
             output: None,
             progress_bytes: None,
             remaining_archive_bytes: None,
@@ -222,22 +226,24 @@ impl Task {
                 self.restore_result = None;
                 self.resumable_failure = None;
                 self.warning = None;
+                self.space = None;
                 self.cancelled = false;
                 v.fraction = 0.0;
                 v.amounts = "".into();
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.space = "".into();
             }
             // The runner keeps the password; nothing to show.
             Update::Unlocked(_) => {}
             Update::Planned(plan) => {
                 self.plan = plan_view(&plan);
-                // The window builds "Required / Available" from the plan, in
-                // its own language, when it shows the view.
+                self.space = Some((self.plan.needed.to_string(), self.plan.free.to_string()));
             }
             Update::NoSpace(plan) => {
                 self.plan = plan_view(&plan);
+                // The space panel carries the shortfall; a second heading
+                // with the same numbers would only repeat it.
+                self.space = None;
                 v.phase = Phase::NoSpace;
                 // The verdict is shown from the plan itself, where it can be
                 // translated; nothing left for the message.
@@ -318,7 +324,7 @@ impl Task {
                 v.amounts = "".into();
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.space = "".into();
+                self.space = None;
                 let held = match entries {
                     1 => "the 1 entry".to_string(),
                     n => format!("the {} entries", count(n)),
@@ -461,8 +467,7 @@ mod tests {
             2_000_000_000,
             41_500_000,
         )));
-        // The window builds the "Required / Available" line from the plan.
-        assert_eq!(t.view.space, "");
+        assert_eq!(t.space, Some(("3.5 MB".to_string(), "7.8 GB".to_string())));
         assert_eq!(t.plan.needed, "3.5 MB");
         assert_eq!(t.plan.free, "7.8 GB");
         assert_eq!(t.view.phase, Phase::Checking, "it fits, so it carries on");
@@ -637,6 +642,38 @@ mod tests {
         assert_eq!(t.plan.short, "6.0 GB");
         assert!(t.plan.note_solid);
         assert!(!t.running());
+    }
+
+    /// The Required/Available line belongs to the plan the run started
+    /// with: a new check or a give-back drops it, and a no-space stop shows
+    /// the shortfall once, in the panel.
+    #[test]
+    fn the_space_line_lives_until_the_run_starts_or_is_given_back() {
+        let mut t = Task::extract("game.zip", None, false);
+        let plan = || space(7_800_000_000, 3_500_000, 2_000_000_000, 41_500_000);
+        t.apply(Update::Planned(plan()));
+        assert_eq!(t.space, Some(("3.5 MB".to_string(), "7.8 GB".to_string())));
+
+        t.apply(Update::Checking);
+        assert_eq!(t.space, None, "a retry checks again before it plans");
+
+        t.apply(Update::Planned(plan()));
+        t.apply(Update::NoSpace(space(
+            1_000_000_000,
+            5_000_000_000,
+            2_000_000_000,
+            9_000_000_000,
+        )));
+        assert_eq!(t.space, None, "the panel already says the shortfall");
+
+        t.apply(Update::Planned(plan()));
+        t.apply(Update::Restored {
+            entries: 12,
+            output: "/games/game".into(),
+            kept: false,
+            set_aside: 0,
+        });
+        assert_eq!(t.space, None, "the run it described is gone");
     }
 
     #[test]

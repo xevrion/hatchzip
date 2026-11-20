@@ -450,3 +450,6 @@ msgstr "Se ha cancelado la extracción. El archivo no se ha modificado."
 
 msgid "{} {}"
 msgstr "{} {}"
+
+msgid "{} {}."
+msgstr "{} {}."

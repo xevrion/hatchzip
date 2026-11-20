@@ -211,11 +211,12 @@ pub(crate) fn plural_count(n: usize) -> i32 {
 /// text stays English; everything the app builds itself comes from `@tr`.
 pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
     let mut view = task.view.clone();
-    view.space = if task.plan.ready && !task.plan.needed.is_empty() {
-        messages.invoke_task_space(task.plan.needed.clone(), task.plan.free.clone())
-    } else {
-        Default::default()
-    };
+    view.space = task
+        .space
+        .as_ref()
+        .map_or_else(Default::default, |(needed, free)| {
+            messages.invoke_task_space(needed.clone().into(), free.clone().into())
+        });
     view.heading = messages.invoke_task_heading(
         view.phase,
         view.is_test,
