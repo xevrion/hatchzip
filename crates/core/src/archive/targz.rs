@@ -73,7 +73,9 @@ pub struct StreamPoint {
     #[serde(default, with = "hex")]
     pub window: Vec<u8>,
     /// Xz: which block of the stream the point is at, where its header
-    /// begins. The blocks before it never need decoding again.
+    /// begins. Zstd: how many frames preceded the point, so a resumed run
+    /// still knows the stream had more than one. The pieces before it never
+    /// need decoding again.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub block: u64,
     /// Bzip2: the stream's level digit and the combined CRC of its blocks
@@ -97,6 +99,7 @@ pub enum CodecKind {
     Gzip,
     Xz,
     Bzip2,
+    Zstd,
 }
 
 impl CodecKind {
@@ -305,6 +308,30 @@ impl<F: Feed> TarStream<F> {
         })
     }
 
+    /// Turns header records already held into an entry, when enough of them
+    /// arrived to tell. `None` means more bytes are needed, the bytes are a
+    /// zero block (the state moved to the trailer), or the entry extracts to
+    /// nothing (the state moved past it).
+    fn held_header(&mut self) -> Result<Option<Event<'static>>> {
+        let State::Header(held) = &self.state else {
+            return Ok(None);
+        };
+        match group(held)? {
+            Group::Need(_) => Ok(None),
+            Group::End => {
+                self.state = State::Trailer;
+                Ok(None)
+            }
+            Group::Complete => {
+                let held = match std::mem::replace(&mut self.state, State::Header(Vec::new())) {
+                    State::Header(held) => held,
+                    _ => unreachable!("held_header saw a header state"),
+                };
+                begin_entry(&mut self.tar_pos, &mut self.state, &held)
+            }
+        }
+    }
+
     /// The next event. `Data` is at most `max` bytes.
     pub(super) fn next(&mut self, max: usize) -> Result<Event<'_>> {
         if let Some((item, done)) = self.resumed.take() {
@@ -327,6 +354,13 @@ impl<F: Feed> TarStream<F> {
                 _ => {}
             }
             if self.pos == self.len {
+                // A fill can end exactly after the last byte of a header
+                // record. The bytes are all here, so finish the entry before
+                // asking for more: otherwise a point at this offset is lost
+                // and a frame or block boundary cannot be used.
+                if let Some(event) = self.held_header()? {
+                    return Ok(event);
+                }
                 if std::mem::take(&mut self.restartable) && self.state.at_rest() {
                     return Ok(Event::Point);
                 }
@@ -590,6 +624,7 @@ impl Walker {
                             CodecKind::Gzip => "a gzip member of",
                             CodecKind::Xz => "an xz block of",
                             CodecKind::Bzip2 => "a bzip2 block of",
+                            CodecKind::Zstd => "a zstd frame of",
                         }
                     );
                 }

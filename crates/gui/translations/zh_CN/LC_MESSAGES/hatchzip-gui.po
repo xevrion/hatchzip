@@ -103,11 +103,11 @@ msgstr "继续解压"
 msgid "Finish"
 msgstr "完成"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives."
-msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz 和分卷压缩包。"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives."
+msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz、tar.zst 和分卷压缩包。"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives."
-msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz、RAR 和分卷压缩包。"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives."
+msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz、tar.zst、RAR 和分卷压缩包。"
 
 msgid "Opening {}…"
 msgstr "正在打开 {}…"

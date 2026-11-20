@@ -32,7 +32,7 @@ unchanged; free space is then required for all extracted files.
 
 Supported: ZIP (including ZIP64 and self-extracting .exe), 7z, uncompressed tar, \
 gzip-compressed tar (.tar.gz, .tgz), bzip2-compressed tar (.tar.bz2, .tbz2, .tbz), \
-xz-compressed tar (.tar.xz, .txz), split archives (.001, .002, ...) of any of those",
+xz-compressed tar (.tar.xz, .txz), zstd-compressed tar (.tar.zst, .tzst), split archives (.001, .002, ...) of any of those",
             $formats
         )
     };
