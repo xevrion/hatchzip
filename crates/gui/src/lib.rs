@@ -12,6 +12,7 @@ mod platform;
 mod replace;
 mod runner;
 pub mod settings;
+mod settings_window;
 pub mod shell;
 mod task;
 pub mod task_window;

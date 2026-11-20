@@ -15,6 +15,8 @@ use hatchzip_core::engine::{self, Job, Outcome, Progress, Run};
 use hatchzip_core::journal::{Journal, Paths};
 use hatchzip_core::session::{self, SpacePlan, State};
 
+use crate::settings::Existing;
+
 #[derive(Default)]
 pub struct Counters {
     pub done: AtomicU64,
@@ -53,6 +55,9 @@ pub enum Request {
         /// at its top, in a folder named after it otherwise. `output` is
         /// then unused.
         here: bool,
+        /// Files already where entries go: ask, or answer for all of them
+        /// up front as the command line's `--replace` and `--skip-existing`.
+        existing: Existing,
     },
     Test {
         archive: PathBuf,
@@ -170,6 +175,7 @@ pub fn run(
             keep_archive,
             password,
             here,
+            existing,
         } => extract(
             archive,
             output.clone(),
@@ -178,6 +184,7 @@ pub fn run(
                 verify_first: *verify_first,
                 keep_archive: *keep_archive,
                 here: *here,
+                existing: *existing,
             },
             Secret {
                 password: password.clone(),
@@ -259,6 +266,7 @@ struct Choices {
     verify_first: bool,
     keep_archive: bool,
     here: bool,
+    existing: Existing,
 }
 
 fn extract(
@@ -275,6 +283,7 @@ fn extract(
         verify_first,
         keep_archive,
         here,
+        existing,
     } = choices;
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
@@ -324,10 +333,19 @@ fn extract(
             let choices = if found.is_empty() {
                 None
             } else {
-                let Some(c) = replace(&found, &out, !keep_archive) else {
-                    bail!("extraction cancelled. The archive was not modified");
-                };
-                Some(c)
+                match existing {
+                    Existing::Ask => {
+                        let Some(c) = replace(&found, &out, !keep_archive) else {
+                            bail!("extraction cancelled. The archive was not modified");
+                        };
+                        Some(c)
+                    }
+                    Existing::Replace => Some(hatchzip_core::replace::Choices::default()),
+                    Existing::Skip => Some(hatchzip_core::replace::Choices {
+                        keep: found,
+                        both: Vec::new(),
+                    }),
+                }
             };
             let plan = session::plan(&job, &out, false, keep_free, keep_archive)?;
             if !plan.fits {
@@ -479,6 +497,7 @@ mod tests {
             keep_archive: false,
             password: None,
             here: false,
+            existing: Existing::Ask,
         };
         assert!(extract.set_keep_free(500_000_000));
         match extract {
@@ -672,6 +691,7 @@ mod tests {
             keep_archive: false,
             password: None,
             here: false,
+            existing: Existing::Ask,
         }
     }
 
@@ -684,6 +704,7 @@ mod tests {
             keep_archive: true,
             password: None,
             here: false,
+            existing: Existing::Ask,
         }
     }
 
@@ -836,6 +857,34 @@ mod tests {
         assert!(!hatchzip_core::replace::folder(dir.path()).exists());
     }
 
+    /// "When a file already exists" set to Replace or Skip answers for every
+    /// file without asking, as `--replace` and `--skip-existing` do.
+    #[test]
+    fn existing_files_are_replaced_or_kept_without_asking_when_set() {
+        for existing in [Existing::Replace, Existing::Skip] {
+            let dir = tempfile::tempdir().unwrap();
+            let archive = make_zip(dir.path(), None);
+            let out = dir.path().join("out");
+            std::fs::create_dir_all(out.join("data")).unwrap();
+            std::fs::write(out.join("data/file3.bin"), b"old").unwrap();
+            let mut request = extract(&archive, Some(out.clone()), false);
+            if let Request::Extract { existing: e, .. } = &mut request {
+                *e = existing;
+            }
+            let counters = Arc::new(Counters::default());
+            let (updates, asked) = collect_replacing(&request, &counters, false);
+            assert!(asked.is_empty(), "{existing:?} never asks");
+            assert_eq!(updates, ["checking", "planned", "working", "extracted"]);
+            let kept = std::fs::read(out.join("data/file3.bin")).unwrap();
+            match existing {
+                Existing::Skip => assert_eq!(kept, b"old"),
+                _ => assert_eq!(kept, vec![3u8; 10_300]),
+            }
+            assert!(out.join("data/file19.bin").exists());
+            assert!(!hatchzip_core::replace::folder(&out).exists());
+        }
+    }
+
     /// Paused after the files were moved aside, then stopped for good: they
     /// go back, and the resumed run is not asked again.
     #[test]
@@ -913,6 +962,7 @@ mod tests {
             keep_archive: false,
             password: None,
             here: false,
+            existing: Existing::Ask,
         };
         assert_eq!(collect(&request, &counters), ["checking", "no space"]);
         assert!(!session::locate(&archive).unwrap().1.exists());

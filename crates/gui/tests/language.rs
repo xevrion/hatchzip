@@ -1,5 +1,6 @@
-//! Settings > Language, through the same callback the menu items call.
-use hatchzip_gui::{MainWindow, Screen, backend::Drops, main_window, settings::Settings};
+//! The language in the Settings window, through the same callbacks its
+//! controls call.
+use hatchzip_gui::{Screen, SettingsWindow, backend::Drops, main_window, settings::Settings};
 use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
 use slint::{ComponentHandle, Model, Timer, TimerMode};
 use std::cell::Cell;
@@ -27,16 +28,10 @@ fn wait_until(what: &str, condition: impl Fn() -> bool + 'static) {
     assert!(done.get(), "timed out waiting for {what}");
 }
 
-/// The codes checked in the language list, and whether "Use the system
-/// language" is.
-fn checked(ui: &MainWindow) -> (Vec<String>, bool) {
-    let codes = ui
-        .get_languages()
-        .iter()
-        .filter(|item| item.chosen)
-        .map(|item| item.code.to_string())
-        .collect();
-    (codes, ui.get_language_follows_system())
+/// Picks entry `index` of the language list, as a click on it does.
+fn choose(settings: &SettingsWindow, index: i32) {
+    settings.set_language_index(index);
+    settings.invoke_choose_language(index);
 }
 
 fn saved_language(file: &Path) -> Option<String> {
@@ -73,18 +68,29 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
             .is_some_and(|w| w.get_screen() == Screen::Opened && w.get_plan().ready)
     });
 
-    let names: Vec<String> = ui
-        .get_languages()
+    ui.invoke_open_settings();
+    let settings = main_window::settings_window().expect("Settings opens from the menu");
+    let names: Vec<String> = settings
+        .get_language_names()
         .iter()
-        .map(|item| item.name.to_string())
+        .map(|name| name.to_string())
         .collect();
-    assert_eq!(names, ["English", "Español", "हिन्दी", "简体中文"]);
-    assert_eq!(checked(&ui), (vec![], true));
+    assert_eq!(
+        names,
+        [
+            "Use the system language",
+            "English",
+            "Español",
+            "हिन्दी",
+            "简体中文"
+        ]
+    );
+    assert_eq!(settings.get_language_index(), 0);
     let english_label = ui.get_shell_menu_label();
     assert!(ui.get_formats().contains("Supported formats"));
     assert!(ui.get_summary().contains("1 entry"), "{}", ui.get_summary());
 
-    ui.invoke_choose_language("zh_CN".into());
+    choose(&settings, 4);
     assert!(
         ui.get_formats().contains("支持的格式"),
         "{}",
@@ -101,19 +107,27 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
         "{}",
         ui.get_shell_menu_label()
     );
-    assert_eq!(checked(&ui), (vec!["zh_CN".to_string()], false));
-    // The names stay in their own scripts whatever is showing.
-    assert_eq!(ui.get_languages().row_data(0).unwrap().name, "English");
+    assert_eq!(settings.get_language_index(), 4);
+    // The first entry is worded again; the names stay in their own scripts
+    // whatever is showing.
+    assert_eq!(
+        settings.get_language_names().row_data(0).unwrap(),
+        "使用系统语言"
+    );
+    assert_eq!(
+        settings.get_language_names().row_data(1).unwrap(),
+        "English"
+    );
     let file = settings_file.clone();
     wait_until("Chinese to be saved", move || {
         saved_language(&file).as_deref() == Some("zh_CN")
     });
 
-    ui.invoke_choose_language("en".into());
+    choose(&settings, 1);
     assert!(ui.get_formats().starts_with("Or drag an archive"));
     assert!(ui.get_summary().contains("1 entry"), "{}", ui.get_summary());
     assert_eq!(ui.get_shell_menu_label(), english_label);
-    assert_eq!(checked(&ui), (vec!["en".to_string()], false));
+    assert_eq!(settings.get_language_index(), 1);
     let file = settings_file.clone();
     wait_until("English to be saved", move || {
         saved_language(&file).as_deref() == Some("en")
@@ -121,12 +135,13 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
 
     // Tests never follow the system, so here the system option is English;
     // what matters is that the choice is forgotten.
-    ui.invoke_choose_language("".into());
+    choose(&settings, 0);
     assert!(ui.get_formats().starts_with("Or drag an archive"));
-    assert_eq!(checked(&ui), (vec![], true));
+    assert_eq!(settings.get_language_index(), 0);
     let file = settings_file.clone();
     wait_until("the choice to be forgotten", move || {
         saved_language(&file).is_none() && file.exists()
     });
+    settings.hide().unwrap();
     ui.hide().unwrap();
 }
