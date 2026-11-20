@@ -37,4 +37,4 @@ A pull request that adds or changes a `@tr` message updates every catalog in the
 
 ## What is translated
 
-The main window and its shared controls are translated. Still English for now: the separate task window that the right-click menu opens, the About window, and messages that come from the extraction engine (errors and the disk-space verdict), which are being made translatable step by step.
+The main window, the About window, their shared controls and the disk-space plan are translated. Still English for now: parts of the separate task window that the right-click menu opens, and errors that come from the extraction engine, which are being made translatable step by step.

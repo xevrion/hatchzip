@@ -6,7 +6,7 @@ export component AboutWindow inherits Window {
     callback open-link();
     callback dismiss();
 
-    title: "About HatchZip";
+    title: @tr("About HatchZip");
     preferred-width: 420px;
     min-width: 380px;
     background: Palette.background;
@@ -34,17 +34,17 @@ export component AboutWindow inherits Window {
                     font-weight: 600;
                 }
                 Text {
-                    text: "Version " + root.version;
+                    text: @tr("Version {}", root.version);
                     color: Theme.muted;
                 }
             }
         }
         Text {
-            text: "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required.";
+            text: @tr("Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required.");
             wrap: word-wrap;
         }
         Text {
-            text: "Licensed under MIT or Apache-2.0";
+            text: @tr("Licensed under MIT or Apache-2.0");
             color: Theme.muted;
             wrap: word-wrap;
         }
@@ -68,7 +68,7 @@ export component AboutWindow inherits Window {
         HorizontalLayout {
             alignment: end;
             Button {
-                text: "Close";
+                text: @tr("Close");
                 clicked => {
                     root.dismiss();
                 }

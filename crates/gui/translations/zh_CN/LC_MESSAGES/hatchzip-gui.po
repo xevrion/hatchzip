@@ -40,6 +40,15 @@ msgstr "检查更新"
 msgid "About HatchZip"
 msgstr "关于 HatchZip"
 
+msgid "Version {}"
+msgstr "版本 {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "原地解压大型压缩包。解压时逐步删除压缩包，因此只需要容纳解压文件的空间。"
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "使用 MIT 或 Apache-2.0 许可证授权"
+
 msgid "Drop the archive to open it"
 msgstr "松开以打开压缩包"
 
@@ -94,11 +103,11 @@ msgstr "继续解压"
 msgid "Finish"
 msgstr "完成"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
-msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.xz 和分卷压缩包。"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives."
+msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz 和分卷压缩包。"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
-msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.xz、RAR 和分卷压缩包。"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives."
+msgstr "也可以将压缩包拖到此窗口。支持的格式：ZIP、7z、tar、tar.gz、tar.bz2、tar.xz、RAR 和分卷压缩包。"
 
 msgid "Opening {}…"
 msgstr "正在打开 {}…"
@@ -156,10 +165,10 @@ msgid_plural "{} entries"
 msgstr[0] "{} 个条目"
 
 msgid "{} in {} remaining"
-msgstr "剩余 {1}，共 {0}"
+msgstr "剩余 {0}（{1}）"
 
 msgid "{} uncompressed"
-msgstr "解压后 {}"
+msgstr "解压后大小：{}"
 
 msgid "Disk space"
 msgstr "磁盘空间"
@@ -366,5 +375,41 @@ msgstr "文件夹"
 msgid "Link"
 msgstr "链接"
 
-msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
-msgstr "{}。关闭“解压时逐步删除压缩包”即可解压并保留压缩包"
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
+msgstr "{}。关闭“解压时逐步删除压缩包”即可解压并保留压缩包。"
+
+msgid "Sufficient disk space"
+msgstr "磁盘空间充足"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "磁盘空间不足，还需要 {}。"
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "解压时逐步删除压缩包仅需 {}。"
+
+msgid "There is also enough space to keep the archive."
+msgstr "空间也足够保留压缩包。"
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "所需空间大部分用于一个固实块，只有将其完全解压后才能释放。"
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "目标位置在其他磁盘上，删除压缩包不会释放目标磁盘的空间。"
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "此磁盘无法释放文件内部的空间，因此压缩包将完整保留到解压结束。"
+
+msgid "Extract with {} reserved"
+msgstr "预留 {} 并解压"
+
+msgid "Extract without a reserve"
+msgstr "不预留空间直接解压"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "唯一的障碍是预留空间：需要 {}，可用 {}，因此可以预留 {} 运行，完成后剩余 {}。"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "唯一的障碍是预留空间：需要 {}，可用 {}，因此可以不预留空间运行，完成后剩余 {}。"
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "可用空间：{}。所需空间：{}，另需预留 {}。"
