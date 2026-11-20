@@ -569,6 +569,25 @@ fn a_quick_open_record_written_here_extracts() {
     assert_consumed(&archive);
 }
 
+/// Bzip2 is found by its signature, so a RAR behind a bzip2 tar name still
+/// extracts as a RAR.
+#[test]
+fn a_rar_with_a_bzip2_tar_name_extracts_as_a_rar() {
+    for name in ["game.tar.bz2", "game.tbz2"] {
+        let tmp = TempDir::new().unwrap();
+        let (files, entries) = two_files();
+        let built = write_rar(tmp.path(), Version::Five, &entries, None, Naming::Old);
+        let archive = tmp.path().join(name);
+        fs::rename(&built, &archive).unwrap();
+        let out = tmp.path().join("out");
+        assert_ok(&extract(&archive, &out, &[]));
+        for (n, data) in &files {
+            assert_eq!(&fs::read(out.join(n)).unwrap(), data, "{name}: {n}");
+        }
+        assert_consumed(&archive);
+    }
+}
+
 /// UnRAR reads the copy, HatchZip the header itself. A copy of `a.bin`'s
 /// header with a checksum of other data would have UnRAR fail on it once
 /// `b.bin` is out and the archive cut down to `a.bin`.

@@ -38,6 +38,16 @@ HatchZip extracts archives in place: it extracts an archive's units (ZIP entries
 - 7-Zip's default settings can put a whole archive in one solid block, which in-place extraction can't free until the end. Test 7z with `-ms=<size>` archives as well as defaults.
 - On resume, files a crashed batch wrote but never committed still occupy space. They are deleted before the space check, or the check refuses a run that fits.
 
+## Translations
+
+The desktop app is translated; `crates/gui/translations/README.md` has the details.
+
+- Every user-facing string in `crates/gui` goes through `@tr()` in a `.slint` file. Text the Rust side needs is a Slint function wrapping one `@tr` (`ui.invoke_...()`), never English built with `format!` and shown as is.
+- One whole sentence per message. Don't join translated pieces with spaces or punctuation, and don't run translated text through `sentence()`, which adds a Latin `.`. Counted text uses Slint's plural form, `@tr("{} file" | "{} files" % n, n)`.
+- A change that adds or changes a `@tr` message updates every catalog in `crates/gui/translations/` in the same change, drafted from that catalog's existing terms. `cargo test -p hatchzip-gui --test catalog` lists anything missing or wrong; keep it passing.
+- A new language is a folder plus its name in `LANGUAGES` (`crates/gui/src/locale.rs`).
+- The command line stays English. So does `hatchzip-core`'s error text, which the CLI prints; the app translates what it shows through typed values, not by matching English.
+
 ## Copy
 
 - README and docs are clear, neutral, professional English, sentence case headings, no first person.

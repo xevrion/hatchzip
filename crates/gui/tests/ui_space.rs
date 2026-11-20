@@ -17,7 +17,7 @@ use hatchzip_core::engine::Job;
 use hatchzip_core::{human, session};
 use hatchzip_gui::backend::Drops;
 use hatchzip_gui::settings::Settings;
-use hatchzip_gui::{Palette, Phase, Screen, main_window};
+use hatchzip_gui::{MainWindow, Palette, Phase, Screen, main_window};
 use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
 use slint::language::ColorScheme;
 use slint::{ComponentHandle, LogicalSize, Timer, TimerMode};
@@ -104,6 +104,10 @@ fn keeping_does_not_fit_but_removing_does() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The windows follow the system language, and this flow reads English
+    // labels. Slint registers its bundled catalogs with the first component.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
 
     for ((scheme, tag), archive) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")]
         .into_iter()
@@ -126,18 +130,9 @@ fn keeping_does_not_fit_but_removing_does() {
         assert!(!ui.get_remove_archive(), "the saved choice is applied");
         let plan = ui.get_plan();
         assert!(plan.keep_archive && !plan.fits);
-        assert!(
-            plan.verdict.starts_with("Insufficient disk space. "),
-            "{}",
-            plan.verdict
-        );
-        assert_eq!(
-            plan.note,
-            format!(
-                "Removing the archive during extraction requires only {}.",
-                human(in_place)
-            )
-        );
+        assert!(!plan.fits);
+        assert!(!plan.short.is_empty());
+        assert_eq!(plan.note_in_place, human(in_place));
         shot(ui.window(), &format!("{tag}-22-keep-no-fit"));
 
         ui.set_remove_archive(true);
@@ -147,7 +142,7 @@ fn keeping_does_not_fit_but_removing_does() {
             let plan = w.unwrap().get_plan();
             !plan.keep_archive && plan.fits
         });
-        assert_eq!(ui.get_plan().verdict, "Sufficient disk space");
+        assert!(ui.get_plan().fits);
         shot(ui.window(), &format!("{tag}-23-remove-fits"));
 
         ui.invoke_extract();

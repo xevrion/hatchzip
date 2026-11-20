@@ -183,6 +183,26 @@ impl Runner {
         self.launch(|| {});
     }
 
+    /// Runs the last extraction again with less reserved space, as the
+    /// no-space state offers when the plan fits without it. Only this run:
+    /// the saved default does not change.
+    pub fn lower_reserve(&self) {
+        if self.running() {
+            return;
+        }
+        let Some(offer) = self.task.borrow().as_ref().and_then(|t| t.lower_reserve) else {
+            return;
+        };
+        let lowered = self
+            .request
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|r| r.set_keep_free(offer));
+        if lowered {
+            self.launch(|| {});
+        }
+    }
+
     fn launch(&self, before: impl FnOnce() + Send + 'static) {
         let Some(request) = self.request.borrow().clone() else {
             return;

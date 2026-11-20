@@ -33,16 +33,17 @@ strip = true
 
 # Decompression in an unoptimised build is slow enough to drag the test
 # suite, and nobody steps through zstd in a debugger.
+#
+# ld 27 leaves the symbol string pool of a stripped proc-macro at an offset
+# macOS 27's dyld refuses to load, and rustc reports the failed dlopen as
+# "can't find crate" (rust-lang/rust#110536). Which build is hit depends on
+# its offsets, so any of them can be after a version bump; stripping dev
+# dependencies saves little, and this removes the class of failure. A
+# proc-macro only runs at compile time and never ships. Release strips
+# everything, so build-override turns it off there too.
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
-
-# ld 27 leaves the symbol string pool of a stripped proc-macro at an offset
-# macOS 27's dyld refuses to load, and rustc reports the failed dlopen as
-# "can't find crate" (rust-lang/rust#110536). This one is large enough to hit
-# it. A proc-macro only runs at compile time and never ships, so strip it
-# nowhere. The release profile strips everything, proc-macros included.
-[profile.dev.package.slint-macros]
 strip = "none"
 
 [profile.release.build-override]

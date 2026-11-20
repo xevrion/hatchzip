@@ -502,7 +502,8 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name.truncate(stem.len() - digits.len() - ".part".len());
     } else {
         for ext in [
-            ".zip", ".7z", ".tar.xz", ".txz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
+            ".zip", ".7z", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz", ".tar", ".tar.gz",
+            ".tgz", ".rar", ".exe",
         ] {
             if lower.ends_with(ext) && name.len() > ext.len() {
                 name.truncate(name.len() - ext.len());
@@ -598,6 +599,49 @@ impl SpacePlan {
     }
 }
 
+/// Refuses a destination that cannot become a folder: a file or a dangling
+/// link at its path, or where one of its folders would go. Called before
+/// anything is written, so a run cannot leave a journal that only promises a
+/// resume that would fail the same way.
+fn check_destination(out: &Path, resuming: bool) -> Result<()> {
+    let untouched = if resuming {
+        ""
+    } else {
+        ". Nothing was modified"
+    };
+    // Walk up until something exists. `exists` follows links, so a dangling
+    // one looks absent and `create_dir_all` would fail on it later; metadata
+    // that is not a folder stops the run here instead.
+    let mut path = out.to_path_buf();
+    loop {
+        match path.symlink_metadata() {
+            Ok(meta) => {
+                if path.is_dir() {
+                    return Ok(());
+                }
+                let what = if meta.is_file() {
+                    "is a file, not a folder"
+                } else {
+                    "is not a folder"
+                };
+                if path == out {
+                    bail!("the destination {} {what}{untouched}", out.display());
+                }
+                bail!(
+                    "the destination {} cannot be created: {} {what}{untouched}",
+                    out.display(),
+                    path.display()
+                );
+            }
+            Err(_) => {
+                if !path.pop() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
 /// The space plan for extracting `job` into `out`, keeping the archive or
 /// not. For a half-extracted archive, `keep_archive` must be what its
 /// journal says; see [`keeps_archive`].
@@ -609,6 +653,7 @@ pub fn plan(
     keep_archive: bool,
 ) -> Result<SpacePlan> {
     job.check_case(out)?;
+    check_destination(out, resuming)?;
     let reclaims = fsutil::same_filesystem(job.storage.primary(), out);
     let stale: u64 =
         job.uncommitted(out).iter().map(|(_, n)| n).sum::<u64>() + job.past_resume_point(out);
@@ -667,6 +712,7 @@ pub fn begin(
 ) -> Result<Journal> {
     // Front ends ask earlier; the folder may have changed since.
     job.check_case(&output)?;
+    check_destination(&output, false)?;
     let found = existing(job, &output)?;
     if let Some(first) = found.first()
         && replace.is_none()
@@ -734,8 +780,22 @@ pub fn check_sfv(storage: &Storage, cancelled: &dyn Fn() -> bool) -> Result<Opti
 /// Before continuing a crashed run, deletes what it wrote for batches it
 /// never committed.
 pub fn clear_uncommitted(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, false)
+}
+
+/// Discards a kept run's uncommitted output, including its open file. The
+/// untouched archive holds that file; normal resume must preserve it.
+pub(crate) fn clear_discarded(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, true)
+}
+
+fn clear_output(job: &Job, out: &Path, discard: bool) -> Result<()> {
     check_no_links_on_the_way(job, out)?;
-    let found = job.uncommitted(out);
+    let found = if discard {
+        job.discarded_output(out)
+    } else {
+        job.uncommitted(out)
+    };
     let mut listed = std::collections::HashMap::new();
     for (p, _) in &found {
         check_spelling(out, p, &mut listed)?;

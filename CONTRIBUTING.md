@@ -9,6 +9,7 @@ Thank you for your interest in contributing. HatchZip deletes people's archives 
 - [Development setup](#development-setup)
 - [Project structure](#project-structure)
 - [Engineering standards](#engineering-standards)
+- [Translations](#translations)
 - [Documentation style](#documentation-style)
 - [Pull requests](#pull-requests)
 - [Reporting bugs](#reporting-bugs)
@@ -130,6 +131,12 @@ Every figure in the README and docs was measured on real hardware. Changes that 
 - `cargo clippy --all-targets -- -D warnings` clean and `cargo fmt --all` formatted.
 - `anyhow` for errors, with context on anything touching the filesystem. Error messages tell the user what happened and what to do next.
 - Comments explain why, not what.
+
+## Translations
+
+Translations of the desktop app are very welcome, and a new language needs no code beyond one line. [crates/gui/translations/README.md](crates/gui/translations/README.md) walks through adding one: copy a catalog, set its language and plural rule, translate, run `cargo test -p hatchzip-gui --test catalog`, and open a pull request. Fixes to an existing translation are welcome from native speakers too.
+
+When you change the app's text, mark it with `@tr()` and update every catalog in the same pull request; the test lists what's missing. The command line stays in English.
 
 ## Documentation style
 

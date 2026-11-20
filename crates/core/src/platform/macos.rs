@@ -6,7 +6,7 @@ use std::path::Path;
 pub use super::unix::{
     allocated_bytes, apply_mode, create_new_no_follow, create_symlink, link_count, local_time,
     name_problem, open_exclusive, open_existing_no_follow, open_folder_no_follow, path_len,
-    same_filesystem, sync_dir, unlock_folder,
+    same_filesystem, set_len_now, sync_dir, unlock_folder,
 };
 
 /// `PATH_MAX` is 1024 bytes on macOS, including the terminating NUL;
@@ -99,7 +99,14 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
 }
 
 /// APFS allocates 4 KiB blocks; 64 KiB leaves a margin for anything coarser.
-pub fn punch_granule(_dir: &Path) -> u64 {
+pub fn punch_margin(_dir: &Path) -> u64 {
+    64 << 10
+}
+
+/// `F_PUNCHHOLE` rounds the start up and the end down to the block size, so
+/// the block holding the end stays, and the next punch reaches its start
+/// from 64 KiB before. APFS and HFS+ blocks are never larger than that.
+pub fn punch_overlap(_dir: &Path) -> u64 {
     64 << 10
 }
 

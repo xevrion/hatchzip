@@ -15,6 +15,11 @@
 </h4>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily" alt="#10 Repository Of The Day on Trendshift" width="250" height="55" /></a>
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily?language=Rust" alt="#2 Rust Repository Of The Day on Trendshift" width="250" height="55" /></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml"><img src="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/xevrion/hatchzip"><img src="https://api.scorecard.dev/projects/github.com/xevrion/hatchzip/badge" alt="OpenSSF Scorecard" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0 licensed" /></a>
@@ -29,7 +34,7 @@ HatchZip is a free, open-source archive extractor for Windows, macOS and Linux, 
 
 A 180 GB game download that unpacks to 200 GB needs 380 GB of disk with WinRAR, 7-Zip or `unzip`, because the archive and everything extracted from it have to exist at the same time. HatchZip needs a little over 200 GB. It extracts the archive from the end and cuts each finished part off the archive file as it goes, so the space the archive gives back is reused for the next files.
 
-It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz`, `.tar.xz`, RAR volume sets and split archives.
+It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz`, `.tar.bz2`, `.tar.xz`, RAR volume sets and split archives.
 
 ### Get it
 
@@ -113,12 +118,13 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 
 ### Package managers
 
-Homebrew and Scoop are live. winget is in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
+Homebrew and Scoop are live. winget and Chocolatey are in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
 
 | System | Command | Installs |
 |---|---|---|
 | Arch Linux (AUR) | Not published yet. Until then, use the AppImage or the install script | App and CLI |
 | Windows (winget) | In review; until it is accepted, use the setup | App and CLI, same as the setup |
+| Windows (Chocolatey) | In review; until it is accepted, use the setup | App and CLI, same as the setup |
 | Windows (Scoop) | `scoop bucket add xevrion https://github.com/xevrion/scoop-bucket`, then `scoop install xevrion/hatchzip` | CLI |
 | macOS and Linux (Homebrew) | `brew install xevrion/tap/hatchzip` | CLI |
 | macOS (Homebrew) | `brew install --cask xevrion/tap/hatchzip` | App and CLI |
@@ -311,6 +317,7 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 | 7z, solid and non-solid | Supported. Tested with archives made by 7-Zip 25.01: LZMA2 (its default), LZMA, BCJ with LZMA2, bzip2, Deflate and PPMd; Zstandard with an archive made by py7zr, since 7-Zip has no Zstandard coder for the 7z format; and LZ4 and Brotli with archives made by 7-Zip ZS 25.01, the 7-Zip build that adds those coders. A coder this build has no decoder for is refused before anything is touched. | One solid block |
 | tar (uncompressed) | Supported, including long names, symlinks and hard links | One file |
 | `.tar.gz`, `.tgz` | Supported, including multi-member gzip (`bgzip`, `pigz -i`) and split `.tar.gz.001` sets. Extracted from the front, freeing the compressed bytes behind the decoder where the filesystem can punch holes; every gzip CRC-32 and length is checked before anything is touched. Tested with archives from GNU tar with gzip, and pigz. Elsewhere (FAT32, exFAT) it still extracts and resumes, but needs room for the archive and every file at once, and `check` says so. | 256 MiB of output |
+| `.tar.bz2`, `.tbz2`, `.tbz` | Supported, including concatenated bzip2 streams and split `.tar.bz2.001` sets. Extracted from the front, freeing bytes at CRC-checked block boundaries where hole punching is available. Every block and combined stream CRC is checked before anything is touched. Damage and a bare bzip2 file without a tar are refused before extraction. On FAT32 and exFAT it needs room for the archive and every file at once. | 256 MiB of output |
 | `.tar.xz` | Supported when the xz stream holds more than one block, which is xz's multithreaded default and what `xz -T4 -6 --block-size=8MiB` writes. Each block is decoded on its own and its CRC-32 or CRC-64 checked; an LZMA2 dictionary is not carried between blocks, so a point needs no window. A one-block archive (`xz -T1`) is refused in place, since nothing can be freed while it decodes, and extracts with `--keep-archive`. Refused before anything is touched: SHA-256 or unknown checks, unknown filters, concatenated xz streams, and dictionaries over 1 GiB. A stream with no checks (`--check=none`) is refused in place, since damage inside it could not be caught before the bytes are freed, and extracts with `--keep-archive`. | 256 MiB of output |
 | Split archives (`.001`, `.002`, ...) of ZIP or 7z, as 7-Zip makes them | Supported | One file or block; each volume is deleted once emptied |
 | Password-protected ZIP (ZipCrypto and AES) and 7z (AES, including encrypted file lists) | Supported. HatchZip asks for the password, or takes `--password` or `HATCHZIP_PASSWORD`, and proves it on one file before anything is deleted. It is never saved, so a resumed run asks again. | Same as unencrypted |
@@ -322,7 +329,7 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 
 ## How it works
 
-ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. RAR stores files one after another like tar, so it is freed file by file too, and a volume is deleted once every file reaching into it is out. A `.tar.gz` or `.tar.xz` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
+ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. RAR stores files one after another like tar, so it is freed file by file too, and a volume is deleted once every file reaching into it is out. A `.tar.gz`, `.tar.bz2` or `.tar.xz` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
 
 ## How it is built
 

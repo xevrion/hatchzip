@@ -25,6 +25,7 @@ component EntryList inherits VerticalLayout {
     property <length> row-height: 26px;
     init => { scope.focus(); }
     callback toggle(int, int);
+    callback navigate(int, bool) -> int;
     function show-selection() {
         let y = list.content-y + root.selected * root.row-height;
         if y < 0px { list.content-y -= y; }
@@ -129,8 +130,13 @@ component EntryList inherits VerticalLayout {
                 }
                 return accept;
             }
-            if event.text == Key.LeftArrow { root.toggle(root.selected, -1); return accept; }
-            if event.text == Key.RightArrow { root.toggle(root.selected, 1); return accept; }
+            if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+                if root.selected >= 0 && root.selected < root.entries.length {
+                    root.selected = root.navigate(root.selected, event.text == Key.RightArrow);
+                    root.show-selection();
+                }
+                return accept;
+            }
             return reject;
         }
     }
@@ -159,7 +165,7 @@ export component MainWindow inherits Window {
     in-out property <bool> close-when-done: true;
     // The formats line under the Open button; RAR only in builds with it.
     in property <bool> supports-rar;
-    in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives.");
+    in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, and split archives.");
     // The half-extracted run being resumed keeps its archive.
     in property <bool> kept-run;
     in property <TaskView> task;
@@ -190,7 +196,7 @@ export component MainWindow inherits Window {
     public function menu-added() -> string { return @tr("Context menu entries added."); }
     public function menu-removed() -> string { return @tr("Context menu entries removed."); }
     public function no-entries() -> string { return @tr("No entries remaining"); }
-    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive", reason); }
+    public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive.", reason); }
     public function checking-space() -> string { return @tr("Checking disk space…"); }
     public function restore-detail() -> string { return @tr("Converting it back to a standard archive. Extracted files are kept."); }
     public function test-detail() -> string { return @tr("Verifying every entry. No files are written."); }
@@ -230,6 +236,7 @@ export component MainWindow inherits Window {
     public function task-archive-left(size: string) -> string { return @tr("Archive remaining: {}", size); }
 
     public function task-test-result(n: int, count: string) -> string { return @tr("Test passed: 1 entry verified." | "Test passed: {} entries verified." % n, count); }
+    public function task-no-space(short: string) -> string { return @tr("Insufficient disk space. {} more is required.", short); }
 
     public function task-rate(speed: string, time: string) -> string { return @tr("{}/s, {} remaining", speed, time); }
     public function time-short() -> string { return @tr("less than 5 seconds"); }
@@ -245,6 +252,7 @@ export component MainWindow inherits Window {
 
     callback open-archive();
     callback toggle-entry(int, int);
+    callback navigate-entry(int, bool) -> int;
     callback password-ok(string);
     callback password-cancel();
     public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
@@ -473,6 +481,7 @@ export component MainWindow inherits Window {
                 entries: root.entries;
                 empty-text: root.mode == Mode.orphan ? @tr("All entries have been extracted.") : @tr("This archive is empty.");
                 toggle(row, action) => { root.toggle-entry(row, action); }
+                navigate(row, right) => { return root.navigate-entry(row, right); }
             }
             VLine { }
             // The plan can outgrow a small window; its content must not

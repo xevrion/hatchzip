@@ -29,10 +29,13 @@ const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
 /// RAR set; any volume opens the whole set.
 const ARCHIVE_EXTENSIONS: &[&str] = if hatchzip_core::archive::RAR_SUPPORTED {
     &[
-        "zip", "7z", "tar", "gz", "tgz", "xz", "txz", "rar", "r00", "exe", "001",
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "rar", "r00", "exe",
+        "001",
     ]
 } else {
-    &["zip", "7z", "tar", "gz", "tgz", "xz", "txz", "exe", "001"]
+    &[
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "exe", "001",
+    ]
 };
 
 /// The Linux file choosers match a filter case-sensitively, so `GAME.RAR`
@@ -226,6 +229,12 @@ pub fn build(
                     view.message = ui.invoke_verifying_message()
                 }
                 crate::Phase::Paused => view.message = ui.invoke_paused_message(),
+                // The pane showed the plan from before the run; a stop for
+                // space needs the amount the run found, and the pane too.
+                crate::Phase::NoSpace => {
+                    view.message = ui.invoke_task_no_space(task.plan.short.clone());
+                    ui.set_plan(task.plan.clone());
+                }
                 crate::Phase::Done if !view.is_test && !task.is_restoring() => {
                     view.message = if task.keeps_archive() {
                         ui.invoke_extracted_kept()
@@ -386,6 +395,14 @@ pub fn about_window() -> Option<AboutWindow> {
 }
 
 fn wire(ui: &MainWindow, app: &Rc<App>) {
+    let a = app.clone();
+    ui.on_navigate_entry(move |row, right| {
+        let entries = a.entries.borrow();
+        match (entries.as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.navigate(index, right) as i32,
+            _ => row,
+        }
+    });
     let a = app.clone();
     ui.on_toggle_entry(move |row, action| {
         if let Some(tree) = a.entries.borrow().as_ref() {
@@ -585,7 +602,7 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                verdict: ui.invoke_no_entries(),
+                refusal: ui.invoke_no_entries(),
                 ..Default::default()
             });
             return;
@@ -607,14 +624,14 @@ impl App {
                     // Such as a solid RAR: it can only be extracted kept.
                     Some(why) => PlanView {
                         fits: false,
-                        verdict: why.into(),
+                        refusal: why.into(),
                         ..plan_view(&plan)
                     },
                     None => plan_view(&plan),
                 },
                 Err(e) => PlanView {
                     ready: true,
-                    verdict: sentence(&format!("{e:#}")).into(),
+                    refusal: sentence(&format!("{e:#}")).into(),
                     ..Default::default()
                 },
             };
@@ -623,7 +640,7 @@ impl App {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
-                        view.verdict = sentence(&ui.invoke_keep_archive_hint(why.into())).into();
+                        view.refusal = ui.invoke_keep_archive_hint(text::capitalise(&why).into());
                     }
                     ui.set_plan(view);
                 }

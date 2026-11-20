@@ -126,7 +126,7 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         let ui = w.unwrap();
         ui.get_screen() == Screen::Opened && ui.get_plan().ready
     });
-    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().verdict);
+    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().refusal);
     assert!(
         ui.get_summary().contains("35 entries"),
         "{}",
@@ -148,6 +148,13 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .map(|r| r.path.to_string())
             .collect::<Vec<_>>(),
         ["Northwind"]
+    );
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::LeftArrow.into(),
+    });
+    assert_eq!(
+        inside_window(&ui, "Northwind").accessible_item_selected(),
+        Some(true)
     );
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
@@ -228,12 +235,34 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .any(|r| r.path == "Northwind/bin/northwind")
     );
     shot(ui.window(), &format!("{tag}-2-tree-expanded"));
+    let key = |key: Key| {
+        window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    };
+    let selected = |path: &str| {
+        assert_eq!(
+            inside_window(&ui, path).accessible_item_selected(),
+            Some(true),
+            "selection should be on {path}"
+        );
+    };
+    selected("Northwind/bin");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::LeftArrow);
+    selected("Northwind/bin");
+    assert_eq!(folder.accessible_expanded(), Some(true));
+    key(Key::LeftArrow);
+    assert_eq!(folder.accessible_expanded(), Some(false));
+    key(Key::LeftArrow);
+    selected("Northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::DownArrow.into(),
     });
-    window.dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    selected("Northwind/data");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
     });
@@ -242,23 +271,30 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .iter()
             .any(|r| r.path == "Northwind/data/level29.pak")
     );
+    selected("Northwind/data");
+    key(Key::RightArrow);
+    selected("Northwind/data/level00.pak");
     for _ in 0..29 {
         window.dispatch_event(WindowEvent::KeyPressed {
             text: Key::DownArrow.into(),
         });
     }
+    selected("Northwind/data/level29.pak");
     shot(ui.window(), &format!("{tag}-2-tree-scrolled"));
+    key(Key::LeftArrow);
+    selected("Northwind/data");
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_expanded(),
+        Some(true)
+    );
 
     // Asking to keep 100 TB free makes it not fit, and says by how much.
     ui.set_keep_free("100000".into());
     ui.invoke_keep_free_edited("100000".into());
     let w = ui.as_weak();
     wait_until("the plan to say no", move || !w.unwrap().get_plan().fits);
-    assert!(
-        ui.get_plan()
-            .verdict
-            .starts_with("Insufficient disk space. ")
-    );
+    assert!(!ui.get_plan().fits);
+    assert!(!ui.get_plan().short.is_empty());
     shot(ui.window(), &format!("{tag}-3-no-fit"));
 
     ui.invoke_keep_free_edited("not a number".into());
@@ -471,9 +507,9 @@ fn keep_flow(scheme: ColorScheme, tag: &str) {
         w.unwrap().get_plan().keep_archive
     });
     let plan = ui.get_plan();
-    assert!(plan.fits, "{}", plan.verdict);
+    assert!(plan.fits, "{}", plan.refusal);
     assert_eq!(plan.needed, plan.normal, "keeping needs every file");
-    assert_eq!(plan.verdict, "Sufficient disk space");
+    assert!(plan.short.is_empty());
     shot(ui.window(), &format!("{tag}-17-keep-opened"));
     wait_until("the choice to be saved", move || {
         Settings::load_from(&settings_file).keep_archive
@@ -913,19 +949,106 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
         free: "21.3 GB".into(),
         needed: "30.4 GB".into(),
         keep: "2.0 GB".into(),
-        note: "Most of this is one solid block, which can only be freed once all of it is out. \
-               Archives packed with smaller blocks need far less."
-            .into(),
+        short: "11.1 GB".into(),
+        note_solid: true,
         ..Default::default()
     });
     ui.set_task(TaskView {
         phase: Phase::NoSpace,
         heading: "Insufficient disk space".into(),
         can_retry: true,
-        message: "Insufficient disk space. 11.1 GB more is required.".into(),
         ..base
     });
     shot(ui.window(), &format!("{tag}-10-task-no-space"));
+    ui.hide().unwrap();
+}
+
+/// Clicks the control whose accessible label is `label`, after checking it
+/// sits entirely inside the window.
+fn click_labelled(ui: &TaskWindow, label: &str) {
+    let _ = ui.window().take_snapshot().unwrap();
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .next()
+        .unwrap_or_else(|| panic!("missing control: {label}"));
+    let p = element.absolute_position();
+    let s = element.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "{label}: position {p:?}, size {s:?}, window {window:?}"
+    );
+    let at = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position: at });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+}
+
+/// When the reserve is the only thing in the way, the window offers the
+/// largest one that still fits, and the button runs the extraction with it.
+fn reserve_offer_flow(scheme: ColorScheme, tag: &str) {
+    let ui = TaskWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.window().set_size(LogicalSize::new(480.0, 270.0));
+    let clicked = Rc::new(Cell::new(false));
+    let flag = clicked.clone();
+    ui.on_lower_reserve(move || flag.set(true));
+    let base = TaskView {
+        phase: Phase::NoSpace,
+        heading: "Insufficient disk space".into(),
+        message: "Insufficient disk space. 1.4 GB more is required.".into(),
+        can_retry: true,
+        ..Default::default()
+    };
+    ui.set_plan(PlanView {
+        ready: true,
+        free: "1.4 GB".into(),
+        needed: "842.5 MB".into(),
+        keep: "2.0 GB".into(),
+        left: "557.5 MB".into(),
+        ..Default::default()
+    });
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        ..base.clone()
+    });
+    ui.show().unwrap();
+    shot(ui.window(), &format!("{tag}-15-task-lower-reserve"));
+    click_labelled(&ui, "Extract with 500.0 MB reserved");
+    assert!(clicked.get(), "the offer must run the extraction");
+    // Without an offer the button is not there at all.
+    ui.set_task(base);
+    let _ = ui.window().take_snapshot().unwrap();
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Extract with 500.0 MB reserved")
+            .next()
+            .is_none()
+    );
+
+    // The offer speaks the language the rest of the window does.
+    slint::select_bundled_translation("es").unwrap();
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        heading: "Espacio en disco insuficiente".into(),
+        phase: Phase::NoSpace,
+        ..Default::default()
+    });
+    clicked.set(false);
+    shot(ui.window(), &format!("{tag}-16-task-lower-reserve-es"));
+    click_labelled(&ui, "Extraer con 500.0 MB reservados");
+    assert!(clicked.get(), "the translated offer must run it too");
+    slint::select_bundled_translation("en").unwrap();
     ui.hide().unwrap();
 }
 
@@ -936,9 +1059,10 @@ fn tree_accessibility_edges(scheme: ColorScheme) {
     ui.show().unwrap();
     // Realize the empty list before sending a key to its FocusScope.
     let _ = ui.window().take_snapshot().unwrap();
-    ui.window().dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    for key in [Key::LeftArrow, Key::RightArrow, Key::DownArrow] {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    }
     assert_eq!(ui.get_entries().row_count(), 0);
     ui.set_entries(
         Rc::new(slint::VecModel::from(vec![
@@ -1042,8 +1166,7 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
         normal: "8 GB".into(),
         keep: "2 GB".into(),
         after: "38 GB".into(),
-        verdict: "Sufficient disk space".into(),
-        note: "There is also enough space to keep the archive.".into(),
+        note_keep: true,
         ..Default::default()
     };
     ui.set_plan(plan.clone());
@@ -1055,7 +1178,35 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
         ui.window().set_size(LogicalSize::new(width, height));
         ui.set_task(TaskView::default());
         ui.set_mode(Mode::Fresh);
-        let _ = ui.window().take_snapshot().unwrap();
+        let blocked = "Insufficient disk space. Free another 3 GB to extract this archive.";
+        ui.set_plan(PlanView {
+            fits: false,
+            free: "1 GB".into(),
+            after: "0 B".into(),
+            refusal: blocked.into(),
+            ..plan.clone()
+        });
+        assert_eq!(
+            inside_window(&ui, "Extract").accessible_enabled(),
+            Some(false)
+        );
+        let pane = ElementHandle::find_by_element_id(&ui, "MainWindow::space-scroll")
+            .next()
+            .unwrap();
+        let verdict = ElementHandle::find_by_accessible_label(&ui, blocked)
+            .next()
+            .expect("the space verdict should be visible without scrolling");
+        let top = verdict.absolute_position().y;
+        let bottom = top + verdict.size().height;
+        let pane_top = pane.absolute_position().y;
+        let pane_bottom = pane_top + pane.size().height;
+        assert!(
+            top >= pane_top - 0.5 && bottom <= pane_bottom + 0.5,
+            "space verdict must be visible without scrolling at {size} size: \
+             verdict {top}..{bottom}, pane {pane_top}..{pane_bottom}"
+        );
+        shot(ui.window(), &format!("{tag}-{size}-blocked"));
+        ui.set_plan(plan.clone());
         for label in [
             "Test",
             "Extract",
@@ -1072,30 +1223,24 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
             "the visible Test button must receive a click"
         );
         shot(ui.window(), &format!("{tag}-{size}-opened"));
-        let pane = ElementHandle::find_by_element_id(&ui, "MainWindow::space-scroll")
-            .next()
-            .unwrap();
-        scroll_plan(&ui, &pane, -1000.0);
-        let verdict = ElementHandle::find_by_accessible_label(&ui, "Sufficient disk space")
-            .next()
-            .expect("scrolling reveals the plan verdict");
-        assert!(verdict.absolute_position().y >= pane.absolute_position().y - 0.5);
-        assert!(
-            verdict.absolute_position().y + verdict.size().height
-                <= pane.absolute_position().y + pane.size().height + 0.5
-        );
-        inside_window(&ui, "Extract");
-        shot(ui.window(), &format!("{tag}-{size}-plan-scrolled"));
 
         // A longer plan must stay scrollable without displacing the actions.
-        let long_note = "A longer disk-space explanation. ".repeat(20);
+        // The last note is the one to look for: only the visible part of a
+        // scroll view is laid out, and after scrolling to the bottom the
+        // notes above it can be out of view on some platforms.
+        let last_note = "This drive cannot release space inside a file, so the compressed \
+                         archive remains whole until extraction completes.";
         ui.set_plan(PlanView {
-            note: long_note.as_str().into(),
+            note_in_place: "500 MB".into(),
+            note_keep: true,
+            note_solid: true,
+            note_other_drive: true,
+            note_kept_whole: true,
             ..plan.clone()
         });
         inside_window(&ui, "Extract");
         scroll_plan(&ui, &pane, -10000.0);
-        let note = ElementHandle::find_by_accessible_label(&ui, &long_note)
+        let note = ElementHandle::find_by_accessible_label(&ui, last_note)
             .next()
             .unwrap();
         shot(ui.window(), &format!("{tag}-{size}-long-plan"));
@@ -1110,6 +1255,7 @@ fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
         );
         inside_window(&ui, "Test");
         ui.set_plan(plan.clone());
+        scroll_plan(&ui, &pane, 10000.0);
         for (mode, labels) in [
             (Mode::Resume, vec!["Resume extraction", "Restore archive"]),
             (Mode::Orphan, vec!["Finish"]),
@@ -1158,6 +1304,11 @@ fn windows_end_to_end() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The windows follow the system language, and these flows read English
+    // labels. Slint registers its bundled catalogs with the first component,
+    // so one has to exist before the language can be pinned.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
         minimum_layout_flow(scheme, tag);
@@ -1165,6 +1316,7 @@ fn windows_end_to_end() {
         tree_accessibility_edges(scheme);
         keep_flow(scheme, tag);
         task_window_flow(scheme, tag);
+        reserve_offer_flow(scheme, tag);
         replace_flow(scheme, tag);
         keep_task_flow(scheme, tag);
         queue_flow(scheme, tag);

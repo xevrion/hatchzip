@@ -12,6 +12,7 @@ categories = ["compression", "filesystem"]
 
 [dependencies]
 anyhow.workspace = true
+bzip2 = "0.6.1"
 crc32fast = "1.5.3"
 fs4 = "1.1.0"
 # Pure Rust zlib with the C API, for inflatePrime, inflateSetDictionary and

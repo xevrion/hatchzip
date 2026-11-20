@@ -78,6 +78,18 @@ impl Request {
         }
     }
 
+    /// Changes how much free space an extraction leaves untouched. Returns
+    /// false for anything else, which has no reserve to lower.
+    pub fn set_keep_free(&mut self, bytes: u64) -> bool {
+        match self {
+            Self::Extract { keep_free, .. } => {
+                *keep_free = bytes;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Remembers a password that worked, so a rerun after a pause doesn't
     /// ask again. It lives only in this process.
     pub fn set_password(&mut self, p: String) {
@@ -456,6 +468,29 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn lowering_the_reserve_leaves_other_requests_alone() {
+        let mut extract = Request::Extract {
+            archive: "/games/game.zip".into(),
+            output: None,
+            keep_free: 2_000_000_000,
+            verify_first: false,
+            keep_archive: false,
+            password: None,
+            here: false,
+        };
+        assert!(extract.set_keep_free(500_000_000));
+        match extract {
+            Request::Extract { keep_free, .. } => assert_eq!(keep_free, 500_000_000),
+            _ => panic!("still an extraction"),
+        }
+        let mut test = Request::Test {
+            archive: "/games/game.zip".into(),
+            password: None,
+        };
+        assert!(!test.set_keep_free(0));
+    }
 
     #[test]
     fn cancelled_sfv_does_not_start_extraction() {

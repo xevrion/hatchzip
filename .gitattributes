@@ -4,6 +4,7 @@
 
 # Binary, never diffed or line-ending normalised. A zip fixture with its line
 # endings rewritten is a corrupt archive.
+*.bz2 binary
 *.zip binary
 *.rar binary
 *.r[0-9][0-9] binary

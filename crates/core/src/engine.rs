@@ -102,9 +102,8 @@ pub struct Job {
     /// the last commit truncated it.
     pub top: u64,
     /// Whether the archive's filesystem can free bytes inside a file, and
-    /// how much of a punched range it may keep allocated at each end. Probed
-    /// once, on first use.
-    punch: OnceLock<Option<u64>>,
+    /// what punching costs around a range there. Probed once, on first use.
+    punch: OnceLock<Option<Punch>>,
     /// The streamed unit a previous run left half done, if any.
     resume: Option<Resume>,
     /// Whether a run may have extracted anything yet. Until it has, what
@@ -263,6 +262,17 @@ fn first_not_apart<'a>(
         }
     }
     None
+}
+
+/// What freeing an archive's bytes costs around a punched range: `margin` is
+/// the most the filesystem may keep allocated at each end, which the space
+/// estimate reserves; `overlap` is how far before the last punch ended the
+/// next one starts, to free the block it kept. They differ by orders of
+/// magnitude on btrfs, where an extent is 128 MiB but a block is 4 KiB.
+#[derive(Clone, Copy, Debug)]
+pub struct Punch {
+    pub margin: u64,
+    pub overlap: u64,
 }
 
 impl Job {
@@ -568,11 +578,10 @@ impl Job {
         Ok(CaseClashes::of(&names))
     }
 
-    /// `Some(granule)` if holes punched in the archive give its space back,
-    /// where `granule` is how much may stay allocated at each end of a
-    /// punched range. `None` on filesystems that can only truncate, such as
-    /// FAT32 and exFAT, which keep today's whole-unit behavior.
-    pub fn punch_support(&self) -> Option<u64> {
+    /// `Some(punch)` if holes punched in the archive give its space back.
+    /// `None` on filesystems that can only truncate, such as FAT32 and
+    /// exFAT, which keep today's whole-unit behavior.
+    pub fn punch_support(&self) -> Option<Punch> {
         *self.punch.get_or_init(|| {
             if test_knob("HATCHZIP_NO_PUNCH").is_some() {
                 return None;
@@ -581,7 +590,10 @@ impl Job {
                 Some(d) if !d.as_os_str().is_empty() => d,
                 _ => Path::new("."),
             };
-            fsutil::can_punch(dir).then(|| platform::punch_granule(dir))
+            fsutil::can_punch(dir).then(|| Punch {
+                margin: platform::punch_margin(dir),
+                overlap: platform::punch_overlap(dir),
+            })
         })
     }
 
@@ -765,7 +777,7 @@ impl Job {
     /// At any moment the unit holds the output written since the last resume
     /// point (at most a step, plus one read buffer or deflate block), the
     /// archive bytes at either end of the punched range the filesystem keeps
-    /// (a granule each), and however far the output so far has outgrown the
+    /// (a margin each), and however far the output so far has outgrown the
     /// input it came from. For stored data that last part is zero. For
     /// deflate it only grows as decoding goes on, since encoders fall back to
     /// stored blocks rather than expand data, so the end state bounds it; a
@@ -791,12 +803,12 @@ impl Job {
             out_left
         };
         let rise = match self.punch_support() {
-            Some(granule) if reclaims => {
+            Some(punch) if reclaims => {
                 let slack = match s.codec {
                     Codec::Stored => 0,
                     Codec::Deflate => out_left / 1024,
                 };
-                let step = (stream_step() + BUF_SIZE as u64 + 2 * granule) as i128;
+                let step = (stream_step() + BUF_SIZE as u64 + 2 * punch.margin) as i128;
                 ((out_left - data_left).max(0) + slack + step).min(out_left)
             }
             _ => out_left,
@@ -812,7 +824,7 @@ impl Job {
     /// up to it, plus what was written since: under a step, plus the output
     /// to the next point after the step is full, at most `gap`. The scan
     /// measured both at the very points the run will meet. A read buffer
-    /// and a granule at each end of the punched range come on top. Links are
+    /// and a margin at each end of the punched range come on top. Links are
     /// made at the end, once the archive is gone.
     fn solid_cost(&self, i: usize, p: &Profile, span: i128, reclaims: bool) -> (i128, i128) {
         let out_left = (p.files + p.links) as i128;
@@ -824,8 +836,8 @@ impl Job {
             out_left
         };
         let rise = match self.punch_support() {
-            Some(granule) if reclaims => {
-                let ahead = stream_step() + p.gap + BUF_SIZE as u64 + 2 * granule;
+            Some(punch) if reclaims => {
+                let ahead = stream_step() + p.gap + BUF_SIZE as u64 + 2 * punch.margin;
                 (p.lead.max(0) + ahead as i128).min(p.files as i128)
             }
             // Nothing is freed until the run commits, so every file is on
@@ -857,10 +869,21 @@ impl Job {
     /// is the entry its point is in; the files after the point are still in
     /// the archive.
     pub fn uncommitted(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, true)
+    }
+
+    /// A kept run being discarded has the whole archive, so its open file
+    /// can go too. Earlier files committed by a stream point stay out of
+    /// this list, just as they do on resume.
+    pub(crate) fn discarded_output(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, false)
+    }
+
+    fn uncommitted_files(&self, out: &Path, preserve_open: bool) -> Vec<(PathBuf, u64)> {
         if !self.started {
             return Vec::new();
         }
-        let open = self.open_entry().is_some();
+        let open = preserve_open && self.open_entry().is_some();
         let mut found = Vec::new();
         for (i, u) in self.units.iter().enumerate() {
             for (k, item) in u.items.iter().enumerate() {
@@ -1109,7 +1132,11 @@ impl Run<'_> {
             }
             if let Some(solid) = self.job.format.solid() {
                 let walk = solid.walk(self.job.resumed(next))?;
-                let Some(links) = self.stream_solid(next, walk, reclaims, &out)? else {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                let Some(links) = self
+                    .stream_solid(next, walk, reclaims, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                else {
                     return Ok(Outcome::Paused);
                 };
                 self.commit(next, next + 1, links, &out)?;
@@ -1117,7 +1144,11 @@ impl Run<'_> {
                 continue;
             }
             if let Some(stream) = self.stream_now(next, reclaims, &out)? {
-                if !self.stream_unit(next, &stream, &out)? {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                if !self
+                    .stream_unit(next, &stream, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                {
                     return Ok(Outcome::Paused);
                 }
                 self.commit(next, next + 1, Vec::new(), &out)?;
@@ -1126,8 +1157,12 @@ impl Run<'_> {
             }
             let end = self.next_batch(next, &out, reclaims)?;
             let batch = &self.job.units[next..end];
+            let what = describe(batch);
 
-            let Some(links) = self.extract_batch(batch, &out)? else {
+            let Some(links) = self
+                .extract_batch(batch, &out)
+                .map_err(|e| out_of_space(e, &what))?
+            else {
                 return Ok(Outcome::Paused);
             };
             self.commit(next, end, links, &out)?;
@@ -1362,8 +1397,8 @@ impl Run<'_> {
         out: &Path,
         point: Resume,
         stream: &Stream,
-        punching: Option<u64>,
-    ) -> Result<Option<u64>> {
+        punching: Option<Punch>,
+    ) -> Result<Option<Punch>> {
         file.sync_all()
             .context("flushing the extracted file to disk")?;
         // The part file and the folders above it may be new; a point that
@@ -1568,9 +1603,9 @@ impl Run<'_> {
         links: &mut Vec<Link>,
         dirs: &mut HashSet<PathBuf>,
         out: &Path,
-        punching: Option<u64>,
+        punching: Option<Punch>,
         punched: &mut u64,
-    ) -> Result<Option<u64>> {
+    ) -> Result<Option<Punch>> {
         if let Some(f) = open {
             f.file
                 .sync_all()
@@ -1606,7 +1641,7 @@ impl Run<'_> {
         self.job.resume = Some(point);
         crash_point("stream-after-journal");
 
-        if let Some(granule) = punching {
+        if let Some(punch) = punching {
             if !self
                 .job
                 .storage
@@ -1615,11 +1650,11 @@ impl Run<'_> {
             {
                 return Ok(None);
             }
-            // A filesystem that rounds a punch inwards keeps the granule
-            // holding `byte` allocated. Starting the next punch one granule
+            // A filesystem that rounds a punch inwards keeps the block
+            // holding `byte` allocated. Starting the next punch one overlap
             // earlier covers it; it still never reaches `byte`, the point a
             // resume parses.
-            *punched = byte.saturating_sub(granule);
+            *punched = byte.saturating_sub(punch.overlap);
             (self.progress.on_commit)(self.job.top - byte);
         }
         crash_point("stream-after-punch");
@@ -1628,11 +1663,17 @@ impl Run<'_> {
 
     /// Stops a stream at a resume point, before it writes what doesn't fit.
     /// `left` is the output still to write.
-    fn ensure_room(&self, out: &Path, what: &str, left: u64, punching: Option<u64>) -> Result<()> {
+    fn ensure_room(
+        &self,
+        out: &Path,
+        what: &str,
+        left: u64,
+        punching: Option<Punch>,
+    ) -> Result<()> {
         let avail = fsutil::available_space(out)?.saturating_sub(self.keep_free);
         let left = left.next_multiple_of(4096);
         let need = match punching {
-            Some(granule) => (stream_step() + BUF_SIZE as u64 + 2 * granule).min(left),
+            Some(punch) => (stream_step() + BUF_SIZE as u64 + 2 * punch.margin).min(left),
             None => left,
         };
         if need > avail {
@@ -1660,10 +1701,7 @@ impl Run<'_> {
         if first > avail {
             // The upfront check makes this rare: it takes something else on
             // the machine filling the disk while we run.
-            let what = match units[start].items.as_slice() {
-                [one] => format!("'{}'", one.path.display()),
-                many => format!("the next block of {} files", many.len()),
-            };
+            let what = describe(std::slice::from_ref(&units[start]));
             bail!(
                 "not enough disk space to continue: {what} requires {} and {} is available \
                  ({} reserved).\n{} more is required. Progress is saved; free up space and \
@@ -2178,6 +2216,43 @@ fn is_interrupt(e: &anyhow::Error) -> bool {
         .any(|io| io.kind() == io::ErrorKind::Interrupted)
 }
 
+/// A write error that means the volume ran out of room, however deep the
+/// decoder wrapped it. The next batch's pre-check can only see the space
+/// there was when it started, so a program filling the disk in between shows
+/// up here instead. Matched by kind, which std maps from `ENOSPC`,
+/// `ERROR_DISK_FULL` and `ERROR_HANDLE_DISK_FULL`; the raw numbers for those
+/// differ per system and clash with unrelated errors elsewhere.
+fn is_disk_full(e: &anyhow::Error) -> bool {
+    e.chain()
+        .filter_map(|c| c.downcast_ref::<io::Error>())
+        .any(|io| {
+            matches!(
+                io.kind(),
+                io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded
+            )
+        })
+}
+
+/// The batch never reached a commit, so its units are still whole in the
+/// archive and a rerun picks them up where this one stopped.
+fn out_of_space(e: anyhow::Error, what: &str) -> anyhow::Error {
+    if !is_disk_full(&e) {
+        return e;
+    }
+    e.context(format!(
+        "not enough disk space to continue: {what} could not be written because the disk filled \
+         up.\nProgress is saved; free up space and resume the extraction"
+    ))
+}
+
+fn describe(units: &[Unit]) -> String {
+    let items: usize = units.iter().map(|u| u.items.len()).sum();
+    match units {
+        [one] if one.items.len() == 1 => format!("'{}'", one.items[0].path.display()),
+        _ => format!("the next block of {items} files"),
+    }
+}
+
 /// Settings only the test suite uses. Release builds ignore them.
 fn test_knob(name: &str) -> Option<u32> {
     if !cfg!(debug_assertions) {
@@ -2588,5 +2663,45 @@ mod tests {
         assert_eq!(two.size(), u64::MAX);
         assert_eq!(on_disk(&two), u64::MAX);
         fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod space_errors {
+    use super::{is_disk_full, out_of_space};
+    use anyhow::Context;
+    use std::io;
+
+    #[test]
+    fn disk_full_errors_become_the_resume_stop() {
+        for kind in [io::ErrorKind::StorageFull, io::ErrorKind::QuotaExceeded] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(is_disk_full(&e), "{kind:?} not recognized as full");
+            let e = out_of_space(e, "'game/a'");
+            let msg = e.to_string();
+            assert!(msg.contains("not enough disk space to continue"), "{msg}");
+            assert!(msg.contains("Progress is saved"), "{msg}");
+            // The original error stays in the chain, so the OS text shows.
+            let full = format!("{e:#}");
+            assert!(full.contains("extracting 'game/a'"), "{full}");
+        }
+    }
+
+    #[test]
+    fn other_write_errors_pass_through() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::AlreadyExists,
+        ] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(!is_disk_full(&e), "{kind:?} taken for a full disk");
+            let msg = out_of_space(e, "'game/a'").to_string();
+            assert!(msg.contains("extracting 'game/a'"), "{msg}");
+            assert!(!msg.contains("Progress is saved"), "{msg}");
+        }
     }
 }

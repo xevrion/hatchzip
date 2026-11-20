@@ -240,7 +240,7 @@ impl Storage {
                 break;
             }
             if i == 0 {
-                self.first.set_len(len)?;
+                platform::set_len_now(&self.first, len)?;
             } else if p.start >= len {
                 match fs::remove_file(&p.path) {
                     Err(e) if e.kind() != io::ErrorKind::NotFound => {
@@ -251,7 +251,7 @@ impl Storage {
             } else {
                 let f = OpenOptions::new().write(true).open(&p.path)?;
                 if f.metadata()?.len() > len - p.start {
-                    f.set_len(len - p.start)?;
+                    platform::set_len_now(&f, len - p.start)?;
                 }
             }
         }
@@ -304,7 +304,7 @@ impl Storage {
             }
             let shrink = |f: &File| -> io::Result<()> {
                 if f.metadata()?.len() > keep {
-                    f.set_len(keep)?;
+                    platform::set_len_now(f, keep)?;
                     f.sync_all()?;
                 }
                 Ok(())
