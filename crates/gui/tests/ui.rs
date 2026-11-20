@@ -481,7 +481,10 @@ fn nested_flow() {
     // Spanish, which is the widest.
     ui.window().set_size(LogicalSize::new(640.0, 440.0));
     inside_window(&ui, "Extract and remove 1 archive inside");
-    ui.invoke_choose_language("es".into());
+    ui.invoke_open_settings();
+    let settings_window = main_window::settings_window().expect("Settings opens");
+    settings_window.set_language_index(2);
+    settings_window.invoke_choose_language(2);
     let spanish = ui
         .global::<hatchzip_gui::Messages>()
         .invoke_inside_count_remove(1, "1".into());
@@ -490,7 +493,8 @@ fn nested_flow() {
     view.inside = spanish.clone();
     ui.set_task(view);
     inside_window(&ui, spanish.as_str());
-    ui.invoke_choose_language("en".into());
+    settings_window.set_language_index(1);
+    settings_window.invoke_choose_language(1);
     let english = ui
         .global::<hatchzip_gui::Messages>()
         .invoke_inside_count_remove(1, "1".into());

@@ -315,7 +315,7 @@ fn extract(
     // "Extract here" opens for the folder named after the archive, the safe
     // choice, and moves next to the archive once its contents allow.
     let output = if here { None } else { output };
-    let mut kept: Vec<PathBuf> = Vec::new();
+    let kept: Vec<PathBuf>;
     let mut resumed = false;
     let (job, journal) = match open(&primary, &paths, output, true, secret, counters, send)? {
         State::Orphan(mut journal) => {
