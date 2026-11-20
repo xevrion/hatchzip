@@ -420,6 +420,132 @@ msgstr "唯一的障碍是预留空间：需要 {}，可用 {}，因此可以不
 msgid "Available: {}. Required: {}, plus {} reserved."
 msgstr "可用空间：{}。所需空间：{}，另需预留 {}。"
 
+msgid "Settings…"
+msgstr "设置…"
+
+msgid "General"
+msgstr "常规"
+
+msgid "Extraction"
+msgstr "解压"
+
+msgid "Integration"
+msgstr "系统集成"
+
+msgid "Advanced"
+msgstr "高级"
+
+msgid "Appearance"
+msgstr "外观"
+
+msgid "System follows the light or dark setting of the operating system."
+msgstr "“跟随系统”会使用操作系统的浅色或深色设置。"
+
+msgid "System"
+msgstr "跟随系统"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "After extracting"
+msgstr "解压完成后"
+
+msgid "The destination folder opens in the file manager when an extraction completes."
+msgstr "解压完成后，在文件管理器中打开目标文件夹。"
+
+msgid "The result is shown in the window and nothing else is opened."
+msgstr "结果显示在窗口中，不会打开其他内容。"
+
+msgid "Do nothing"
+msgstr "不执行任何操作"
+
+msgid "Open the folder"
+msgstr "打开文件夹"
+
+msgid "Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open."
+msgstr "适用于从右键菜单打开的窗口。测试、暂停或失败时，窗口会保持打开。"
+
+msgid "Every entry is read and checked before anything is extracted or removed, which takes longer."
+msgstr "在解压或删除任何内容之前，先读取并校验每个条目，耗时更长。"
+
+msgid "Free space left untouched on the destination drive, so the system and other programs keep room to work."
+msgstr "在目标磁盘上保留不动的可用空间，让系统和其他程序仍有空间可用。"
+
+msgid "Default destination"
+msgstr "默认目标位置"
+
+msgid "Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive."
+msgstr "每个压缩包都会解压到所选文件夹中以其名称命名的文件夹里。右键菜单中的“Extract here”仍会解压到压缩包旁边。"
+
+msgid "Each archive is extracted into a folder named after it, next to the archive."
+msgstr "每个压缩包都会解压到它旁边以其名称命名的文件夹中。"
+
+msgid "Next to the archive"
+msgstr "压缩包旁边"
+
+msgid "Always in a folder"
+msgstr "始终放在指定文件夹"
+
+msgid "No folder chosen"
+msgstr "未选择文件夹"
+
+msgid "When a file already exists"
+msgstr "文件已存在时"
+
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "现有文件会被替换。旧副本会保留到解压完成，然后删除。"
+
+msgid "Existing files are kept, and the archive's copies of them are not."
+msgstr "保留现有文件，不保留压缩包中的副本。"
+
+msgid "Each file already in the destination is shown, with the choice to replace it, skip it or keep both."
+msgstr "逐一显示目标位置中已有的文件，可选择替换、跳过或保留两者。"
+
+msgid "Ask"
+msgstr "询问"
+
+msgid "Adds HatchZip's extract and test entries to the right-click menu of archives."
+msgstr "在压缩包的右键菜单中添加 HatchZip 的解压和测试菜单项。"
+
+msgid "Settings file"
+msgstr "设置文件"
+
+msgid "Settings are saved here as soon as they change."
+msgstr "设置一经更改，就会立即保存到这里。"
+
+msgid "Show in Explorer"
+msgstr "在文件资源管理器中显示"
+
+msgid "Show in Finder"
+msgstr "在“访达”中显示"
+
+msgid "Show in the file manager"
+msgstr "在文件管理器中显示"
+
+msgid "Reset all settings"
+msgstr "重置所有设置"
+
+msgid "Every setting returns to its default, including the language and the appearance."
+msgstr "所有设置都会恢复默认值，包括语言和外观。"
+
+msgid "Reset all settings…"
+msgstr "重置所有设置…"
+
+msgid "Reset all settings?"
+msgstr "要重置所有设置吗？"
+
+msgid "The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed."
+msgstr "语言、外观和所有解压设置都将恢复默认值。右键菜单不会改变。"
+
+msgid "Reset"
+msgstr "重置"
+
+msgid "Select the default destination folder"
+msgstr "选择默认目标文件夹"
+
 msgid "Archive {} of {}"
 msgstr "压缩包 {0} / {1}"
 

@@ -12,18 +12,20 @@ use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::engine::Job;
 use hatchzip_core::human;
 use hatchzip_core::session::{self, State, display_name};
+use slint::winit_030::WinitWindowAccessor;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, Timer, TimerMode};
 
 use crate::backend::Drops;
 use crate::entries::{self, Entries, EntriesModel};
 use crate::runner::Runner;
-use crate::settings::{self, Settings};
+use crate::settings::{self, AfterExtracting, Appearance, Destination, Settings};
+use crate::settings_window as sw;
 use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
 use crate::{
-    AboutWindow, LanguageItem, MainWindow, Messages, Mode, PlanView, Screen, TaskView, locale,
-    platform, shell,
+    AboutWindow, MainWindow, Messages, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView,
+    locale, platform, shell,
 };
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
@@ -144,13 +146,24 @@ struct App {
     /// The half-extracted run being resumed keeps its archive.
     kept_run: Cell<bool>,
     output: RefCell<PathBuf>,
+    /// Where a fresh archive goes next to itself, before the default
+    /// destination in Settings applies.
+    next_to: RefCell<PathBuf>,
+    /// The person picked this archive's folder with Browse, so a change of
+    /// the default destination leaves it alone.
+    output_chosen: Cell<bool>,
     keep_free: Cell<u64>,
     /// Shared with the threads that work out the space plan.
     job: RefCell<SharedJob>,
-    /// Bumped by every open and every plan request, so a slow answer to an
-    /// old question never overwrites a newer one.
+    /// Bumped by every open, so a slow load of an old archive never
+    /// overwrites a newer one.
     generation: Cell<u64>,
+    /// Bumped by every open and every plan request. Kept apart from
+    /// `generation` because a setting changed while an archive loads asks
+    /// for a plan, and that must not throw the load away.
+    plan_generation: Cell<u64>,
     about: RefCell<Option<AboutWindow>>,
+    settings_window: RefCell<Option<SettingsWindow>>,
     /// The password that opened the current archive, for this process only.
     password: RefCell<Option<String>>,
     settings: RefCell<Settings>,
@@ -163,6 +176,11 @@ struct App {
     /// which may answer later, must not overwrite it.
     shell_touched: Cell<bool>,
     summary: RefCell<Option<Summary>>,
+    /// The default destination's folder picker is open.
+    picking: Cell<bool>,
+    /// The folder it returns is still wanted: choosing "Next to the
+    /// archive" or resetting while it is open turns this off.
+    pick_wanted: Cell<bool>,
 }
 
 thread_local! {
@@ -206,11 +224,15 @@ pub fn build(
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
-    ui.set_close_when_done(settings.close_when_done);
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
     show_shell_menu_label(&ui);
-    show_language(&ui, settings.language.as_deref());
+    // Left alone when it follows the system, so the style's own binding to
+    // the system's setting stays in place.
+    if settings.appearance != Appearance::System {
+        ui.global::<Palette>()
+            .set_color_scheme(sw::color_scheme(settings.appearance));
+    }
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
@@ -229,10 +251,14 @@ pub fn build(
         mode: Cell::new(Mode::Fresh),
         kept_run: Cell::new(false),
         output: RefCell::new(PathBuf::new()),
+        next_to: RefCell::new(PathBuf::new()),
+        output_chosen: Cell::new(false),
         keep_free: Cell::new(settings.keep_free),
         job: RefCell::default(),
         generation: Cell::new(0),
+        plan_generation: Cell::new(0),
         about: RefCell::new(None),
+        settings_window: RefCell::new(None),
         password: RefCell::new(None),
         settings: RefCell::new(settings),
         settings_file,
@@ -240,10 +266,21 @@ pub fn build(
         loading_timer: Timer::default(),
         shell_touched: Cell::new(false),
         summary: RefCell::new(None),
+        picking: Cell::new(false),
+        pick_wanted: Cell::new(false),
     });
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
     wire(&ui, &app);
+    // Read when it happens, so a change in Settings counts for a run
+    // already going.
+    app.runner.when_extracted(|| {
+        with_app(|app| {
+            if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder {
+                app.open_folder();
+            }
+        });
+    });
     crate::password::host_in!(ui);
     crate::replace::host_in!(ui);
     if platform::SHELL_MENU {
@@ -255,6 +292,9 @@ pub fn build(
             post(move |app| {
                 if !app.shell_touched.get() {
                     app.ui().set_shell_menu_on(on);
+                    if let Some(w) = app.settings_window.borrow().as_ref() {
+                        w.set_shell_menu_on(on);
+                    }
                 }
             });
         });
@@ -285,6 +325,26 @@ pub fn about_window() -> Option<AboutWindow> {
             .as_ref()
             .and_then(|app| app.about.borrow().as_ref().map(|w| w.clone_strong()))
     })
+}
+
+/// The Settings window, once it has been opened.
+pub fn settings_window() -> Option<SettingsWindow> {
+    APP.with(|a| {
+        a.borrow().as_ref().and_then(|app| {
+            app.settings_window
+                .borrow()
+                .as_ref()
+                .map(|w| w.clone_strong())
+        })
+    })
+}
+
+/// Runs `f` with the app, for callbacks of windows the app owns, which
+/// would keep it alive forever if they held it.
+fn with_app(f: impl FnOnce(&Rc<App>)) {
+    if let Some(app) = APP.with(|a| a.borrow().clone()) {
+        f(&app);
+    }
 }
 
 fn wire(ui: &MainWindow, app: &Rc<App>) {
@@ -337,23 +397,20 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
     let a = app.clone();
     ui.on_verify_first_toggled(move || {
         let on = a.ui().get_verify_first();
-        a.change_settings(|s| s.verify_first = on);
+        a.set_verify_first(on);
     });
     let a = app.clone();
     ui.on_remove_archive_toggled(move || {
         let keep = !a.ui().get_remove_archive();
-        a.change_settings(|s| s.keep_archive = keep);
-        a.refresh_plan();
+        a.set_keep_archive(keep);
     });
     let a = app.clone();
-    ui.on_close_when_done_toggled(move || {
-        let on = a.ui().get_close_when_done();
-        a.change_settings(|s| s.close_when_done = on);
+    ui.on_shell_menu_toggled(move || {
+        let on = a.ui().get_shell_menu_on();
+        a.shell_menu_toggled(on, false);
     });
     let a = app.clone();
-    ui.on_shell_menu_toggled(move || a.shell_menu_toggled());
-    let a = app.clone();
-    ui.on_choose_language(move |code| a.choose_language(&code));
+    ui.on_open_settings(move || a.show_settings());
     let a = app.clone();
     ui.on_give_back(move || a.give_back());
     let a = app.clone();
@@ -383,12 +440,18 @@ impl App {
         self.generation.get()
     }
 
+    fn next_plan_generation(&self) -> u64 {
+        self.plan_generation.set(self.plan_generation.get() + 1);
+        self.plan_generation.get()
+    }
+
     fn open(&self, path: PathBuf) {
         if self.runner.running() {
             return;
         }
         let ui = self.ui();
         let generation = self.next_generation();
+        self.next_plan_generation();
         *self.runner.task.borrow_mut() = None;
         *self.summary.borrow_mut() = None;
         show_task(&ui, TaskView::default());
@@ -432,6 +495,7 @@ impl App {
         };
         *self.archive.borrow_mut() = Some(path.clone());
         *self.job.borrow_mut() = SharedJob::default();
+        self.output_chosen.set(false);
 
         std::thread::spawn(move || {
             let result = load(&path, password, &reads);
@@ -472,13 +536,19 @@ impl App {
         *self.entries.borrow_mut() = Some(tree);
         ui.set_mode(loaded.mode);
         ui.set_kept_run(loaded.kept);
-        ui.set_output(loaded.output.display().to_string().into());
+        // A half-extracted archive goes on where it started.
+        let output = match loaded.mode {
+            Mode::Fresh => self.settings.borrow().output_for(&loaded.output),
+            _ => loaded.output.clone(),
+        };
+        ui.set_output(output.display().to_string().into());
         ui.set_screen(Screen::Opened);
         *self.name.borrow_mut() = loaded.name;
         *self.password.borrow_mut() = loaded.password;
         self.mode.set(loaded.mode);
         self.kept_run.set(loaded.kept);
-        *self.output.borrow_mut() = loaded.output;
+        *self.next_to.borrow_mut() = loaded.output;
+        *self.output.borrow_mut() = output;
         *self.job.borrow_mut() = Arc::new(Mutex::new(loaded.job));
         self.refresh_plan();
     }
@@ -519,17 +589,19 @@ impl App {
         ui.set_summary(parts.join(" \u{b7} ").into());
     }
 
-    /// Settings > Language. Windows the right-click menu opens from now on
-    /// read the saved choice too.
+    /// The language in Settings; `""` follows the system. Windows the
+    /// right-click menu opens from now on read the saved choice too.
     fn choose_language(&self, code: &str) {
         let choice = (!code.is_empty()).then(|| code.to_string());
         self.change_settings(|s| s.language = choice.clone());
         locale::select(choice.as_deref());
         let ui = self.ui();
-        show_language(&ui, choice.as_deref());
         // Text bound to @tr in the .slint files follows by itself; these were
         // worded once from Rust and would stay in the old language.
         show_shell_menu_label(&ui);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_languages(w, choice.as_deref());
+        }
         self.show_summary();
         // A task's view is worded again from the task as it stands, which a
         // finished one, no longer ticking, needs. The task is not touched.
@@ -551,7 +623,7 @@ impl App {
             });
             return;
         }
-        let generation = self.next_generation();
+        let generation = self.next_plan_generation();
         let job = self.job.borrow().clone();
         let out = self.output.borrow().clone();
         let resuming = self.mode.get() == Mode::Resume;
@@ -580,7 +652,7 @@ impl App {
                 },
             };
             post(move |app| {
-                if generation == app.generation.get() {
+                if generation == app.plan_generation.get() {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
@@ -608,12 +680,233 @@ impl App {
         match parse_gb(text) {
             Some(bytes) => {
                 ui.set_keep_free_valid(true);
-                self.keep_free.set(bytes);
-                self.change_settings(|s| s.keep_free = bytes);
-                self.refresh_plan();
+                // The other window gets the text as typed; only the one being
+                // typed in may be left showing something invalid.
+                if let Some(w) = self.settings_window.borrow().as_ref() {
+                    w.set_keep_free(text.into());
+                    w.set_keep_free_valid(true);
+                }
+                self.set_keep_free(bytes);
             }
             None => ui.set_keep_free_valid(false),
         }
+    }
+
+    /// The reserve, typed in the Settings window.
+    fn settings_keep_free_edited(&self, text: &str) {
+        let Some(w) = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong())
+        else {
+            return;
+        };
+        match parse_gb(text) {
+            Some(bytes) => {
+                w.set_keep_free_valid(true);
+                let ui = self.ui();
+                ui.set_keep_free(text.into());
+                ui.set_keep_free_valid(true);
+                self.set_keep_free(bytes);
+            }
+            None => w.set_keep_free_valid(false),
+        }
+    }
+
+    fn set_keep_free(&self, bytes: u64) {
+        self.keep_free.set(bytes);
+        self.change_settings(|s| s.keep_free = bytes);
+        self.refresh_plan();
+    }
+
+    fn set_verify_first(&self, on: bool) {
+        self.change_settings(|s| s.verify_first = on);
+        self.ui().set_verify_first(on);
+        self.show_choices();
+    }
+
+    fn set_keep_archive(&self, keep: bool) {
+        self.change_settings(|s| s.keep_archive = keep);
+        self.ui().set_remove_archive(!keep);
+        self.show_choices();
+        self.refresh_plan();
+    }
+
+    /// Brings the Settings window's controls in line with the settings.
+    fn show_choices(&self) {
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_choices(w, &self.settings.borrow());
+        }
+    }
+
+    /// Every window, light or dark as chosen. The right-click windows read
+    /// the saved choice when they open.
+    fn choose_appearance(&self, appearance: Appearance) {
+        self.change_settings(|s| s.appearance = appearance);
+        let scheme = sw::color_scheme(appearance);
+        self.ui().global::<Palette>().set_color_scheme(scheme);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            w.global::<Palette>().set_color_scheme(scheme);
+        }
+        if let Some(w) = self.about.borrow().as_ref() {
+            w.global::<Palette>().set_color_scheme(scheme);
+        }
+        self.show_choices();
+    }
+
+    fn choose_destination(&self, destination: Destination) {
+        if destination == Destination::NextToArchive {
+            self.pick_wanted.set(false);
+        }
+        let has_folder = self.settings.borrow().destination_folder.is_some();
+        if destination == Destination::Folder && !has_folder {
+            // Nothing to extract into yet; the choice holds once a folder is.
+            self.pick_default_folder();
+            return;
+        }
+        self.change_settings(|s| s.destination = destination);
+        self.show_choices();
+        self.follow_default_destination();
+    }
+
+    fn pick_default_folder(&self) {
+        self.pick_wanted.set(true);
+        // A second picker would race the first; the open one answers.
+        if self.picking.get() {
+            return;
+        }
+        let Some(w) = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong())
+        else {
+            return;
+        };
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_title(w.invoke_destination_title().as_str())
+            .set_parent(&w.window().window_handle());
+        if let Some(dir) = self.settings.borrow().destination_folder.as_ref() {
+            dialog = dialog.set_directory(dir);
+        }
+        self.picking.set(true);
+        let _ = slint::spawn_local(async move {
+            let picked = dialog.pick_folder().await;
+            with_app(|app| {
+                app.picking.set(false);
+                if app.pick_wanted.replace(false) {
+                    app.set_default_folder(picked.map(|d| d.path().to_path_buf()));
+                } else {
+                    app.show_choices();
+                }
+            });
+        });
+    }
+
+    /// The folder picked for "Always in a folder". `None`, when the picker
+    /// was closed, keeps whatever was there.
+    fn set_default_folder(&self, folder: Option<PathBuf>) {
+        if let Some(dir) = folder {
+            self.change_settings(|s| {
+                s.destination = Destination::Folder;
+                s.destination_folder = Some(dir);
+            });
+            self.follow_default_destination();
+        }
+        // Puts the list back on "Next to the archive" if no folder came.
+        self.show_choices();
+    }
+
+    /// A fresh archive the person has not sent anywhere else moves to the
+    /// new default destination.
+    fn follow_default_destination(&self) {
+        let ui = self.ui();
+        if self.mode.get() != Mode::Fresh
+            || self.output_chosen.get()
+            || ui.get_screen() != Screen::Opened
+            || self.runner.task.borrow().is_some()
+        {
+            return;
+        }
+        let output = self.settings.borrow().output_for(&self.next_to.borrow());
+        ui.set_output(output.display().to_string().into());
+        *self.output.borrow_mut() = output;
+        self.refresh_plan();
+    }
+
+    /// Every setting back to its default and in effect, as if the app had
+    /// never been set up. The right-click menu is the system's, not a
+    /// setting, so it stays as it is.
+    fn reset_settings(&self) {
+        self.pick_wanted.set(false);
+        self.change_settings(|s| *s = Settings::default());
+        let defaults = Settings::default();
+        let ui = self.ui();
+        ui.set_keep_free(gb_text(defaults.keep_free).into());
+        ui.set_keep_free_valid(true);
+        ui.set_verify_first(defaults.verify_first);
+        ui.set_remove_archive(!defaults.keep_archive);
+        self.keep_free.set(defaults.keep_free);
+        self.choose_appearance(defaults.appearance);
+        self.choose_language("");
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_all(w, &defaults);
+        }
+        self.follow_default_destination();
+        self.refresh_plan();
+    }
+
+    /// Opens the folder that holds the settings file, making it first if
+    /// nothing was saved yet.
+    fn show_settings_file(&self) {
+        let Some(dir) = self
+            .settings_file
+            .as_ref()
+            .and_then(|f| f.parent())
+            .map(Path::to_path_buf)
+        else {
+            return;
+        };
+        std::thread::spawn(move || {
+            if std::fs::create_dir_all(&dir).is_ok() {
+                let _ = open::that_detached(&dir);
+            }
+        });
+    }
+
+    fn show_settings(&self) {
+        let existing = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong());
+        let w = match existing {
+            Some(w) => w,
+            None => {
+                let Ok(w) = SettingsWindow::new() else { return };
+                let settings = self.settings.borrow().clone();
+                if settings.appearance != Appearance::System {
+                    w.global::<Palette>()
+                        .set_color_scheme(sw::color_scheme(settings.appearance));
+                }
+                sw::show_all(&w, &settings);
+                w.set_shell_menu_on(self.ui().get_shell_menu_on());
+                w.set_settings_path(
+                    self.settings_file
+                        .as_ref()
+                        .map(|f| f.display().to_string())
+                        .unwrap_or_default()
+                        .into(),
+                );
+                wire_settings(&w);
+                *self.settings_window.borrow_mut() = Some(w.clone_strong());
+                w
+            }
+        };
+        let _ = w.show();
+        // Opening it again brings the one already open to the front.
+        w.window().with_winit_window(|w| w.focus_window());
     }
 
     fn change_settings(&self, f: impl FnOnce(&mut Settings)) {
@@ -624,9 +917,15 @@ impl App {
         }
     }
 
-    fn shell_menu_toggled(&self) {
+    /// The right-click switch, flipped in the main window or, with
+    /// `in_settings`, in the Settings window, which then says how it went.
+    fn shell_menu_toggled(&self, on: bool, in_settings: bool) {
         self.shell_touched.set(true);
-        let on = self.ui().get_shell_menu_on();
+        self.ui().set_shell_menu_on(on);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            w.set_shell_menu_on(on);
+            w.set_shell_notice("".into());
+        }
         std::thread::spawn(move || {
             let result = shell::set_menu(on);
             post(move |app| {
@@ -646,12 +945,23 @@ impl App {
                         false,
                     ),
                     Err(e) => {
-                        // Show the box as it really is.
+                        // Show the switch as it really is.
                         app.ui().set_shell_menu_on(!on);
+                        if let Some(w) = app.settings_window.borrow().as_ref() {
+                            w.set_shell_menu_on(!on);
+                        }
                         (sentence(&format!("{e:#}")), true)
                     }
                 };
-                app.notify(&text, bad);
+                let shown_in_settings = in_settings
+                    && app.settings_window.borrow().as_ref().is_some_and(|w| {
+                        w.set_shell_notice(text.as_str().into());
+                        w.set_shell_notice_bad(bad);
+                        w.window().is_visible()
+                    });
+                if !shown_in_settings {
+                    app.notify(&text, bad);
+                }
             });
         });
     }
@@ -720,6 +1030,7 @@ impl App {
     }
 
     fn set_output(&self, dir: PathBuf) {
+        self.output_chosen.set(true);
         self.ui().set_output(dir.display().to_string().into());
         *self.output.borrow_mut() = dir;
         self.refresh_plan();
@@ -741,6 +1052,7 @@ impl App {
             keep_archive: keep,
             password: self.password.borrow().clone(),
             here: false,
+            existing: self.settings.borrow().existing_files,
         };
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
@@ -816,6 +1128,11 @@ impl App {
         let mut about = self.about.borrow_mut();
         if about.is_none() {
             let Ok(w) = AboutWindow::new() else { return };
+            let appearance = self.settings.borrow().appearance;
+            if appearance != Appearance::System {
+                w.global::<Palette>()
+                    .set_color_scheme(sw::color_scheme(appearance));
+            }
             w.set_version(env!("CARGO_PKG_VERSION").into());
             w.on_open_link(|| {
                 let _ = open::that_detached(REPO);
@@ -842,20 +1159,57 @@ fn show_shell_menu_label(ui: &MainWindow) {
     });
 }
 
-/// Checks the item in Settings > Language for `saved`. The list is built
-/// afresh each time; see `languages` in main-window.slint.
-fn show_language(ui: &MainWindow, saved: Option<&str>) {
-    let chosen = locale::chosen(saved);
-    let items: Vec<LanguageItem> = locale::NAMES
-        .iter()
-        .map(|(code, name)| LanguageItem {
-            code: (*code).into(),
-            name: (*name).into(),
-            chosen: chosen == Some(*code),
+/// Each control of the Settings window calls the app, found through
+/// [`with_app`] so the window doesn't keep it alive.
+fn wire_settings(w: &SettingsWindow) {
+    w.on_choose_language(|i| with_app(|app| app.choose_language(sw::language_code(i))));
+    w.on_choose_appearance(|i| with_app(|app| app.choose_appearance(sw::appearance(i))));
+    w.on_choose_after(|i| {
+        with_app(|app| {
+            app.change_settings(|s| s.after_extracting = sw::after_extracting(i));
+            app.show_choices();
         })
-        .collect();
-    ui.set_languages(ModelRc::new(slint::VecModel::from(items)));
-    ui.set_language_follows_system(chosen.is_none());
+    });
+    let weak = w.as_weak();
+    w.on_close_when_done_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_close_when_done());
+        with_app(|app| {
+            app.change_settings(|s| s.close_when_done = on);
+            app.show_choices();
+        });
+    });
+    let weak = w.as_weak();
+    w.on_remove_archive_toggled(move || {
+        let keep = !weak.upgrade().is_some_and(|w| w.get_remove_archive());
+        with_app(|app| app.set_keep_archive(keep));
+    });
+    let weak = w.as_weak();
+    w.on_verify_first_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_verify_first());
+        with_app(|app| app.set_verify_first(on));
+    });
+    w.on_keep_free_edited(|text| with_app(|app| app.settings_keep_free_edited(&text)));
+    w.on_choose_destination(|i| with_app(|app| app.choose_destination(sw::destination(i))));
+    w.on_browse_destination(|| with_app(|app| app.pick_default_folder()));
+    w.on_choose_existing(|i| {
+        with_app(|app| {
+            app.change_settings(|s| s.existing_files = sw::existing(i));
+            app.show_choices();
+        })
+    });
+    let weak = w.as_weak();
+    w.on_shell_menu_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_shell_menu_on());
+        with_app(|app| app.shell_menu_toggled(on, true));
+    });
+    w.on_show_settings_file(|| with_app(|app| app.show_settings_file()));
+    w.on_reset(|| with_app(|app| app.reset_settings()));
+    let weak = w.as_weak();
+    w.on_close(move || {
+        if let Some(w) = weak.upgrade() {
+            let _ = w.hide();
+        }
+    });
 }
 
 /// Shows `view` in the main window. File > Open has a property of its own:

@@ -19,12 +19,51 @@ export struct EntryRow {
     depth: int,
 }
 
-// One row of Settings > Language. `name` is in that language's own script
-// and never translated; `code` is "en" or a folder in translations/.
-export struct LanguageItem {
-    code: string,
-    name: string,
-    chosen: bool,
+// Opens the Settings window from the top right corner, where people look
+// for it in apps without a visible menu bar.
+component GearButton inherits Rectangle {
+    callback clicked();
+
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: touch.pressed ? Theme.line : touch.has-hover ? Theme.track : transparent;
+    border-width: focus.has-focus ? 2px : 0px;
+    border-color: Palette.accent-background;
+    accessible-role: button;
+    accessible-label: @tr("Settings");
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    Path {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 18px;
+        height: 18px;
+        viewbox-x: -1;
+        viewbox-y: -1;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        stroke: Theme.muted;
+        stroke-width: 1.2px;
+        fill: transparent;
+        commands: "M 13.13 6.30 L 15.06 6.57 L 15.06 9.43 L 13.13 9.70 A 5.4 5.4 0 0 1 12.83 10.42 L 14.00 11.98 L 11.98 14.00 L 10.42 12.83 A 5.4 5.4 0 0 1 9.70 13.13 L 9.43 15.06 L 6.57 15.06 L 6.30 13.13 A 5.4 5.4 0 0 1 5.58 12.83 L 4.02 14.00 L 2.00 11.98 L 3.17 10.42 A 5.4 5.4 0 0 1 2.87 9.70 L 0.94 9.43 L 0.94 6.57 L 2.87 6.30 A 5.4 5.4 0 0 1 3.17 5.58 L 2.00 4.02 L 4.02 2.00 L 5.58 3.17 A 5.4 5.4 0 0 1 6.30 2.87 L 6.57 0.94 L 9.43 0.94 L 9.70 2.87 A 5.4 5.4 0 0 1 10.42 3.17 L 11.98 2.00 L 14.00 4.02 L 12.83 5.58 A 5.4 5.4 0 0 1 13.13 6.30 Z M 10.3 8 A 2.3 2.3 0 1 1 5.7 8 A 2.3 2.3 0 1 1 10.3 8 Z";
+    }
 }
 
 component EntryList inherits VerticalLayout {
@@ -170,8 +209,6 @@ export component MainWindow inherits Window {
     in-out property <bool> verify-first;
     // Off keeps the archive: a standard extraction that removes nothing.
     in-out property <bool> remove-archive: true;
-    // For the small window a right-click opens, not this one.
-    in-out property <bool> close-when-done: true;
     // The formats line under the Open button; RAR only in builds with it.
     in property <bool> supports-rar;
     in property <string> formats: root.supports-rar ? @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives.") : @tr("Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives.");
@@ -198,11 +235,6 @@ export component MainWindow inherits Window {
     // changing the right-click menu.
     in property <string> notice;
     in property <bool> notice-bad;
-    // Settings > Language. Replaced from Rust on every choice: activating a
-    // checkable item flips its own `checked`, which a plain binding would
-    // not recover from.
-    in property <[LanguageItem]> languages;
-    in-out property <bool> language-follows-system: true;
 
     callback open-archive();
     callback toggle-entry(int, int);
@@ -215,9 +247,7 @@ export component MainWindow inherits Window {
     callback give-back();
     callback verify-first-toggled();
     callback remove-archive-toggled();
-    callback close-when-done-toggled();
-    // "" follows the system again; otherwise a code from `languages`.
-    callback choose-language(string);
+    callback open-settings();
     callback change-output();
     callback keep-free-edited(string);
     callback extract();
@@ -248,67 +278,19 @@ export component MainWindow inherits Window {
                     root.open-archive();
                 }
             }
+            MenuItem {
+                title: @tr("Settings…");
+                shortcut: @keys(Control + Comma);
+                activated => {
+                    root.open-settings();
+                }
+            }
             MenuSeparator { }
             MenuItem {
                 title: @tr("Quit");
                 shortcut: @keys(Control + Q);
                 activated => {
                     root.quit();
-                }
-            }
-        }
-        Menu {
-            title: @tr("Settings");
-            if root.shell-menu-available: MenuItem {
-                title: root.shell-menu-label;
-                checkable: true;
-                checked <=> root.shell-menu-on;
-                activated => {
-                    root.shell-menu-toggled();
-                }
-            }
-            MenuItem {
-                title: @tr("Verify archive before extracting");
-                checkable: true;
-                checked <=> root.verify-first;
-                activated => {
-                    root.verify-first-toggled();
-                }
-            }
-            MenuItem {
-                title: @tr("Remove the archive during extraction");
-                checkable: true;
-                checked <=> root.remove-archive;
-                activated => {
-                    root.remove-archive-toggled();
-                }
-            }
-            MenuItem {
-                title: @tr("Close the progress window when extraction completes");
-                checkable: true;
-                checked <=> root.close-when-done;
-                activated => {
-                    root.close-when-done-toggled();
-                }
-            }
-            Menu {
-                title: @tr("Language");
-                MenuItem {
-                    title: @tr("Use the system language");
-                    checkable: true;
-                    checked <=> root.language-follows-system;
-                    activated => {
-                        root.choose-language("");
-                    }
-                }
-                MenuSeparator { }
-                for item in root.languages: MenuItem {
-                    title: item.name;
-                    checkable: true;
-                    checked: item.chosen;
-                    activated => {
-                        root.choose-language(item.code);
-                    }
                 }
             }
         }
@@ -370,8 +352,15 @@ export component MainWindow inherits Window {
                 horizontal-alignment: center;
             }
         }
-        // The same switch as in the Settings menu, where a first-time user
-        // looks: most will use HatchZip from the right-click menu.
+        GearButton {
+            x: parent.width - self.width - 12px;
+            y: 12px;
+            clicked => {
+                root.open-settings();
+            }
+        }
+        // The same switch as in Settings, where a first-time user looks:
+        // most will use HatchZip from the right-click menu.
         if root.shell-menu-available: HorizontalLayout {
             y: parent.height - self.height - 20px;
             height: self.preferred-height;
@@ -426,22 +415,34 @@ export component MainWindow inherits Window {
 
     if root.screen == Screen.opened: VerticalLayout {
         // Header: what this archive is.
-        VerticalLayout {
+        HorizontalLayout {
             padding-left: Theme.gutter;
-            padding-right: Theme.gutter;
+            padding-right: 12px;
             padding-top: 16px;
             padding-bottom: 14px;
-            spacing: 4px;
-            Text {
-                text: root.archive-name;
-                font-size: Theme.title-size;
-                font-weight: 600;
-                overflow: elide;
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                Text {
+                    text: root.archive-name;
+                    font-size: Theme.title-size;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.summary;
+                    color: Theme.muted;
+                    overflow: elide;
+                }
             }
-            Text {
-                text: root.summary;
-                color: Theme.muted;
-                overflow: elide;
+            VerticalLayout {
+                alignment: start;
+                GearButton {
+                    clicked => {
+                        root.open-settings();
+                    }
+                }
             }
         }
         Line { }

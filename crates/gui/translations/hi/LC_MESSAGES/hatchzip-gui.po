@@ -428,6 +428,132 @@ msgstr "यह ड्राइव किसी फ़ाइल के अंद�
 msgid "Available: {}. Required: {}, plus {} reserved."
 msgstr "उपलब्ध: {}। ज़रूरी: {}, और {} आरक्षित।"
 
+msgid "Settings…"
+msgstr "सेटिंग्स…"
+
+msgid "General"
+msgstr "सामान्य"
+
+msgid "Extraction"
+msgstr "एक्सट्रैक्शन"
+
+msgid "Integration"
+msgstr "एकीकरण"
+
+msgid "Advanced"
+msgstr "उन्नत"
+
+msgid "Appearance"
+msgstr "रूप"
+
+msgid "System follows the light or dark setting of the operating system."
+msgstr "सिस्टम चुनने पर ऑपरेटिंग सिस्टम की हल्की या गहरी सेटिंग अपनाई जाती है।"
+
+msgid "System"
+msgstr "सिस्टम"
+
+msgid "Light"
+msgstr "हल्का"
+
+msgid "Dark"
+msgstr "गहरा"
+
+msgid "After extracting"
+msgstr "एक्सट्रैक्ट करने के बाद"
+
+msgid "The destination folder opens in the file manager when an extraction completes."
+msgstr "एक्सट्रैक्शन पूरा होने पर गंतव्य फ़ोल्डर फ़ाइल प्रबंधक में खुलता है।"
+
+msgid "The result is shown in the window and nothing else is opened."
+msgstr "परिणाम विंडो में दिखाया जाता है और कुछ और नहीं खुलता।"
+
+msgid "Do nothing"
+msgstr "कुछ न करें"
+
+msgid "Open the folder"
+msgstr "फ़ोल्डर खोलें"
+
+msgid "Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open."
+msgstr "यह संदर्भ मेन्यू से खुलने वाली विंडो पर लागू होता है। जाँच होने, रोके जाने या विफल होने पर वह खुली रहती है।"
+
+msgid "Every entry is read and checked before anything is extracted or removed, which takes longer."
+msgstr "कुछ भी एक्सट्रैक्ट करने या हटाने से पहले हर प्रविष्टि पढ़ी और जाँची जाती है, जिसमें अधिक समय लगता है।"
+
+msgid "Free space left untouched on the destination drive, so the system and other programs keep room to work."
+msgstr "गंतव्य ड्राइव पर छोड़ी गई खाली जगह, ताकि सिस्टम और दूसरे प्रोग्राम के पास काम करने के लिए जगह रहे।"
+
+msgid "Default destination"
+msgstr "डिफ़ॉल्ट गंतव्य"
+
+msgid "Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive."
+msgstr "हर आर्काइव चुने गए फ़ोल्डर के अंदर अपने नाम वाले फ़ोल्डर में एक्सट्रैक्ट होता है। संदर्भ मेन्यू का \"Extract here\" अब भी आर्काइव के पास ही एक्सट्रैक्ट करता है।"
+
+msgid "Each archive is extracted into a folder named after it, next to the archive."
+msgstr "हर आर्काइव अपने नाम वाले फ़ोल्डर में, आर्काइव के पास ही एक्सट्रैक्ट होता है।"
+
+msgid "Next to the archive"
+msgstr "आर्काइव के पास"
+
+msgid "Always in a folder"
+msgstr "हमेशा एक फ़ोल्डर में"
+
+msgid "No folder chosen"
+msgstr "कोई फ़ोल्डर नहीं चुना गया"
+
+msgid "When a file already exists"
+msgstr "जब फ़ाइल पहले से मौजूद हो"
+
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "मौजूदा फ़ाइलें बदल दी जाती हैं। पुरानी प्रतियाँ एक्सट्रैक्शन पूरा होने तक रखी जाती हैं, फिर हटा दी जाती हैं।"
+
+msgid "Existing files are kept, and the archive's copies of them are not."
+msgstr "मौजूदा फ़ाइलें रखी जाती हैं, और आर्काइव में उनकी प्रतियाँ नहीं रखी जातीं।"
+
+msgid "Each file already in the destination is shown, with the choice to replace it, skip it or keep both."
+msgstr "गंतव्य में पहले से मौजूद हर फ़ाइल दिखाई जाती है, और उसे बदलने, छोड़ने या दोनों रखने का विकल्प मिलता है।"
+
+msgid "Ask"
+msgstr "पूछें"
+
+msgid "Adds HatchZip's extract and test entries to the right-click menu of archives."
+msgstr "आर्काइव के संदर्भ मेन्यू में HatchZip की एक्सट्रैक्ट और जाँच वाली प्रविष्टियाँ जोड़ता है।"
+
+msgid "Settings file"
+msgstr "सेटिंग्स फ़ाइल"
+
+msgid "Settings are saved here as soon as they change."
+msgstr "सेटिंग्स बदलते ही यहाँ सहेज ली जाती हैं।"
+
+msgid "Show in Explorer"
+msgstr "Explorer में दिखाएँ"
+
+msgid "Show in Finder"
+msgstr "Finder में दिखाएँ"
+
+msgid "Show in the file manager"
+msgstr "फ़ाइल प्रबंधक में दिखाएँ"
+
+msgid "Reset all settings"
+msgstr "सभी सेटिंग्स रीसेट करें"
+
+msgid "Every setting returns to its default, including the language and the appearance."
+msgstr "हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है, भाषा और रूप भी।"
+
+msgid "Reset all settings…"
+msgstr "सभी सेटिंग्स रीसेट करें…"
+
+msgid "Reset all settings?"
+msgstr "सभी सेटिंग्स रीसेट करें?"
+
+msgid "The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed."
+msgstr "भाषा, रूप और एक्सट्रैक्शन की हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है। संदर्भ मेन्यू नहीं बदला जाता।"
+
+msgid "Reset"
+msgstr "रीसेट करें"
+
+msgid "Select the default destination folder"
+msgstr "डिफ़ॉल्ट गंतव्य फ़ोल्डर चुनें"
+
 msgid "Archive {} of {}"
 msgstr "{1} में से आर्काइव {0}"
 

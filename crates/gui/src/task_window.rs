@@ -5,6 +5,7 @@
 //! finish stops the rest until it is resumed.
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::Result;
 use hatchzip_core::session;
@@ -12,17 +13,18 @@ use slint::{CloseRequestResponse, ComponentHandle};
 
 use crate::args::{TaskArgs, TaskKind};
 use crate::runner::Runner;
-use crate::settings::Settings;
+use crate::settings::{AfterExtracting, Appearance, Settings};
 use crate::task::Task;
 use crate::work::Request;
-use crate::{Messages, TaskWindow};
+use crate::{Messages, Palette, TaskWindow};
 
 /// Where each kind of task puts the files. `None` for a test, and for files
-/// whose folder is not chosen yet.
-pub fn output_for(kind: &TaskKind, primary: &Path) -> Option<PathBuf> {
+/// whose folder is not chosen yet. "Extract to a folder" honours the default
+/// destination in Settings; "Extract here" says where, so it doesn't.
+pub fn output_for(kind: &TaskKind, primary: &Path, settings: &Settings) -> Option<PathBuf> {
     match kind {
         TaskKind::ExtractHere => Some(primary.parent().unwrap_or(Path::new(".")).to_path_buf()),
-        TaskKind::ExtractTo => Some(session::default_output(primary)),
+        TaskKind::ExtractTo => Some(settings.output_for(&session::default_output(primary))),
         TaskKind::ExtractFiles(folder) => folder.clone(),
         TaskKind::Test => None,
     }
@@ -76,7 +78,7 @@ fn job_for(
         .to_string_lossy()
         .into_owned();
     let archive = archive.to_path_buf();
-    match output_for(kind, &primary) {
+    match output_for(kind, &primary, settings) {
         Some(out) => (
             Task::extract(&name, Some(&out), keep_archive),
             Request::Extract {
@@ -87,6 +89,7 @@ fn job_for(
                 keep_archive,
                 password: None,
                 here: *kind == TaskKind::ExtractHere,
+                existing: settings.existing_files,
             },
         ),
         None => (
@@ -117,6 +120,10 @@ fn build_in(
     if args.kind == TaskKind::ExtractFiles(None) {
         anyhow::bail!("no destination folder was chosen");
     }
+    if settings.appearance != Appearance::System {
+        ui.global::<Palette>()
+            .set_color_scheme(crate::settings_window::color_scheme(settings.appearance));
+    }
     let jobs: Vec<(Task, Request)> = args
         .archives
         .iter()
@@ -137,11 +144,22 @@ fn build_in(
         }
     });
     ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
-    if settings.close_when_done {
-        // Hiding the only window ends the app, as the close button does.
-        let weak = ui.as_weak();
+    let open_folder = settings.after_extracting == AfterExtracting::OpenFolder;
+    if settings.close_when_done || open_folder {
+        let (weak, r) = (ui.as_weak(), Rc::downgrade(&runner));
+        let close = settings.close_when_done;
         runner.when_extracted(move || {
-            if let Some(ui) = weak.upgrade() {
+            // The last archive's folder, which for several archives from
+            // one folder is where all of them went.
+            if open_folder
+                && let Some(out) = r
+                    .upgrade()
+                    .and_then(|r| r.task.borrow().as_ref().and_then(|t| t.output.clone()))
+            {
+                let _ = open::that_detached(out);
+            }
+            // Hiding the only window ends the app, as the close button does.
+            if close && let Some(ui) = weak.upgrade() {
                 let _ = ui.hide();
             }
         });
@@ -190,19 +208,40 @@ mod tests {
     #[test]
     fn each_task_writes_where_its_menu_entry_says() {
         let primary = Path::new("/home/me/Downloads/game.7z.001");
+        let s = Settings::default();
         assert_eq!(
-            output_for(&TaskKind::ExtractHere, primary),
+            output_for(&TaskKind::ExtractHere, primary, &s),
             Some(PathBuf::from("/home/me/Downloads"))
         );
         assert_eq!(
-            output_for(&TaskKind::ExtractTo, primary),
+            output_for(&TaskKind::ExtractTo, primary, &s),
             Some(PathBuf::from("/home/me/Downloads/game"))
         );
         let chosen = PathBuf::from("/media/usb");
         assert_eq!(
-            output_for(&TaskKind::ExtractFiles(Some(chosen.clone())), primary),
+            output_for(&TaskKind::ExtractFiles(Some(chosen.clone())), primary, &s),
+            Some(chosen.clone())
+        );
+        assert_eq!(output_for(&TaskKind::Test, primary, &s), None);
+
+        // A default destination moves "Extract to a folder" only.
+        let dir = tempfile::tempdir().unwrap();
+        let s = Settings {
+            destination: crate::settings::Destination::Folder,
+            destination_folder: Some(dir.path().to_path_buf()),
+            ..Settings::default()
+        };
+        assert_eq!(
+            output_for(&TaskKind::ExtractTo, primary, &s),
+            Some(dir.path().join("game"))
+        );
+        assert_eq!(
+            output_for(&TaskKind::ExtractHere, primary, &s),
+            Some(PathBuf::from("/home/me/Downloads"))
+        );
+        assert_eq!(
+            output_for(&TaskKind::ExtractFiles(Some(chosen.clone())), primary, &s),
             Some(chosen)
         );
-        assert_eq!(output_for(&TaskKind::Test, primary), None);
     }
 }
