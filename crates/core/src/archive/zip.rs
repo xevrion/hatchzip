@@ -1,6 +1,7 @@
 //! ZIP compresses every entry on its own, so each entry is a unit.
 
 use std::io::{Read, Seek};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -103,6 +104,7 @@ pub fn open(
         // is why it still cannot be written; otherwise it is the traversal.
         let path = e
             .enclosed_name()
+            .or_else(|| drive_like_inside(&name))
             .filter(|p| e.is_dir() || !p.as_os_str().is_empty())
             .ok_or_else(|| {
                 let why = safe_path(&name).and_then(|p| {
@@ -154,6 +156,32 @@ pub fn open(
         units,
         tail_start,
     })
+}
+
+/// zip 9.5 reads every name with Windows rules on every system, so a later
+/// component such as the `c:` in Wine's `dosdevices/c:` counts as a drive and
+/// `enclosed_name` refuses the whole name, though outside Windows `c:` is an
+/// ordinary folder name. Such a name is accepted when HatchZip's own rules
+/// find it relative, free of `..`, and creatable on this system. A name that
+/// starts at a root or a drive gets no second chance: zip already strips
+/// those when they are harmless, so reaching here means it found more wrong.
+fn drive_like_inside(name: &str) -> Option<PathBuf> {
+    let first = name.split(['/', '\\']).next().unwrap_or_default();
+    let drive = first
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        && first.as_bytes().get(1) == Some(&b':');
+    if first.is_empty() || drive {
+        return None;
+    }
+    // On Windows the `c:` component already fails here: pushing it replaces
+    // the path with a drive, which `safe_path` refuses, and `name_problem`
+    // refuses any `:` as well.
+    let path = safe_path(name)?;
+    path.iter()
+        .all(|part| crate::platform::name_problem(&part.to_string_lossy()).is_none())
+        .then_some(path)
 }
 
 impl Format for Zip {
@@ -411,6 +439,43 @@ mod tests {
     use ::zip::write::{SimpleFileOptions, ZipWriter};
 
     use super::*;
+
+    /// The name zip 9.5 refuses on every system because of its `c:` folder.
+    /// Windows can't create that folder, so it stays refused there.
+    #[test]
+    fn a_drive_like_folder_inside_a_name_is_accepted_where_it_can_be_made() {
+        let name = "wine/dosdevices/c:/x.txt";
+        let creatable = crate::platform::name_problem("c:").is_none();
+        assert_eq!(
+            drive_like_inside(name),
+            creatable.then(|| ["wine", "dosdevices", "c:", "x.txt"]
+                .iter()
+                .collect::<PathBuf>())
+        );
+    }
+
+    #[test]
+    fn the_fallback_still_refuses_roots_drives_and_traversal() {
+        for name in [
+            "",
+            "/etc/passwd",
+            "/wine/c:/x",
+            "\\etc\\passwd",
+            "C:/x",
+            "C:\\x",
+            "c:x/y",
+            "c:",
+            "\\\\server\\share\\x",
+            "//server/share/x",
+            "\\\\?\\C:\\x",
+            "../x",
+            "a/../../x",
+            "a/c:/../../x",
+            "a/c:/x\0",
+        ] {
+            assert_eq!(drive_like_inside(name), None, "{name:?}");
+        }
+    }
 
     struct CountingReader<R> {
         inner: R,

@@ -289,7 +289,9 @@ fn a_7z_whose_sizes_overflow_is_refused() {
 
 /// The last block's coder takes no input, so it has no packed stream, and
 /// its start would be looked up one past the last stream. sevenz-rust2
-/// allows that for a block holding no files.
+/// 0.24.1 allows that for a block holding no files and HatchZip's own checks
+/// refuse it; 0.24.2 refuses it while reading the header, which HatchZip
+/// reports the same way.
 #[test]
 fn a_7z_block_without_packed_streams_is_refused() {
     let tmp = TempDir::new().unwrap();

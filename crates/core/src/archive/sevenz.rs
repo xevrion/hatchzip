@@ -45,6 +45,15 @@ pub fn open(
         Error::BadSignature(_) | Error::UnsupportedVersion { .. } => {
             anyhow!("not a readable 7z archive: {e}")
         }
+        // sevenz-rust2 0.24.2 refuses a block with no packed stream while
+        // reading the header; 0.24.1 let it through to our own checks. Both
+        // are the same damage, so they read the same.
+        Error::Other(m)
+            if m == "Block has no packed streams"
+                || m == "no packed streams, can't read encoded header" =>
+        {
+            inconsistent()
+        }
         // An encrypted header that won't parse is almost always the wrong
         // password; damage can't be told apart from it.
         _ if !password.is_empty() => anyhow::Error::new(WrongPassword),
