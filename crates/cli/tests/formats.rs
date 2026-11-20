@@ -540,7 +540,8 @@ fn missing_volume_in_sfv_stopped_before_modifying_anything() {
 }
 
 /// `:` is a normal name character outside Windows, like in a file named
-/// after a time.
+/// after a time. zip 9.5 reads a later `c:` component, as in Wine's
+/// `dosdevices/c:`, as a drive on every system, so ZIP gets that name too.
 #[test]
 fn names_with_a_colon_extract_outside_windows() {
     let mut files = Files::new();
@@ -562,5 +563,19 @@ fn names_with_a_colon_extract_outside_windows() {
             assert_ok(&run);
             assert_tree(&out, &files);
         }
+    }
+
+    files.insert("wine/dosdevices/c:/x.txt".into(), b"wine".to_vec());
+    let tmp = TempDir::new().unwrap();
+    let archive = zip_of(tmp.path(), "notes.zip", &files);
+    let before = fs::read(&archive).unwrap();
+    let out = tmp.path().join("out");
+    let run = extract(&archive, &out, &[]);
+    if cfg!(windows) {
+        assert!(!run.status.success(), "zip");
+        assert_eq!(fs::read(&archive).unwrap(), before, "zip");
+    } else {
+        assert_ok(&run);
+        assert_tree(&out, &files);
     }
 }
