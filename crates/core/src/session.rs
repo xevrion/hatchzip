@@ -780,8 +780,22 @@ pub fn check_sfv(storage: &Storage, cancelled: &dyn Fn() -> bool) -> Result<Opti
 /// Before continuing a crashed run, deletes what it wrote for batches it
 /// never committed.
 pub fn clear_uncommitted(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, false)
+}
+
+/// Discards a kept run's uncommitted output, including its open file. The
+/// untouched archive holds that file; normal resume must preserve it.
+pub(crate) fn clear_discarded(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, true)
+}
+
+fn clear_output(job: &Job, out: &Path, discard: bool) -> Result<()> {
     check_no_links_on_the_way(job, out)?;
-    let found = job.uncommitted(out);
+    let found = if discard {
+        job.discarded_output(out)
+    } else {
+        job.uncommitted(out)
+    };
     let mut listed = std::collections::HashMap::new();
     for (p, _) in &found {
         check_spelling(out, p, &mut listed)?;
