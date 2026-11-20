@@ -16,13 +16,17 @@ pub const SHELL_MENU: bool = false;
 /// The menu bar is the system's, at the top of the screen.
 pub const IN_WINDOW_MENU: bool = false;
 
-/// The faces with real Semibold weights for these scripts. The fallback
-/// for Chinese has no bold, so every heading drew at regular weight, and
-/// the one for Devanagari has tight line metrics. `""` keeps the system
-/// font.
+/// The faces with real bold weights for these scripts. `""` keeps the
+/// system font.
+///
+/// Chinese: fontique cannot draw the outlines PingFang ships in on macOS,
+/// so asking for it falls through to Heiti SC, whose Light and Medium are
+/// weights 300 and 400: text and headings both drew at 400. Hiragino Sans
+/// GB is in every macOS and has W3 (300) and W6 (600), so text gets W3 and
+/// a 600 heading gets W6. Devanagari: the fallback has tight line metrics.
 pub fn font_family(language: &str) -> &'static str {
     match language {
-        "zh_CN" => "PingFang SC",
+        "zh_CN" => "Hiragino Sans GB",
         "hi" => "Kohinoor Devanagari",
         _ => "",
     }
