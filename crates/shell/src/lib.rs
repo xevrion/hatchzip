@@ -75,8 +75,8 @@ pub const ALL_EXTENSIONS: &[&str] = &[
 /// location; tests point it somewhere temporary.
 #[derive(Clone, Debug)]
 pub struct Dirs {
-    /// `$XDG_DATA_HOME` on Linux. Unused on Windows, where entries go to the
-    /// per-user registry hive.
+    /// `$XDG_DATA_HOME` on Linux, `~/Library/Services` on macOS. Unused on
+    /// Windows, where entries go to the per-user registry hive.
     pub data: PathBuf,
 }
 

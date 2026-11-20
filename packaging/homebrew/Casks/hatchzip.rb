@@ -29,6 +29,7 @@ cask "hatchzip" do
     "~/Library/Application Support/HatchZip",
     "~/Library/Preferences/io.github.xevrion.hatchzip.plist",
     "~/Library/Saved Application State/io.github.xevrion.hatchzip.savedState",
+    "~/Library/Services/hatchzip-*.workflow",
   ]
 
   caveats <<~EOS
