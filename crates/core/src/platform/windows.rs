@@ -88,9 +88,42 @@ pub fn unlock_folder(_path: &Path) -> io::Result<()> {
 /// Checked for every entry before the archive is touched, so a name made on
 /// another system fails up front instead of halfway through a run.
 pub fn name_problem(name: &str) -> Option<&'static str> {
+    // Windows also treats the superscript digits as port numbers, and the
+    // console and clock devices are reserved the same way; zip refuses them
+    // too, so a name it refused is never accepted here.
     const RESERVED: &[&str] = &[
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "COM\u{b9}",
+        "COM\u{b2}",
+        "COM\u{b3}",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+        "LPT\u{b9}",
+        "LPT\u{b2}",
+        "LPT\u{b3}",
+        "CONIN$",
+        "CONOUT$",
+        "CLOCK$",
+        "CONFIG$",
     ];
     // `CON.txt` is just as reserved as `CON`.
     let stem = name.split('.').next().unwrap_or(name).trim_end();
@@ -462,6 +495,28 @@ unsafe extern "C" {}
 mod tests {
     use std::fs::{self, File};
     use std::io::Write;
+
+    /// The ZIP fallback for names zip 9.5 reads as drive prefixes relies on
+    /// this list being at least as strict as zip's own Windows check.
+    #[test]
+    fn device_names_are_reserved_as_zip_reserves_them() {
+        for name in [
+            "CON",
+            "nul.txt",
+            "COM1",
+            "com\u{b9}",
+            "LPT\u{b3}.log",
+            "CONIN$",
+            "conout$",
+            "CLOCK$",
+            "CONFIG$",
+        ] {
+            assert!(super::name_problem(name).is_some(), "{name} accepted");
+        }
+        for name in ["COM", "COM10", "console", "CLOCK", "LPT0x"] {
+            assert!(super::name_problem(name).is_none(), "{name} refused");
+        }
+    }
 
     /// `GetFinalPathNameByHandleW` answers verbatim paths, which the volume
     /// queries below don't take everywhere.
