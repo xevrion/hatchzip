@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://gateway.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>WinRAR 明明有空间却提示磁盘空间不足</title>
+<meta name="description" content="磁盘明明有空间，WinRAR 却提示磁盘空间不足，原因可能是：临时文件夹在 C: 盘、FAT32 的 4 GB 单文件限制、磁盘配额，或者压缩包和解压出的文件确实放不下。本文给出每种情况的解决方法。">
+<link rel="canonical" href="https://hatchzip.dev/zh-winrar-not-enough-space.html">
+<link rel="alternate" hreflang="en" href="https://hatchzip.dev/winrar-not-enough-space.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://hatchzip.dev/zh-winrar-not-enough-space.html">
+<link rel="alternate" hreflang="x-default" href="https://hatchzip.dev/winrar-not-enough-space.html">
+<meta property="og:url" content="https://hatchzip.dev/zh-winrar-not-enough-space.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="WinRAR 明明有空间却提示磁盘空间不足的原因">
+<meta property="og:description" content="WinRAR 的临时文件夹、FAT32 的 4 GB 单文件限制、磁盘配额，或者压缩包确实放不下：如何判断是哪一种，以及各自的解决方法。">
+<meta property="og:image" content="https://hatchzip.dev/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="HatchZip：解压超大压缩包，无需双倍磁盘空间。">
+<meta property="article:published_time" content="2026-10-25">
+<meta property="article:modified_time" content="2026-11-20">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"WinRAR 明明有空间却提示磁盘空间不足的原因","description":"WinRAR 的临时文件夹、FAT32 的 4 GB 单文件限制、磁盘配额，或者压缩包确实放不下：如何判断是哪一种，以及各自的解决方法。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-20","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-winrar-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"WinRAR 提示磁盘空间不足","item":"https://hatchzip.dev/zh-winrar-not-enough-space.html"}]}]}
+</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+<div class="page">
+<aside class="side">
+<a class="brand" href="zh.html"><img src="favicon.svg" alt="" width="48" height="48"><span>HatchZip</span></a>
+<nav aria-label="网站">
+<ul>
+<li><a href="zh.html">首页</a></li>
+<li><a href="zh.html#download">下载</a></li>
+</ul>
+<p class="label">指南</p>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">空间不足无法解压</a></li>
+<li><a href="zh-winrar-not-enough-space.html" aria-current="page">WinRAR 空间不足</a></li>
+<li><a href="zh-7zip-not-enough-space.html">7-Zip 空间不足</a></li>
+</ul>
+<p class="label">项目</p>
+<ul>
+<li><a href="verify.html">校验下载文件（英文）</a></li>
+<li><a href="https://github.com/xevrion/hatchzip">源代码</a></li>
+<li><a href="https://github.com/xevrion/hatchzip/issues">报告问题</a></li>
+</ul>
+<p class="label">语言</p>
+<ul>
+<li><a href="winrar-not-enough-space.html" lang="en" hreflang="en">English</a></li>
+</ul>
+</nav>
+</aside>
+
+<div class="content">
+<header>
+<nav class="crumbs" aria-label="面包屑导航">
+<ol>
+<li><a href="zh.html">HatchZip</a></li>
+<li aria-current="page">WinRAR 提示磁盘空间不足</li>
+</ol>
+</nav>
+<h1>WinRAR 明明有空间却提示磁盘空间不足的原因</h1>
+</header>
+<main>
+<p class="answer">如果解压的目标磁盘还有空间，先看看 WinRAR 实际把文件写到了哪里。从 WinRAR 窗口中拖出文件，或者直接打开压缩包里的文件时，WinRAR 会先把文件解压到 Windows 临时文件夹，而它通常在 C: 盘。FAT32 格式的 U 盘无法存放 4 GiB 及以上的单个文件。请改用 Extract To（解压到），并检查磁盘的文件系统。</p>
+<p class="note">作者：<a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a>（英文）的开发者。更新于 <time class="nw" datetime="2026-11-20">2026-11-20</time>。</p>
+
+<section aria-labelledby="messages">
+<h2 id="messages">“Not enough disk space”和“There is not enough space on the disk”是什么意思？</h2>
+<p>两者都表示某次写入失败了，原因是某个磁盘已满，或者无法容纳这个文件。出问题的不一定是你选择的那个磁盘。</p>
+<p>WinRAR 自己的相关提示包括“Not enough disk space for”加文件名，以及“Write error in the file”（两者都出自 WinRAR 7.13）。“There is not enough space on the disk.”（中文版 Windows 显示为“磁盘空间不足。”）是 Windows 系统错误 112 的提示文字，<a href="https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-">见 Microsoft 的列表</a>。如果提示中带有路径，看看它位于哪个磁盘：要检查的就是那个磁盘。</p>
+</section>
+
+<section aria-labelledby="temp">
+<h2 id="temp">为什么解压到其他磁盘时，WinRAR 会把 C: 盘占满？</h2>
+<p>因为拖放操作以及直接打开压缩包中的文件，都要经过 Windows 临时文件夹。WinRAR 帮助的常见问题列表在谈到它遗留的临时文件时，明确说明了这一点（译文）：“使用拖放来解压文件，或者用外部查看器打开压缩包中的文件时，就会出现这种情况。”</p>
+<p>所以，当你把一个很大的文件夹从 WinRAR 窗口拖到 D: 盘时，临时文件夹所在的磁盘必须先有足够的空间容纳它。要查看临时文件夹的位置，在文件资源管理器的地址栏中输入 <code>%TEMP%</code>。在标准的 Windows 环境中，它位于 C: 盘上你的用户文件夹内。WinRAR 在那里创建的临时文件夹，名称以 <code>Rar$</code> 开头。</p>
+<p>WinRAR 不会立即删除这些文件夹。它的帮助中写道，WinRAR 下次启动时，会删除创建超过一个小时的临时文件。在此之前，一次失败的拖放所留下的 <code>Rar$</code> 大文件夹，可能仍然占用着 C: 盘的空间。</p>
+<h3>解决方法：Extract To（解压到）</h3>
+<p>在 WinRAR 中选中文件，点击 Extract To（解压到），或按 Alt+E，然后选择目标文件夹。也可以在文件资源管理器中右键单击压缩包，使用 WinRAR 的某个解压菜单项。WinRAR 帮助指出，使用 Extract To（无论是在窗口中还是在右键菜单中）可以完全不经过临时文件夹。</p>
+<h3>相关设置：临时文件夹</h3>
+<p>WinRAR 还有一项设置，位于 Options（选项）、Settings（设置）、Paths（路径）下，名为 Folder for temporary files。它的<a href="https://documentation.help/WinRAR/HELPPathsSettings.htm">帮助页面</a>（英文）说明，这是 WinRAR 用来创建临时文件的文件夹；该文件夹必须已经存在，输入 <code>%temp%</code> 可恢复为 Windows 默认位置。帮助中没有列出哪些命令会使用它，因此如果修改后 C: 盘仍然被占满，请使用 Extract To。</p>
+</section>
+
+<section aria-labelledby="fat32">
+<h2 id="fat32">FAT32 格式的 U 盘会导致这个错误吗？</h2>
+<p>会。无论 U 盘还剩多少空间，FAT32 都无法存放 4 GiB 及以上的单个文件。Microsoft 的<a href="https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison">文件系统功能比较</a>列出 FAT32 的最大文件大小为 4 GiB，而 exFAT 和 NTFS 为 2<sup>64</sup> 字节减 1。</p>
+<p>新版 WinRAR 对这种情况有专门的提示：WinRAR 7.13 中包含“FAT32 file system does not support 4 GB or larger files”。其他程序可能只显示普通的空间不足错误；<a href="https://techcommunity.microsoft.com/t5/windows-11/copying-files-over-4gb-to-a-usb-drive-fails-with-not-enough/m-p/4533469">Microsoft 社区论坛上 2026 年 7 月的一个提问</a>（英文）反映的正是这种情况：向 U 盘复制大文件时出现空间不足错误。</p>
+<p>要检查文件系统，在文件资源管理器中右键单击该磁盘，选择“属性”，查看“文件系统”一项。要解决这个问题，先把磁盘上需要的文件复制出来，再将它格式化为 exFAT 或 NTFS：右键单击该磁盘，选择“格式化”，然后选择文件系统。格式化会清除磁盘上的所有数据。</p>
+</section>
+
+<section aria-labelledby="quota">
+<h2 id="quota">磁盘配额或 C: 盘已满会是原因吗？</h2>
+<p>会，有两种情况。</p>
+<ul>
+<li>磁盘配额。在由公司或学校管理的电脑上，管理员可以限制每个帐户在 NTFS 磁盘上能使用的空间。Microsoft 关于 <a href="https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw">GetDiskFreeSpaceEx</a> 的文档指出，启用按用户配额时，你可用的空间“可能少于磁盘上的总可用字节数”。请咨询这台电脑的管理员。</li>
+<li>C: 盘已满。如果 C: 盘快满了，由于上文所说的临时文件夹，无论把文件拖放到哪里，每次从 WinRAR 拖出文件都可能失败。请使用 Extract To，或者<a href="zh-not-enough-space-to-extract.html#free-space">释放 C: 盘空间</a>。</li>
+</ul>
+</section>
+
+<section aria-labelledby="real">
+<h2 id="real">如果压缩包和解压出的文件确实放不下怎么办？</h2>
+<p>那 WinRAR 的提示就没错：在解压结束之前，磁盘必须同时容纳压缩包和所有解压出的文件。把 WinRAR 文件列表中 Size 一列的数值加起来，就能知道它要写入多少数据；Packed 一列则是压缩包本身已占用的空间。</p>
+<p>解决方法有三种：解压到其他磁盘、释放空间，或者就地解压。<a href="zh-not-enough-space-to-extract.html">磁盘空间不足时如何解压的指南</a>逐一介绍了这些方法，并附有在几乎已满的磁盘上的测试。</p>
+</section>
+
+<section aria-labelledby="fit">
+<h2 id="fit">HatchZip 能解决什么，不能解决什么</h2>
+<p>HatchZip 只能解决最后一种原因。它可以就地解压 RAR 5 和 RAR 4 压缩包，包括单个文件和 <code>.part1.rar</code> 这样的分卷压缩包：它会逐个文件地释放压缩包占用的空间，并在每个分卷清空后将其删除，因此磁盘只需容纳解压出的文件，而不必同时容纳这些文件和压缩包。<a href="zh.html#download">下载 HatchZip</a>；从本站下载的版本已包含 RAR 支持。</p>
+<p>以下情况它无能为力：</p>
+<ul>
+<li>临时文件夹。这是 WinRAR 把文件交给文件资源管理器的方式，并不是目标磁盘空间不足。请使用 Extract To。</li>
+<li>FAT32。HatchZip 同样无法向 FAT32 磁盘写入 4 GiB 及以上的文件。请将磁盘格式化为 exFAT 或 NTFS。</li>
+<li>磁盘配额留给你帐户的空间少于文件所需的空间。</li>
+<li>固实 RAR。它只能从头到尾一次性解码，因此 HatchZip 只能在保留压缩包的情况下解压它，所需空间与 WinRAR 相同。</li>
+<li>加密了文件名或包含链接的 RAR 压缩包。HatchZip 会在做出任何改动之前拒绝处理它们。</li>
+<li>保留压缩包。就地解压会把压缩包消耗掉。</li>
+</ul>
+</section>
+
+<section aria-labelledby="sources">
+<h2 id="sources">参考资料</h2>
+<p class="note">核实于 2026-10-25。</p>
+<ul>
+<li>WinRAR 7.13 帮助文件（<code>WinRAR.chm</code>，来自 rarlab.com 上的安装程序）：关于 WinRAR 为何不删除 Windows 临时文件夹中临时文件的常见问题（原文为“Why WinRAR does not delete its temporary files in the Windows temporary folder?”），以及“路径”设置主题。旧版本的在线副本见 <a href="https://documentation.help/WinRAR/HELPFAQ.htm">documentation.help</a>（英文），该网站并非由 WinRAR 开发者运营。</li>
+<li>WinRAR 7.13 程序文件（<code>WinRAR.exe</code>）：上文引用的提示文字。</li>
+<li>win-rar.com：<a href="https://www.win-rar.com/leave-artifacts-temp-folder.html">Does WinRAR leave artifacts in temp folders</a>（英文），介绍了在其他应用中打开文件时，文件会被解压到临时文件夹。</li>
+<li>Microsoft：<a href="https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison">文件系统功能比较</a>、<a href="https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-">系统错误代码 0 到 499</a>、<a href="https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw">GetDiskFreeSpaceEx</a>。</li>
+</ul>
+</section>
+
+<section aria-labelledby="related">
+<h2 id="related">相关指南</h2>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">磁盘空间不足，无法解压 ZIP、RAR 或 7z：解决方法</a></li>
+<li><a href="zh-7zip-not-enough-space.html">7-Zip 提示磁盘空间不足的原因</a></li>
+<li><a href="zh.html#download">下载 HatchZip</a>，支持 Windows、macOS 和 Linux</li>
+</ul>
+</section>
+</main>
+
+<footer>
+<p>HatchZip 采用 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT">MIT</a> 或 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE">Apache-2.0</a> 许可证。下载版本使用 UnRAR 解码 RAR，UnRAR 遵循其自身的<a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-UNRAR">许可证</a>（英文）。<a href="https://github.com/xevrion/hatchzip">GitHub 上的源代码</a>（英文）。<a href="verify.html">验证下载文件</a>（英文）。<a href="https://github.com/xevrion/hatchzip/issues">报告问题</a>（英文）。</p>
+<p>由 Yash Bavadiya（<a href="https://x.com/xevrion_the1">@xevrion_the1</a>）制作。</p>
+<p>HatchZip 与 WinRAR 及其开发者没有任何关联。</p>
+</footer>
+</div>
+</div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
+</body>
+</html>

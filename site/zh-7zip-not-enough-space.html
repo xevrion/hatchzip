@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://gateway.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>7-Zip 提示磁盘空间不足：原因与解决方法</title>
+<meta name="description" content="7-Zip 为什么提示磁盘空间不足：拖放解压会先经过 Windows 临时文件夹，FAT32 不能存放 4 GiB 及以上的文件，或者压缩包和解压出的文件放不下。附实测数据。">
+<link rel="canonical" href="https://hatchzip.dev/zh-7zip-not-enough-space.html">
+<link rel="alternate" hreflang="en" href="https://hatchzip.dev/7zip-not-enough-space.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://hatchzip.dev/zh-7zip-not-enough-space.html">
+<link rel="alternate" hreflang="x-default" href="https://hatchzip.dev/7zip-not-enough-space.html">
+<meta property="og:url" content="https://hatchzip.dev/zh-7zip-not-enough-space.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="7-Zip 提示磁盘空间不足的原因">
+<meta property="og:description" content="拖放解压经过临时文件夹、FAT32 的 4 GiB 单文件上限，或者压缩包和解压出的文件放不下：如何判断是哪一种，以及各自的解决方法。">
+<meta property="og:image" content="https://hatchzip.dev/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="HatchZip：解压超大压缩包，无需双倍磁盘空间。">
+<meta property="article:published_time" content="2026-10-25">
+<meta property="article:modified_time" content="2026-11-20">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"7-Zip 提示磁盘空间不足的原因","description":"拖放解压经过临时文件夹、FAT32 的 4 GiB 单文件上限，或者压缩包和解压出的文件放不下：如何判断是哪一种，以及各自的解决方法。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-20","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-7zip-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"7-Zip 提示磁盘空间不足","item":"https://hatchzip.dev/zh-7zip-not-enough-space.html"}]}]}
+</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+<div class="page">
+<aside class="side">
+<a class="brand" href="zh.html"><img src="favicon.svg" alt="" width="48" height="48"><span>HatchZip</span></a>
+<nav aria-label="网站">
+<ul>
+<li><a href="zh.html">首页</a></li>
+<li><a href="zh.html#download">下载</a></li>
+</ul>
+<p class="label">指南</p>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">空间不足无法解压</a></li>
+<li><a href="zh-winrar-not-enough-space.html">WinRAR 空间不足</a></li>
+<li><a href="zh-7zip-not-enough-space.html" aria-current="page">7-Zip 空间不足</a></li>
+</ul>
+<p class="label">项目</p>
+<ul>
+<li><a href="verify.html">校验下载文件（英文）</a></li>
+<li><a href="https://github.com/xevrion/hatchzip">源代码</a></li>
+<li><a href="https://github.com/xevrion/hatchzip/issues">报告问题</a></li>
+</ul>
+<p class="label">语言</p>
+<ul>
+<li><a href="7zip-not-enough-space.html" lang="en" hreflang="en">English</a></li>
+</ul>
+</nav>
+</aside>
+
+<div class="content">
+<header>
+<nav class="crumbs" aria-label="面包屑导航">
+<ol>
+<li><a href="zh.html">HatchZip</a></li>
+<li aria-current="page">7-Zip 提示磁盘空间不足</li>
+</ol>
+</nav>
+<h1>7-Zip 提示磁盘空间不足的原因</h1>
+</header>
+<main>
+<p class="answer">如果 7-Zip 提示“There is not enough space on the disk”（中文版 Windows 显示为“磁盘空间不足”），而你选的驱动器明明还有空间，请检查三点：从 7-Zip 文件管理器把文件拖到文件资源管理器时，文件会先解压到 Windows 临时文件夹，通常位于 C: 盘；FAT32 驱动器无法存放 4 GiB 及以上的文件；压缩包和解压出的文件可能无法同时放下。</p>
+<p class="note">作者：<a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a> 开发者。更新于 <time class="nw" datetime="2026-11-20">2026-11-20</time>。</p>
+
+<section aria-labelledby="message">
+<h2 id="message">7-Zip 提示“磁盘空间不足”是什么意思？</h2>
+<p>这是 Windows 针对磁盘已满的提示，即<a href="https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-">微软错误代码列表（英文）</a>中的系统错误 112。Windows 拒绝写入时，7-Zip 就会显示这条消息。消息里不会写明是哪个驱动器，所以满的那个驱动器不一定是你要解压到的驱动器。</p>
+<p>Linux 上的 7-Zip 遇到同样的问题时，提示为“No space left on device”。</p>
+</section>
+
+<section aria-labelledby="drag">
+<h2 id="drag">为什么从 7-Zip 拖出文件会占用 C: 盘空间？</h2>
+<p>因为文件资源管理器只能复制已经存在于磁盘上的文件。<a href="https://www.7-zip.org/faq.html">7-Zip 常见问题（英文）</a>中解释说：“7-Zip 先把文件从压缩包解压到临时文件夹，然后把这些临时文件的路径告诉 Windows 文件资源管理器，再由文件资源管理器把这些文件复制到拖放的目标文件夹。”</p>
+<p>7-Zip 的源代码显示了这个临时位置。从压缩包中拖出文件时，文件管理器会在 Windows 临时文件夹中创建一个名称以 <code>7zE</code> 开头的文件夹（<a href="https://github.com/ip7z/7zip/blob/main/CPP/7zip/UI/FileManager/PanelDrag.cpp">PanelDrag.cpp</a>）；从压缩包中打开文件时，使用的文件夹以 <code>7zO</code> 开头（<a href="https://github.com/ip7z/7zip/blob/main/CPP/7zip/UI/FileManager/PanelItemOpen.cpp">PanelItemOpen.cpp</a>）。<a href="https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppathw">根据微软的文档（英文）</a>，Windows 从 TMP 或 TEMP 变量获取这个文件夹。在文件资源管理器地址栏中输入 <code>%TEMP%</code> 即可查看；在标准的 Windows 设置下，它位于 C: 盘的用户文件夹内。</p>
+<p>所以，把一个大文件夹从 7-Zip 拖到 D: 盘，需要先在 C: 盘上有足够的空间放下它，然后文件资源管理器才会把它复制到 D: 盘。</p>
+<h3>解决方法：使用“Extract”（提取）</h3>
+<p>在 7-Zip 文件管理器中选中文件，点击“Extract”（提取），把“Extract to”设为目标驱动器上的文件夹。也可以在文件资源管理器中右键单击压缩包，选择 7-Zip，再选择“Extract files”（提取文件）；在 Windows 11 上，这一项可能位于“显示更多选项”中。常见问题中还提到，从一个 7-Zip 窗口拖到另一个 7-Zip 窗口不会产生临时文件。</p>
+<p>如果一定要用拖放，可以把用户变量 TMP 和 TEMP 指向一个空间充足的驱动器上的文件夹（在 Windows 设置中搜索“环境变量”）。这会改变所有程序的临时文件夹，而不只是 7-Zip 的，所以使用“Extract”（提取）是更简单的解决方法。</p>
+</section>
+
+<section aria-labelledby="fat32">
+<h2 id="fat32">FAT32 驱动器会让 7-Zip 提示空间不足吗？</h2>
+<p>会。FAT32 无法存放 4 GiB 及以上的单个文件。一旦写入会让文件超过这个大小，写入就会失败，返回的状态与磁盘已满时相同，因此即使驱动器大部分是空的，提示信息也一样。</p>
+<p>这个上限见微软的<a href="https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison">文件系统功能对比（英文）</a>，其中列出 FAT32 的最大文件大小为 4 GiB。这个状态来自 FAT 驱动程序：在微软公开的 <a href="https://github.com/microsoft/Windows-driver-samples/blob/main/filesys/fastfat/write.c">FAT 驱动程序示例（英文）</a>中，会让文件超出 32 位大小的写入会被拒绝，并返回 <code>STATUS_DISK_FULL</code>。</p>
+<p>检查方法：在文件资源管理器中右键单击该驱动器，选择“属性”，查看“文件系统”一项。如果显示 FAT32，而压缩包中有 4 GiB 及以上的文件，请先把需要的内容从该驱动器复制出来，再将其格式化为 exFAT 或 NTFS（右键单击驱动器，选择“格式化”）。格式化会清除驱动器上的所有数据。7-Zip 的“Size”（大小）列会显示压缩包中每个文件的大小。</p>
+</section>
+
+<section aria-labelledby="real">
+<h2 id="real">压缩包在同一驱动器上时，7-Zip 需要多少空间？</h2>
+<p>需要放得下所有解压出的文件，因为压缩包会一直留在原处。把 7-Zip 中“Size”（大小）列的数值加起来，就是它要写入的数据量；“Packed Size”（压缩后大小）是压缩包本身已经占用的空间。</p>
+<p>2026-10-25 的测试中，把一个 180.0 MB、内含 200.0 MB 文件的 7z 压缩包复制到一块 220 MiB 的空磁盘上，剩余 50.6 MB 可用空间。7-Zip 25.01 在写入 21 个文件中的第 6 个时停止，提示“No space left on device”。完整的测试方法以及 unzip 和 HatchZip 的结果，见<a href="zh-not-enough-space-to-extract.html#measured">磁盘空间不足时如何解压的指南</a>，其中还介绍了常用的解决方法：换一个驱动器、释放空间，以及就地解压。</p>
+<p>分卷压缩包（<code>.7z.001</code>、<code>.7z.002</code> 等）也一样：7-Zip 会按顺序读取各个分卷，在你删除之前，所有分卷都会一直留在磁盘上。</p>
+</section>
+
+<section aria-labelledby="fit">
+<h2 id="fit">HatchZip 能解决什么，不能解决什么</h2>
+<p>当压缩包和解压出的文件在同一个驱动器上，而驱动器放得下解压出的文件、却放不下两者时，HatchZip 能派上用场。它从压缩包末尾开始解压，每解压完一部分就把这部分从压缩包文件中截掉；对于分卷压缩包，每个分卷清空后就会被删除。在上面的测试中，它在同一块几乎已满的磁盘上，从一个用 <code>-ms=20m</code> 创建的 7z 压缩包中解压出了同样的 200.0 MB，每个文件都与原文件逐字节一致。<a href="zh.html#download">下载 HatchZip</a>。</p>
+<p>对 7z 压缩包能起多大作用，取决于压缩包是如何创建的。7-Zip 会把多个文件打包成固实块，而 HatchZip 只有在一个固实块全部解压出来之后才能释放它。使用 7-Zip 的默认设置时，整个压缩包可能就是一个固实块；在同一测试中，HatchZip 在做任何改动之前就拒绝了这样的压缩包，因为它需要 200.1 MB 可用空间。<code>hatchzip check</code> 会在做任何改动之前显示这一点。如果压缩包由你自己创建，使用较小的固实块大小（7-Zip“Add to Archive”（添加到压缩包）窗口中的“Solid Block size”（固实数据大小）设置，或命令行参数 <code>-ms=64m</code>），就能让压缩包分步释放空间。</p>
+<p>以下情况它帮不上忙：</p>
+<ul>
+<li>临时文件夹。这是 7-Zip 把文件交给文件资源管理器的方式，而不是目标驱动器空间不足。请使用“Extract”（提取）。</li>
+<li>FAT32。HatchZip 同样无法向 FAT32 驱动器写入 4 GiB 及以上的文件。</li>
+<li>驱动器连解压出的文件本身都放不下。</li>
+<li>需要保留压缩包。就地解压会把压缩包消耗掉。</li>
+<li><code>.tar.zst</code>：7-Zip 可以打开，但 HatchZip 目前还不支持读取。</li>
+</ul>
+</section>
+
+<section aria-labelledby="sources">
+<h2 id="sources">资料来源</h2>
+<p class="note">核实于 2026-10-25。</p>
+<ul>
+<li>7-Zip：<a href="https://www.7-zip.org/faq.html">常见问题（英文）</a>，“Why does drag-and-drop archive extraction from 7-Zip to Explorer use temp files?”；GitHub 上的源代码，<a href="https://github.com/ip7z/7zip/blob/main/CPP/7zip/UI/FileManager/PanelDrag.cpp">PanelDrag.cpp</a> 和 <a href="https://github.com/ip7z/7zip/blob/main/CPP/7zip/UI/FileManager/PanelItemOpen.cpp">PanelItemOpen.cpp</a>。</li>
+<li>微软：<a href="https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison">File system functionality comparison（英文）</a>、<a href="https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-">System error codes 0 to 499（英文）</a>、<a href="https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppathw">GetTempPath（英文）</a>、<a href="https://github.com/microsoft/Windows-driver-samples/blob/main/filesys/fastfat/write.c">fastfat write.c</a>。</li>
+</ul>
+</section>
+
+<section aria-labelledby="related">
+<h2 id="related">相关指南</h2>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">磁盘空间不足，无法解压 ZIP、RAR 或 7z：解决方法</a></li>
+<li><a href="zh-winrar-not-enough-space.html">WinRAR 明明有空间却提示磁盘空间不足：原因分析</a></li>
+<li><a href="zh.html#download">下载 HatchZip</a>，支持 Windows、macOS 和 Linux</li>
+</ul>
+</section>
+</main>
+
+<footer>
+<p>HatchZip 采用 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT">MIT</a> 或 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE">Apache-2.0</a> 许可证。<a href="https://github.com/xevrion/hatchzip">GitHub 上的源代码</a>。<a href="verify.html">校验你下载的文件（英文）</a>。<a href="https://github.com/xevrion/hatchzip/issues">报告问题</a>。</p>
+<p>由 Yash Bavadiya（<a href="https://x.com/xevrion_the1">@xevrion_the1</a>）开发。</p>
+<p>HatchZip 与 7-Zip 及其作者没有任何关联。</p>
+</footer>
+</div>
+</div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
+</body>
+</html>
