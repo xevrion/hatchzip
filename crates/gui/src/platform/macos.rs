@@ -10,8 +10,8 @@ use objc2_foundation::{MainThreadMarker, NSArray, NSURL};
 /// The settings switch, named after this system's file manager.
 pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Finder;
 
-/// hatchzip-shell can't add Finder entries yet, so the setting is hidden.
-pub const SHELL_MENU: bool = false;
+/// Finder's Quick Actions.
+pub const SHELL_MENU: bool = true;
 
 /// `~/Library/Application Support/HatchZip`.
 pub fn config_dir() -> Option<PathBuf> {

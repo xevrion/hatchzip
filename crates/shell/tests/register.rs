@@ -180,9 +180,198 @@ fn explorer_menu_points_at_the_gui_and_goes_away_cleanly() {
 }
 
 #[cfg(target_os = "macos")]
+fn plist_value(file: &Path, key: &str) -> String {
+    // plutil is Apple's own parser, so this also checks the escaping.
+    let out = std::process::Command::new("/usr/bin/plutil")
+        .args(["-extract", key, "raw", "-o", "-"])
+        .arg(file)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{key} in {}", file.display());
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string()
+}
+
+#[cfg(target_os = "macos")]
 #[test]
-fn macos_says_it_is_not_supported_yet() {
-    let dirs = Dirs::current().unwrap();
-    assert!(register(&dirs, Path::new("/Applications/HatchZip.app")).is_err());
+fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
+    use hatchzip_shell::{ACTIONS, unregister};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("Library/Services"),
+    };
+    // Someone else's Quick Action, which must survive both directions.
+    let foreign = dirs.data.join("Other.workflow/Contents/Info.plist");
+    std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+    std::fs::write(&foreign, "not ours").unwrap();
+    let gui = Path::new("/Applications/HatchZip.app/Contents/MacOS/hatchzip-gui");
+
     assert!(!is_registered(&dirs));
+    register(&dirs, gui).unwrap();
+    assert!(is_registered(&dirs));
+
+    for a in ACTIONS {
+        let contents = dirs
+            .data
+            .join(format!("hatchzip-{}.workflow/Contents", a.id));
+        let info = contents.join("Info.plist");
+        let wflow = contents.join("document.wflow");
+        let lint = std::process::Command::new("/usr/bin/plutil")
+            .arg("-lint")
+            .args([&info, &wflow])
+            .status()
+            .unwrap();
+        assert!(lint.success(), "{}", a.id);
+
+        assert_eq!(
+            plist_value(&info, "NSServices.0.NSMenuItem.default"),
+            format!("HatchZip: {}", a.label)
+        );
+        assert_eq!(
+            plist_value(&info, "NSServices.0.NSMessage"),
+            "runWorkflowAsService"
+        );
+        assert_eq!(
+            plist_value(
+                &info,
+                "NSServices.0.NSRequiredContext.NSApplicationIdentifier"
+            ),
+            "com.apple.finder"
+        );
+        assert_eq!(
+            plist_value(&info, "NSServices.0.NSSendFileTypes.0"),
+            "public.zip-archive"
+        );
+        let text = std::fs::read_to_string(&info).unwrap();
+        for t in [
+            "org.7-zip.7-zip-archive",
+            "public.tar-archive",
+            "org.gnu.gnu-zip-archive",
+            "com.facebook.zstandard-archive",
+            "io.github.xevrion.hatchzip.split-part",
+        ] {
+            assert!(text.contains(&format!("<string>{t}</string>")), "{t}");
+        }
+        assert_eq!(
+            text.contains("com.rarlab.rar-archive"),
+            cfg!(feature = "rar")
+        );
+
+        assert_eq!(
+            plist_value(&wflow, "workflowMetaData.workflowTypeIdentifier"),
+            "com.apple.Automator.servicesMenu"
+        );
+        assert_eq!(
+            plist_value(&wflow, "actions.0.action.ActionBundlePath"),
+            "/System/Library/Automator/Run Shell Script.action"
+        );
+        assert_eq!(
+            plist_value(&wflow, "actions.0.action.ActionParameters.inputMethod"),
+            "1"
+        );
+        assert_eq!(
+            plist_value(&wflow, "actions.0.action.ActionParameters.shell"),
+            "/bin/sh"
+        );
+        let script = plist_value(&wflow, "actions.0.action.ActionParameters.COMMAND_STRING");
+        // By bundle id, so moving the app doesn't break the entries.
+        assert!(
+            script.ends_with(&format!(
+                "\nexec /usr/bin/open -n -b io.github.xevrion.hatchzip --args {} \"$@\"",
+                a.flag
+            )),
+            "{script}"
+        );
+    }
+
+    // A bundle half written by an interrupted run is cleaned up.
+    std::fs::create_dir_all(dirs.data.join(".hatchzip-test.tmp/Contents")).unwrap();
+    register(&dirs, gui).unwrap();
+    unregister(&dirs).unwrap();
+    unregister(&dirs).unwrap();
+    assert!(!is_registered(&dirs));
+    let left: Vec<_> = std::fs::read_dir(&dirs.data)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["Other.workflow"]);
+    assert_eq!(std::fs::read_to_string(&foreign).unwrap(), "not ours");
+}
+
+/// An app run from its disk image, or from the copy Gatekeeper makes of a
+/// quarantined app that was never moved, is somewhere that goes away.
+#[cfg(target_os = "macos")]
+#[test]
+fn finder_quick_actions_refuse_an_app_that_is_not_installed() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("Services"),
+    };
+    for gui in [
+        "/Volumes/HatchZip/HatchZip.app/Contents/MacOS/hatchzip-gui",
+        "/private/var/folders/x/y/T/AppTranslocation/1234/d/HatchZip.app/Contents/MacOS/hatchzip-gui",
+    ] {
+        let e = register(&dirs, Path::new(gui)).unwrap_err();
+        assert!(e.is::<hatchzip_shell::NotInstalled>(), "{gui}: {e:#}");
+        assert!(!dirs.data.exists(), "{gui}");
+    }
+}
+
+/// The script a Quick Action runs, run as Automator runs it, hands every
+/// selected file to one GUI process with names intact. A GUI outside an app
+/// bundle, as in a development build, is run directly.
+#[cfg(target_os = "macos")]
+#[test]
+fn finder_quick_action_passes_every_selected_archive_at_once() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("Services"),
+    };
+    // Stands in for the GUI: writes its arguments, one per line.
+    let bin = tmp.path().join("it's a \"dir\"");
+    std::fs::create_dir_all(&bin).unwrap();
+    let gui = bin.join("hatchzip-gui");
+    let log = tmp.path().join("args.txt");
+    std::fs::write(
+        &gui,
+        format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&gui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    register(&dirs, &gui).unwrap();
+
+    let wflow = dirs
+        .data
+        .join("hatchzip-extract-here-keep.workflow/Contents/document.wflow");
+    let script = plist_value(&wflow, "actions.0.action.ActionParameters.COMMAND_STRING");
+    let run = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            script.as_str(),
+            "sh",
+            "/Users/sam/My Games/a.zip",
+            "/Users/sam/*.7z.001",
+        ])
+        .status()
+        .unwrap();
+    assert!(run.success());
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap(),
+        "--keep-archive\n--extract-here\n/Users/sam/My Games/a.zip\n/Users/sam/*.7z.001\n"
+    );
+
+    // Nothing selected: nothing runs.
+    std::fs::remove_file(&log).unwrap();
+    let run = std::process::Command::new("/bin/sh")
+        .args(["-c", script.as_str(), "sh"])
+        .status()
+        .unwrap();
+    assert!(run.success());
+    assert!(!log.exists());
+    hatchzip_shell::unregister(&dirs).unwrap();
 }

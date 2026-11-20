@@ -54,9 +54,12 @@
 		</dict>
 	</array>
 
-	<!-- macOS knows zip and tar, but not every version knows 7z or RAR.
-	     Imported, not exported: the types belong to 7-Zip and RARLAB, and an
-	     app that declares them too just agrees on the names. -->
+	<!-- macOS knows zip and tar, but not every version knows 7z, RAR or xz,
+	     and none knows zstd or the first part of a split archive (.001).
+	     Finder's Quick Actions are offered by type, so a file of an unknown
+	     type would get none. Imported, not exported: the format types belong
+	     to their authors, many tools write .001, and an app that declares
+	     them too just agrees on the names. -->
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -103,6 +106,104 @@
 					<string>application/vnd.rar</string>
 					<string>application/x-rar</string>
 					<string>application/x-rar-compressed</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.facebook.zstandard-archive</string>
+			<key>UTTypeDescription</key>
+			<string>Zstandard archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>zst</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/zstd</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.facebook.zstandard-tar-archive</string>
+			<key>UTTypeDescription</key>
+			<string>Zstandard tar archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>tzst</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.tukaani.xz-archive</string>
+			<key>UTTypeDescription</key>
+			<string>XZ archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>xz</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-xz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.tukaani.tar-xz-archive</string>
+			<key>UTTypeDescription</key>
+			<string>XZ tar archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>txz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.xevrion.hatchzip.split-part</string>
+			<key>UTTypeDescription</key>
+			<string>Split archive part</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>001</string>
 				</array>
 			</dict>
 		</dict>
