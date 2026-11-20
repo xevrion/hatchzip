@@ -352,8 +352,8 @@ export component MainWindow inherits Window {
             HorizontalLayout {
                 alignment: center;
                 Text {
-                    max-width: 520px;
-                    text: @tr("The archive is removed progressively during extraction, so only the space for the extracted files is required.");
+                    max-width: Theme.even-lines ? min(520px, intro-measure.preferred-width / ceil(intro-measure.preferred-width / 520px) + self.font-size) : 520px;
+                    text: intro-measure.text;
                     color: Theme.muted;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -375,7 +375,7 @@ export component MainWindow inherits Window {
             HorizontalLayout {
                 alignment: center;
                 Text {
-                    max-width: 520px;
+                    max-width: Theme.even-lines ? min(520px, formats-measure.preferred-width / ceil(formats-measure.preferred-width / 520px) + self.font-size) : 520px;
                     text: root.formats;
                     wrap: word-wrap;
                     height: self.preferred-height;
@@ -384,6 +384,24 @@ export component MainWindow inherits Window {
                     horizontal-alignment: center;
                 }
             }
+        }
+        // The two paragraphs on one line each, unseen: their widths tell how
+        // many lines they wrap to, to share the text evenly between them.
+        // Placed, so they stay out of this screen's size.
+        intro-measure := Text {
+            x: 0;
+            y: 0;
+            visible: false;
+            text: @tr("The archive is removed progressively during extraction, so only the space for the extracted files is required.");
+            accessible-role: none;
+        }
+        formats-measure := Text {
+            x: 0;
+            y: 0;
+            visible: false;
+            text: root.formats;
+            font-size: Theme.small-size;
+            accessible-role: none;
         }
         GearButton {
             // Where the opened header puts it, so it doesn't jump on opening.

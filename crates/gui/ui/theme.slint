@@ -43,6 +43,10 @@ export global Theme {
     // Devanagari draws smaller than Latin at the same size and its vowel
     // signs crowd wrapped lines, so small text is a size up for it.
     in property <length> script-boost;
+    // Chinese wraps at any character, so a capped paragraph can end on a
+    // line of two or three characters; set for it so such paragraphs are
+    // narrowed to lines of even length. Latin keeps its familiar breaks.
+    in property <bool> even-lines;
     // The menu bar is drawn inside the window, not by the system, so it
     // needs an edge between it and the content.
     in property <bool> menu-edge;

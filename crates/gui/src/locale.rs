@@ -120,6 +120,7 @@ pub fn style(theme: crate::Theme<'_>) {
     let language = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).clone();
     theme.set_font_family(crate::platform::font_family(&language).into());
     theme.set_script_boost(if language == "hi" { 1.0 } else { 0.0 });
+    theme.set_even_lines(language == "zh_CN");
     theme.set_menu_edge(crate::platform::IN_WINDOW_MENU);
 }
 
