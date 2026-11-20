@@ -881,6 +881,8 @@ impl App {
         if was_test {
             *self.runner.task.borrow_mut() = None;
             show_task(&self.ui(), TaskView::default());
+            // The language may have changed while the test was on screen.
+            self.refresh_plan();
             return;
         }
         // Anything else may have changed the archive: look again. The path

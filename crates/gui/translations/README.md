@@ -12,7 +12,7 @@ The desktop app is translated with Slint's `@tr()` and gettext catalogs. Each la
 
 `src/locale.rs` reads the system's preferred languages in order and takes the first one with a catalog; anything without one falls back to the English source text. English ahead of a translated language keeps the app in English. Chinese is matched by script: `zh-CN`, `zh-Hans`, `zh-SG` and a bare `zh` get `zh_CN`, while `zh-TW`, `zh-HK` and `zh-Hant` never get Simplified Chinese (they move on to the next preferred language until a `zh_TW` catalog exists).
 
-Settings > Language overrides the system. It lists "Use the system language" (the default), then English and every catalog by its name in its own language, from `NAMES` in `src/locale.rs`. The choice is saved as `language` in the settings file (`en` or a folder name) and applies at once, to the main window and to the windows the right-click menu opens. A saved name this build has no catalog for follows the system again.
+Settings > Language overrides the system. It lists "Use the system language" (the default), then English and every catalog by its name in its own language, from `NAMES` in `src/locale.rs`. The choice is saved as `language` in the settings file (`en` or a folder name) and applies at once to the main window; a window the right-click menu opens reads it when it starts, so one already open keeps its language. A saved name this build has no catalog for follows the system again.
 
 ## Adding a language
 
