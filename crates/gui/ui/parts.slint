@@ -1,4 +1,4 @@
-import { Button, CheckBox, LineEdit, ProgressIndicator, Spinner, Palette } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, Spinner, Palette } from "std-widgets.slint";
 import { Theme, Meter } from "theme.slint";
 
 export enum Phase {
@@ -62,6 +62,9 @@ export struct TaskView {
     rate: string,
     archive-left: string,
     message: string,
+    // The engine's own words for a failure, which stay English, shown under
+    // the translated message as a detail instead of inside its sentence.
+    reason: string,
     can-open-folder: bool,
     can-retry: bool,
     // Paused or stopped halfway: offer to undo it.
@@ -77,6 +80,10 @@ component Row inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     in property <bool> strong;
+    // The value is what stands in the way.
+    in property <bool> bad;
+    // The plan is from before a run that has since finished.
+    in property <bool> stale;
     spacing: 12px;
     Text {
         text: root.label;
@@ -91,6 +98,7 @@ component Row inherits HorizontalLayout {
         text: root.value;
         horizontal-alignment: right;
         font-weight: root.strong ? 600 : 400;
+        color: root.bad ? Theme.danger : root.stale ? Theme.muted : Palette.foreground;
     }
 }
 
@@ -98,11 +106,15 @@ component Row inherits HorizontalLayout {
 // task window.
 export component SpaceVerdict inherits Text {
     in property <PlanView> plan;
+    in property <bool> stale;
     text: root.plan.refusal != "" ? root.plan.refusal : root.plan.fits ? @tr("Sufficient disk space") : @tr("Insufficient disk space. {} more is required.", root.plan.short);
     wrap: word-wrap;
     height: self.preferred-height;
+    // A size up from the rows, so the answer leads the panel and still
+    // stands out where a script draws every weight alike.
+    font-size: 15px;
     font-weight: 600;
-    color: root.plan.fits ? Palette.foreground : Theme.danger;
+    color: root.stale ? Theme.muted : root.plan.refusal == "" && root.plan.fits ? Theme.success : Theme.danger;
 }
 
 // The reasons under a plan, one whole sentence each, so a translation can
@@ -152,12 +164,19 @@ export component SpaceNotes inherits VerticalLayout {
 // out of view in a small window.
 export component SpacePanel inherits VerticalLayout {
     in property <PlanView> plan;
-    padding: Theme.gutter;
-    spacing: 10px;
+    // A run has finished: the plan is from before it, so it steps back and
+    // the outcome in the footer leads.
+    in property <bool> stale;
+    padding: 16px;
+    spacing: 6px;
     alignment: start;
 
+    // A section label like the tree's column headers, so the verdict under
+    // it reads as the heading.
     Text {
         text: @tr("Disk space");
+        color: Theme.muted;
+        font-size: Theme.small-size;
         font-weight: 600;
     }
     if !root.plan.ready: HorizontalLayout {
@@ -175,13 +194,15 @@ export component SpacePanel inherits VerticalLayout {
         }
     }
     if root.plan.ready: VerticalLayout {
-        spacing: 8px;
+        spacing: 6px;
         SpaceVerdict {
             plan: root.plan;
+            stale: root.stale;
         }
         Row {
             label: @tr("Available");
             value: root.plan.free;
+            stale: root.stale;
         }
         // Both ways, the chosen one in bold, so the difference the archive
         // makes is in plain view.
@@ -189,28 +210,33 @@ export component SpacePanel inherits VerticalLayout {
             label: @tr("Required, archive removed");
             value: root.plan.in-place;
             strong: !root.plan.keep-archive;
+            stale: root.stale;
         }
         Row {
             label: @tr("Required, archive kept");
             value: root.plan.normal;
             strong: root.plan.keep-archive;
+            stale: root.stale;
         }
         Row {
             label: @tr("Reserved");
             value: root.plan.keep;
+            stale: root.stale;
         }
+        // A bare dash read as missing data; the row names the problem.
         Row {
             label: @tr("Available after extraction");
-            value: root.plan.after;
-        }
-        Rectangle {
-            height: 4px;
+            value: root.plan.refusal == "" && !root.plan.fits ? @tr("Not enough") : root.plan.after;
+            bad: root.plan.refusal == "" && !root.plan.fits;
+            stale: root.stale;
         }
         Meter {
             value: root.plan.meter;
             bad: !root.plan.fits;
+            opacity: root.stale ? 0.5 : 1;
         }
-        if root.plan.note-in-place != "" || root.plan.note-keep || root.plan.note-solid || root.plan.note-other-drive || root.plan.note-kept-whole: SpaceNotes {
+        // Advice about the archive no longer applies once the run is over.
+        if !root.stale && (root.plan.note-in-place != "" || root.plan.note-keep || root.plan.note-solid || root.plan.note-other-drive || root.plan.note-kept-whole): SpaceNotes {
             plan: root.plan;
         }
     }
@@ -222,9 +248,14 @@ export component Progress inherits VerticalLayout {
     in property <TaskView> task;
     spacing: 8px;
 
-    ProgressIndicator {
-        progress: root.task.fraction;
-        indeterminate: root.task.phase == Phase.checking;
+    // The disk-space meter's bar, so the two read as one design. Checking,
+    // which has no fraction, shows a spinner instead (Busy).
+    Meter {
+        value: root.task.fraction;
+        accessible-role: progress-indicator;
+        accessible-value: round(root.task.fraction * 100);
+        accessible-value-minimum: 0;
+        accessible-value-maximum: 100;
     }
     HorizontalLayout {
         spacing: 12px;
@@ -246,12 +277,25 @@ export component Progress inherits VerticalLayout {
     }
 }
 
-// The message under a finished, paused or failed run.
-export component Outcome inherits Text {
+// The message under a finished, paused or failed run, in the reader's
+// language first, and the engine's English reason under it as a detail.
+export component Outcome inherits VerticalLayout {
     in property <TaskView> task;
-    text: root.task.message;
-    wrap: word-wrap;
-    color: root.task.phase == Phase.failed || root.task.phase == Phase.no-space ? Theme.danger : Palette.foreground;
+    alignment: center;
+    spacing: 4px;
+    Text {
+        text: root.task.message;
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: root.task.phase == Phase.failed || root.task.phase == Phase.no-space ? Theme.danger : Palette.foreground;
+    }
+    if root.task.reason != "": Text {
+        text: root.task.reason;
+        wrap: word-wrap;
+        height: self.preferred-height;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+    }
 }
 
 export component Busy inherits HorizontalLayout {
@@ -324,6 +368,8 @@ export component TaskButtons inherits HorizontalLayout {
     }
     if root.task.can-retry && (root.task.phase == Phase.failed || root.task.phase == Phase.no-space): Button {
         text: root.task.phase == Phase.no-space ? @tr("Check again") : @tr("Retry");
+        // The way forward, unless the offer of a smaller reserve is.
+        primary: !(root.offer-reserve && root.task.lower-reserve);
         clicked => {
             root.resume();
         }
@@ -370,9 +416,12 @@ export component PasswordPrompt inherits Rectangle {
             width: min(380px, root.width - 32px);
             height: card.preferred-height;
             background: Palette.background;
-            border-radius: 8px;
+            border-radius: Theme.card-radius;
             border-width: 1px;
             border-color: Theme.line;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: Theme.shadow;
 
             card := VerticalLayout {
                 padding: Theme.gutter;
@@ -459,9 +508,12 @@ export component ReplacePrompt inherits Rectangle {
             width: min(440px, root.width - 32px);
             height: card.preferred-height;
             background: Palette.background;
-            border-radius: 8px;
+            border-radius: Theme.card-radius;
             border-width: 1px;
             border-color: Theme.line;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: Theme.shadow;
 
             card := VerticalLayout {
                 padding: Theme.gutter;

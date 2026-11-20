@@ -251,6 +251,9 @@ msgstr "预留"
 msgid "Available after extraction"
 msgstr "解压后可用"
 
+msgid "Not enough"
+msgstr "不足"
+
 msgid "Restore complete"
 msgstr "恢复完成"
 
@@ -372,8 +375,8 @@ msgstr[0] "{0} 个被替换的文件仍保留在 {1} 中，因为在其路径上
 msgid "link"
 msgstr "链接"
 
-msgid "{} Progress is saved; the extraction can be resumed."
-msgstr "{} 进度已保存，可以继续解压。"
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "进度已保存，可以继续解压。"
 
 msgid "Folder"
 msgstr "文件夹"

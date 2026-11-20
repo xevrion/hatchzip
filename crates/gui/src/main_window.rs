@@ -24,8 +24,8 @@ use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
 use crate::{
-    AboutWindow, MainWindow, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView, locale,
-    platform, shell,
+    AboutWindow, MainWindow, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView, Theme,
+    locale, platform, shell,
 };
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
@@ -221,6 +221,7 @@ pub fn build(
 ) -> Result<MainWindow> {
     let ui = MainWindow::new()?;
     locale::apply(settings.language.as_deref());
+    locale::style(ui.global::<Theme>());
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
@@ -282,7 +283,8 @@ pub fn build(
                 _ => {}
             }
             if let Some(reason) = &task.resumable_failure {
-                view.message = ui.invoke_task_resumable_error(reason.as_str().into());
+                view.message = ui.invoke_task_resumable_error();
+                view.reason = reason.as_str().into();
             }
             if let Some((entries, output, kept, aside)) = &task.restore_result {
                 let held =
@@ -705,6 +707,13 @@ impl App {
         self.change_settings(|s| s.language = choice.clone());
         locale::select(choice.as_deref());
         let ui = self.ui();
+        locale::style(ui.global::<Theme>());
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
+        if let Some(w) = self.about.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
         // Text bound to @tr in the .slint files follows by itself; these were
         // worded once from Rust and would stay in the old language.
         show_shell_menu_label(&ui);
@@ -992,6 +1001,7 @@ impl App {
             Some(w) => w,
             None => {
                 let Ok(w) = SettingsWindow::new() else { return };
+                locale::style(w.global::<Theme>());
                 let settings = self.settings.borrow().clone();
                 if settings.appearance != Appearance::System {
                     w.global::<Palette>()
@@ -1217,6 +1227,7 @@ impl App {
         let mut about = self.about.borrow_mut();
         if about.is_none() {
             let Ok(w) = AboutWindow::new() else { return };
+            locale::style(w.global::<Theme>());
             let appearance = self.settings.borrow().appearance;
             if appearance != Appearance::System {
                 w.global::<Palette>()

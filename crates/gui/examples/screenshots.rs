@@ -251,7 +251,8 @@ async fn main_and_settings(
         phase: Phase::Failed,
         heading: ui.invoke_task_heading(Phase::Failed, false, false, name),
         detail: destination,
-        message: ui.invoke_task_resumable_error(reason.into()),
+        message: ui.invoke_task_resumable_error(),
+        reason: reason.into(),
         can_retry: true,
         can_give_back: true,
         ..TaskView::default()
