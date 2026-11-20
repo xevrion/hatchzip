@@ -215,7 +215,9 @@ pub fn build(
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(text::localize(task, &ui.global::<Messages>()));
+            // Through `show_task`: it also keeps File > Open in step with
+            // whether the run is writing.
+            show_task(&ui, text::localize(task, &ui.global::<Messages>()));
         }
     });
     let app = Rc::new(App {

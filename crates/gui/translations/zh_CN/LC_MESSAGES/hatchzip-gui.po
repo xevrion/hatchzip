@@ -440,7 +440,7 @@ msgid "Extraction cancelled. The archive was not modified."
 msgstr "解压已取消。压缩包未作修改。"
 
 msgid "{} {}"
-msgstr "{} {}"
+msgstr "{}{}"
 
 msgid "{} {}."
-msgstr "{} {}。"
+msgstr "{}{}。"
