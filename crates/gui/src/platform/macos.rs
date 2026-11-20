@@ -13,6 +13,21 @@ pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Finder;
 /// hatchzip-shell can't add Finder entries yet, so the setting is hidden.
 pub const SHELL_MENU: bool = false;
 
+/// The menu bar is the system's, at the top of the screen.
+pub const IN_WINDOW_MENU: bool = false;
+
+/// The faces with real Semibold weights for these scripts. The fallback
+/// for Chinese has no bold, so every heading drew at regular weight, and
+/// the one for Devanagari has tight line metrics. `""` keeps the system
+/// font.
+pub fn font_family(language: &str) -> &'static str {
+    match language {
+        "zh_CN" => "PingFang SC",
+        "hi" => "Kohinoor Devanagari",
+        _ => "",
+    }
+}
+
 /// `~/Library/Application Support/HatchZip`.
 pub fn config_dir() -> Option<PathBuf> {
     Some(std::env::home_dir()?.join("Library/Application Support/HatchZip"))

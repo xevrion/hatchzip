@@ -107,6 +107,20 @@ pub fn select(saved: Option<&str>) {
     // Every name in LANGUAGES is bundled, so this only fails if the list and
     // the folders disagree, which `every_translation_folder_is_listed` catches.
     let _ = slint::select_bundled_translation(&language);
+    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = language;
+}
+
+/// The language last selected, `""` for English.
+static CURRENT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Sets a window's font and script settings for the language on screen.
+/// Each window has its own `Theme`, so this runs for every window when it
+/// is built and again when the language changes.
+pub fn style(theme: crate::Theme<'_>) {
+    let language = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    theme.set_font_family(crate::platform::font_family(&language).into());
+    theme.set_script_boost(if language == "hi" { 1.0 } else { 0.0 });
+    theme.set_menu_edge(crate::platform::IN_WINDOW_MENU);
 }
 
 #[cfg(test)]

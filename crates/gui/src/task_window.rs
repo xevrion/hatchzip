@@ -103,6 +103,7 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
     }
     let ui = TaskWindow::new()?;
     crate::locale::apply(settings.language.as_deref());
+    crate::locale::style(ui.global::<crate::Theme>());
     if settings.appearance != Appearance::System {
         ui.global::<Palette>()
             .set_color_scheme(crate::settings_window::color_scheme(settings.appearance));
