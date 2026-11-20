@@ -504,6 +504,18 @@ export component MainWindow inherits Window {
                     plan: root.plan;
                     stale: root.task.phase == Phase.done || root.task.phase == Phase.failed;
                 }
+                // While there is more below, the last visible row fades out
+                // instead of ending cut through the middle of a line. It
+                // stays at the bottom of the visible part as the panel
+                // scrolls, and sits outside the content size, so nothing
+                // moves.
+                if plan-panel.preferred-height > space-scroll.visible-height + 1px && space-scroll.viewport-y > space-scroll.visible-height - space-scroll.viewport-height + 1px: Rectangle {
+                    x: 0;
+                    y: -space-scroll.viewport-y + space-scroll.visible-height - self.height;
+                    width: space-scroll.visible-width;
+                    height: 36px;
+                    background: @linear-gradient(180deg, Palette.background.transparentize(100%) 0%, Palette.background.transparentize(30%) 55%, Palette.background 100%);
+                }
             }
         }
         Line { }
