@@ -277,7 +277,9 @@ pub fn build(
     app.runner.when_extracted(|| {
         with_app(|app| {
             if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder {
-                app.open_folder();
+                // The parent's output, once, even when a nested queue just
+                // finished in folders inside it.
+                app.open_parent_folder();
             }
         });
     });
@@ -378,6 +380,8 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
     let a = app.clone();
     ui.on_extract(move || a.extract());
     let a = app.clone();
+    ui.on_extract_inside(move || a.extract_inside());
+    let a = app.clone();
     ui.on_test(move || a.test());
     let a = app.clone();
     ui.on_pause(move || a.runner.pause());
@@ -449,6 +453,7 @@ impl App {
         if self.runner.running() {
             return;
         }
+        self.runner.clear_queue();
         let ui = self.ui();
         let generation = self.next_generation();
         self.next_plan_generation();
@@ -1040,6 +1045,7 @@ impl App {
         let Some(archive) = self.archive.borrow().clone() else {
             return;
         };
+        self.runner.clear_queue();
         let ui = self.ui();
         let output = self.output.borrow().clone();
         let keep = self.keeps_archive();
@@ -1053,6 +1059,7 @@ impl App {
             password: self.password.borrow().clone(),
             here: false,
             existing: self.settings.borrow().existing_files,
+            nested: false,
         };
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
@@ -1065,20 +1072,75 @@ impl App {
         );
     }
 
+    /// Queues the archives this run left in the output, each into its own
+    /// folder next to it. Only the files the run wrote are considered, so a
+    /// file that was already there is never extracted as if it were new.
+    fn extract_inside(&self) {
+        let nested: Vec<PathBuf> = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map(|t| t.nested.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
+            .collect();
+        if nested.is_empty() {
+            return;
+        }
+        let keep = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map(Task::keeps_archive)
+            .unwrap_or_else(|| self.keeps_archive());
+        let keep_free = self
+            .runner
+            .keep_free()
+            .unwrap_or_else(|| self.keep_free.get());
+        let verify_first = self.ui().get_verify_first();
+        let password = self.password.borrow().clone();
+        let jobs = nested
+            .iter()
+            .map(|path| {
+                let (task, mut request) =
+                    crate::task_window::nested_job(path, keep, keep_free, verify_first);
+                if let Some(p) = &password {
+                    request.set_password(p.clone());
+                }
+                (task, request)
+            })
+            .collect();
+        self.runner.start_queue(jobs);
+    }
+
     /// Stops a half-done extraction for good and makes the archive whole.
     fn give_back(&self) {
         if self.runner.running() {
             return;
         }
-        let Some(archive) = self.archive.borrow().clone() else {
+        let Some(archive) = self
+            .runner
+            .archive()
+            .or_else(|| self.archive.borrow().clone())
+        else {
             return;
         };
+        let name = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map_or_else(|| self.name.borrow().clone(), |t| t.name().to_string());
+        self.runner.clear_queue();
         // Restore writes to the archive, so our read handle goes first, as
         // for an extraction.
         let job = self.job.replace(SharedJob::default());
         self.runner.start_after(
             move || drop(job.lock().map(|mut j| j.take())),
-            Task::restore(&self.name.borrow()),
+            Task::restore(&name),
             Request::Restore { archive },
         );
     }
@@ -1087,6 +1149,7 @@ impl App {
         let Some(archive) = self.archive.borrow().clone() else {
             return;
         };
+        self.runner.clear_queue();
         let request = Request::Test {
             archive,
             password: self.password.borrow().clone(),
@@ -1095,6 +1158,7 @@ impl App {
     }
 
     fn back(&self) {
+        self.runner.clear_queue();
         let was_test = self
             .runner
             .task
@@ -1111,7 +1175,10 @@ impl App {
         }
         // Anything else may have changed the archive: look again. The path
         // is copied out first, since opening replaces it.
-        let path = self.archive.borrow().clone();
+        let path = self
+            .runner
+            .archive()
+            .or_else(|| self.archive.borrow().clone());
         if let Some(path) = path {
             self.open(path);
         }
@@ -1120,6 +1187,15 @@ impl App {
     fn open_folder(&self) {
         let task = self.runner.task.borrow();
         if let Some(out) = task.as_ref().and_then(|t| t.output.clone()) {
+            let _ = open::that_detached(out);
+        }
+    }
+
+    /// The main window's output, not the last nested archive's folder. The
+    /// "After extracting" setting opens this once per run.
+    fn open_parent_folder(&self) {
+        let out = self.output.borrow().clone();
+        if !out.as_os_str().is_empty() {
             let _ = open::that_detached(out);
         }
     }

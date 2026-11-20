@@ -211,6 +211,19 @@ pub(crate) fn plural_count(n: usize) -> i32 {
 /// text stays English; everything the app builds itself comes from `@tr`.
 pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
     let mut view = task.view.clone();
+    view.inside = if task.nested.is_empty() {
+        Default::default()
+    } else if task.keeps_archive() {
+        messages.invoke_inside_count(
+            plural_count(task.nested.len()),
+            count(task.nested.len()).into(),
+        )
+    } else {
+        messages.invoke_inside_count_remove(
+            plural_count(task.nested.len()),
+            count(task.nested.len()).into(),
+        )
+    };
     view.space = task
         .space
         .as_ref()
@@ -258,6 +271,9 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
             }
         }
         _ => {}
+    }
+    if task.nested_partial && !task.nested.is_empty() {
+        view.message = messages.invoke_joined(view.message, messages.invoke_inside_partial());
     }
     if task.cancelled {
         let cancelled = if view.is_test {
