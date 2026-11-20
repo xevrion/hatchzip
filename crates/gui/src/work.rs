@@ -150,6 +150,9 @@ pub struct Failure {
     pub message: String,
     /// A journal exists, so running again continues instead of starting over.
     pub resumable: bool,
+    /// The person closed the password or replace prompt before anything
+    /// started. The window has its own translated sentence for this one.
+    pub cancelled: bool,
 }
 
 /// Runs a request to the end, a pause or an error. Errors are reported as an
@@ -201,17 +204,19 @@ pub fn run(
     if let Err(e) = result {
         let resumable = matches!(request, Request::Extract { .. })
             && session::locate(request.archive()).is_ok_and(|(_, paths)| paths.exists());
-        let message = if e.is::<PasswordNeeded>() || e.is::<WrongPassword>() {
-            // Only reached when the person closed the password prompt.
-            match request {
-                Request::Test { .. } => "Test cancelled. The archive was not modified.",
-                _ => "Extraction cancelled. The archive was not modified.",
-            }
-            .to_string()
+        let cancelled = e.is::<PasswordNeeded>() || e.is::<WrongPassword>();
+        let message = if cancelled {
+            // Only reached when the person closed the password prompt. The
+            // window replaces this with its own translated sentence.
+            String::new()
         } else {
             sentence(&format!("{e:#}"))
         };
-        send(Update::Failed(Failure { message, resumable }));
+        send(Update::Failed(Failure {
+            message,
+            resumable,
+            cancelled,
+        }));
     }
 }
 
@@ -325,7 +330,14 @@ fn extract(
                 None
             } else {
                 let Some(c) = replace(&found, &out, !keep_archive) else {
-                    bail!("extraction cancelled. The archive was not modified");
+                    // Closing the prompt is how to change one's mind; the
+                    // window has its own translated sentence for it.
+                    send(Update::Failed(Failure {
+                        message: String::new(),
+                        resumable: false,
+                        cancelled: true,
+                    }));
+                    return Ok(());
                 };
                 Some(c)
             };
@@ -579,6 +591,7 @@ mod tests {
                 ..
             } => format!("restored {entries}, {set_aside} set aside"),
             Update::Restored { kept: true, .. } => "progress discarded".to_string(),
+            Update::Failed(f) if f.cancelled => "failed: cancelled".to_string(),
             Update::Failed(f) => format!("failed: {}", f.message),
         }
     }
@@ -811,13 +824,7 @@ mod tests {
         counters.reset();
         let (updates, asked) = collect_replacing(&request, &counters, false);
         assert_eq!(asked, [20]);
-        assert_eq!(
-            updates,
-            [
-                "checking",
-                "failed: Extraction cancelled. The archive was not modified."
-            ]
-        );
+        assert_eq!(updates, ["checking", "failed: cancelled"]);
         assert!(again.exists(), "a refused run leaves the archive alone");
         assert_eq!(
             std::fs::read(dir.path().join("data/file3.bin")).unwrap(),
@@ -952,13 +959,7 @@ mod tests {
         // Closing the prompt gives up without touching anything.
         let mut request = extract(&archive, Some(dir.path().join("out")), false);
         let (updates, _) = collect_asking(&request, &counters, &[None]);
-        assert_eq!(
-            updates,
-            [
-                "checking",
-                "failed: Extraction cancelled. The archive was not modified."
-            ]
-        );
+        assert_eq!(updates, ["checking", "failed: cancelled"]);
         assert!(archive.exists());
 
         // A remembered password isn't asked for again.
