@@ -495,8 +495,8 @@ msgstr "未选择文件夹"
 msgid "When a file already exists"
 msgstr "文件已存在时"
 
-msgid "Existing files are replaced. They are deleted when the extraction completes."
-msgstr "现有文件会被替换，并在解压完成时删除。"
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "现有文件会被替换。旧副本会保留到解压完成，然后删除。"
 
 msgid "Existing files are kept, and the archive's copies of them are not."
 msgstr "保留现有文件，不保留压缩包中的副本。"

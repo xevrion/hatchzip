@@ -144,10 +144,13 @@ pub fn file() -> Option<PathBuf> {
 
 impl Settings {
     /// The folder archives go into, each in a folder named after it, or
-    /// `None` for next to the archive.
+    /// `None` for next to the archive. A folder that is gone, or on a drive
+    /// that was unplugged, counts as none: extracting would make the path
+    /// again on whatever disk holds its parent, which is not where the
+    /// person asked for.
     pub fn default_folder(&self) -> Option<&Path> {
         match self.destination {
-            Destination::Folder => self.destination_folder.as_deref(),
+            Destination::Folder => self.destination_folder.as_deref().filter(|d| d.is_dir()),
             Destination::NextToArchive => None,
         }
     }
@@ -314,20 +317,36 @@ mod tests {
     #[test]
     fn the_default_destination_names_a_folder_after_the_archive() {
         let next_to = Path::new("/home/me/Downloads/game");
+        let dir = tempfile::tempdir().unwrap();
         let mut s = Settings::default();
         assert_eq!(s.output_for(next_to), next_to);
         // A folder chosen once and then turned off is remembered, not used.
-        s.destination_folder = Some(PathBuf::from("/media/usb/Extracted"));
+        s.destination_folder = Some(dir.path().to_path_buf());
         assert_eq!(s.default_folder(), None);
         assert_eq!(s.output_for(next_to), next_to);
         s.destination = Destination::Folder;
-        assert_eq!(
-            s.output_for(next_to),
-            Path::new("/media/usb/Extracted/game")
-        );
+        assert_eq!(s.output_for(next_to), dir.path().join("game"));
         // Always in a folder, with none chosen yet: next to the archive.
         s.destination_folder = None;
         assert_eq!(s.output_for(next_to), next_to);
+    }
+
+    #[test]
+    fn a_default_folder_that_is_gone_falls_back_to_next_to_the_archive() {
+        let next_to = Path::new("/home/me/Downloads/game");
+        let dir = tempfile::tempdir().unwrap();
+        let s = Settings {
+            destination: Destination::Folder,
+            destination_folder: Some(dir.path().to_path_buf()),
+            ..Settings::default()
+        };
+        assert_eq!(s.output_for(next_to), dir.path().join("game"));
+        drop(dir);
+        assert_eq!(s.default_folder(), None);
+        assert_eq!(s.output_for(next_to), next_to);
+        // The choice itself is kept, for when the drive comes back.
+        assert_eq!(s.destination, Destination::Folder);
+        assert!(s.destination_folder.is_some());
     }
 
     #[test]

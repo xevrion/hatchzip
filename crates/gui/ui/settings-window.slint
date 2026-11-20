@@ -69,6 +69,43 @@ component Field inherits VerticalLayout {
     }
 }
 
+// A switch whose label wraps. Switch's own text never does, so a long or
+// translated label ran past the edge of a narrow window.
+component SwitchRow inherits HorizontalLayout {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled();
+
+    // The gap Switch puts before its own text.
+    spacing: 12px;
+    Switch {
+        accessible-label: root.text;
+        checked <=> root.checked;
+        toggled => {
+            root.toggled();
+        }
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.text;
+                wrap: word-wrap;
+                // The switch already carries this as its name.
+                accessible-role: none;
+            }
+        }
+        // Clicking the label still toggles, as it did inside the Switch.
+        TouchArea {
+            clicked => {
+                root.checked = !root.checked;
+                root.toggled();
+            }
+        }
+    }
+}
+
 // Asks before every setting goes back to its default.
 component ResetPrompt inherits Rectangle {
     callback reset();
@@ -82,6 +119,16 @@ component ResetPrompt inherits Rectangle {
         key-pressed(event) => {
             if event.text == Key.Escape {
                 root.cancel();
+                return accept;
+            }
+            // Tab stays between the two buttons, or it would reach the
+            // settings behind the scrim while the question is still open.
+            if event.text == Key.Tab || event.text == Key.Backtab {
+                if cancel-button.has-focus {
+                    reset-button.focus();
+                } else {
+                    cancel-button.focus();
+                }
                 return accept;
             }
             reject
@@ -117,7 +164,7 @@ component ResetPrompt inherits Rectangle {
                             root.cancel();
                         }
                     }
-                    Button {
+                    reset-button := Button {
                         text: @tr("Reset");
                         primary: true;
                         clicked => {
@@ -352,7 +399,7 @@ export component SettingsWindow inherits Window {
                         }
                         Field {
                             note: @tr("Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open.");
-                            Switch {
+                            SwitchRow {
                                 text: @tr("Close the progress window when extraction completes");
                                 checked <=> root.close-when-done;
                                 toggled => {
@@ -366,7 +413,7 @@ export component SettingsWindow inherits Window {
                         spacing: 20px;
                         Field {
                             note: root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
-                            Switch {
+                            SwitchRow {
                                 text: @tr("Remove the archive during extraction");
                                 checked <=> root.remove-archive;
                                 toggled => {
@@ -376,7 +423,7 @@ export component SettingsWindow inherits Window {
                         }
                         Field {
                             note: @tr("Every entry is read and checked before anything is extracted or removed, which takes longer.");
-                            Switch {
+                            SwitchRow {
                                 text: @tr("Verify archive before extracting");
                                 checked <=> root.verify-first;
                                 toggled => {
@@ -392,6 +439,7 @@ export component SettingsWindow inherits Window {
                                 alignment: start;
                                 LineEdit {
                                     width: 90px;
+                                    accessible-label: @tr("Reserved space");
                                     text <=> root.keep-free;
                                     input-type: decimal;
                                     horizontal-alignment: right;
@@ -426,6 +474,7 @@ export component SettingsWindow inherits Window {
                                 LineEdit {
                                     text: root.destination-folder;
                                     placeholder-text: @tr("No folder chosen");
+                                    accessible-label: @tr("Default destination");
                                     read-only: true;
                                     horizontal-stretch: 1;
                                 }
@@ -439,7 +488,7 @@ export component SettingsWindow inherits Window {
                         }
                         Field {
                             label: @tr("When a file already exists");
-                            note: root.existing-index == 1 ? @tr("Existing files are replaced. They are deleted when the extraction completes.") : root.existing-index == 2 ? @tr("Existing files are kept, and the archive's copies of them are not.") : @tr("Each file already in the destination is shown, with the choice to replace it, skip it or keep both.");
+                            note: root.existing-index == 1 ? @tr("Existing files are replaced. The old copies are kept until the extraction completes, then deleted.") : root.existing-index == 2 ? @tr("Existing files are kept, and the archive's copies of them are not.") : @tr("Each file already in the destination is shown, with the choice to replace it, skip it or keep both.");
                             HorizontalLayout {
                                 alignment: start;
                                 ComboBox {
@@ -459,7 +508,7 @@ export component SettingsWindow inherits Window {
                         spacing: 20px;
                         Field {
                             note: @tr("Adds HatchZip's extract and test entries to the right-click menu of archives.");
-                            Switch {
+                            SwitchRow {
                                 text: root.file-manager == FileManager.explorer ? @tr("Show in the Explorer context menu") : root.file-manager == FileManager.finder ? @tr("Show in the Finder context menu") : @tr("Show in the file manager's context menu");
                                 checked <=> root.shell-menu-on;
                                 toggled => {
@@ -483,6 +532,7 @@ export component SettingsWindow inherits Window {
                                 spacing: 8px;
                                 LineEdit {
                                     text: root.settings-path;
+                                    accessible-label: @tr("Settings file");
                                     read-only: true;
                                     horizontal-stretch: 1;
                                 }
@@ -514,13 +564,17 @@ export component SettingsWindow inherits Window {
         }
     }
 
+    // The prompt takes its focused button with it, so the keyboard goes
+    // back to the sidebar, where Escape and the arrows work again.
     if root.confirm-reset: ResetPrompt {
         reset => {
             root.confirm-reset = false;
+            sidebar.focus();
             root.reset();
         }
         cancel => {
             root.confirm-reset = false;
+            sidebar.focus();
         }
     }
 }

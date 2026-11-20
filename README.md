@@ -66,7 +66,7 @@ Open them with **File > Settings…** (Ctrl+, or Cmd+, on macOS), or the gear at
 | Extraction | **Remove the archive during extraction** | On |
 | Extraction | **Verify archive before extracting** | Off |
 | Extraction | **Reserved space**: free space left untouched on the destination drive, in GB | 2 GB |
-| Extraction | **Default destination**: next to the archive, or always inside a chosen folder, each archive in a folder named after it. **Extract here** in the right-click menu still extracts next to the archive | Next to the archive |
+| Extraction | **Default destination**: next to the archive, or always inside a chosen folder, each archive in a folder named after it. **Extract here** in the right-click menu still extracts next to the archive. A chosen folder that no longer exists, or is on a drive that is not connected, is not used: the archive is extracted next to itself | Next to the archive |
 | Extraction | **When a file already exists**: ask, replace (as `--replace`), or skip (as `--skip-existing`) | Ask |
 | Integration | **Show in the Explorer context menu** on Windows, **Show in the file manager's context menu** on Linux: the right-click menu entries | As installed |
 | Advanced | The settings file's location, and **Reset all settings** | |

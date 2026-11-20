@@ -447,7 +447,7 @@ msgid "Appearance"
 msgstr "Apariencia"
 
 msgid "System follows the light or dark setting of the operating system."
-msgstr "Sistema sigue el modo claro u oscuro del sistema operativo."
+msgstr "\"Sistema\" sigue el modo claro u oscuro del sistema operativo."
 
 msgid "System"
 msgstr "Sistema"
@@ -503,8 +503,8 @@ msgstr "Ninguna carpeta elegida"
 msgid "When a file already exists"
 msgstr "Si un fichero ya existe"
 
-msgid "Existing files are replaced. They are deleted when the extraction completes."
-msgstr "Los ficheros existentes se reemplazan. Se eliminan al terminar la extracción."
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "Los ficheros existentes se reemplazan. Las copias anteriores se guardan hasta que termina la extracción y después se eliminan."
 
 msgid "Existing files are kept, and the archive's copies of them are not."
 msgstr "Los ficheros existentes se conservan, y las copias del archivo no."

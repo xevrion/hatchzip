@@ -208,14 +208,15 @@ mod tests {
         assert_eq!(output_for(&TaskKind::Test, primary, &s), None);
 
         // A default destination moves "Extract to a folder" only.
+        let dir = tempfile::tempdir().unwrap();
         let s = Settings {
             destination: crate::settings::Destination::Folder,
-            destination_folder: Some(PathBuf::from("/data/Extracted")),
+            destination_folder: Some(dir.path().to_path_buf()),
             ..Settings::default()
         };
         assert_eq!(
             output_for(&TaskKind::ExtractTo, primary, &s),
-            Some(PathBuf::from("/data/Extracted/game"))
+            Some(dir.path().join("game"))
         );
         assert_eq!(
             output_for(&TaskKind::ExtractHere, primary, &s),

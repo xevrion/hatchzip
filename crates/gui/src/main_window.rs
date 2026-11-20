@@ -154,9 +154,13 @@ struct App {
     keep_free: Cell<u64>,
     /// Shared with the threads that work out the space plan.
     job: RefCell<SharedJob>,
-    /// Bumped by every open and every plan request, so a slow answer to an
-    /// old question never overwrites a newer one.
+    /// Bumped by every open, so a slow load of an old archive never
+    /// overwrites a newer one.
     generation: Cell<u64>,
+    /// Bumped by every open and every plan request. Kept apart from
+    /// `generation` because a setting changed while an archive loads asks
+    /// for a plan, and that must not throw the load away.
+    plan_generation: Cell<u64>,
     about: RefCell<Option<AboutWindow>>,
     settings_window: RefCell<Option<SettingsWindow>>,
     /// The password that opened the current archive, for this process only.
@@ -171,6 +175,11 @@ struct App {
     /// which may answer later, must not overwrite it.
     shell_touched: Cell<bool>,
     summary: RefCell<Option<Summary>>,
+    /// The default destination's folder picker is open.
+    picking: Cell<bool>,
+    /// The folder it returns is still wanted: choosing "Next to the
+    /// archive" or resetting while it is open turns this off.
+    pick_wanted: Cell<bool>,
 }
 
 thread_local! {
@@ -366,6 +375,7 @@ pub fn build(
         keep_free: Cell::new(settings.keep_free),
         job: RefCell::default(),
         generation: Cell::new(0),
+        plan_generation: Cell::new(0),
         about: RefCell::new(None),
         settings_window: RefCell::new(None),
         password: RefCell::new(None),
@@ -375,6 +385,8 @@ pub fn build(
         loading_timer: Timer::default(),
         shell_touched: Cell::new(false),
         summary: RefCell::new(None),
+        picking: Cell::new(false),
+        pick_wanted: Cell::new(false),
     });
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -547,12 +559,18 @@ impl App {
         self.generation.get()
     }
 
+    fn next_plan_generation(&self) -> u64 {
+        self.plan_generation.set(self.plan_generation.get() + 1);
+        self.plan_generation.get()
+    }
+
     fn open(&self, path: PathBuf) {
         if self.runner.running() {
             return;
         }
         let ui = self.ui();
         let generation = self.next_generation();
+        self.next_plan_generation();
         *self.runner.task.borrow_mut() = None;
         *self.summary.borrow_mut() = None;
         show_task(&ui, TaskView::default());
@@ -713,7 +731,7 @@ impl App {
             });
             return;
         }
-        let generation = self.next_generation();
+        let generation = self.next_plan_generation();
         let job = self.job.borrow().clone();
         let out = self.output.borrow().clone();
         let resuming = self.mode.get() == Mode::Resume;
@@ -742,7 +760,7 @@ impl App {
                 },
             };
             post(move |app| {
-                if generation == app.generation.get() {
+                if generation == app.plan_generation.get() {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
@@ -844,6 +862,9 @@ impl App {
     }
 
     fn choose_destination(&self, destination: Destination) {
+        if destination == Destination::NextToArchive {
+            self.pick_wanted.set(false);
+        }
         let has_folder = self.settings.borrow().destination_folder.is_some();
         if destination == Destination::Folder && !has_folder {
             // Nothing to extract into yet; the choice holds once a folder is.
@@ -856,6 +877,11 @@ impl App {
     }
 
     fn pick_default_folder(&self) {
+        self.pick_wanted.set(true);
+        // A second picker would race the first; the open one answers.
+        if self.picking.get() {
+            return;
+        }
         let Some(w) = self
             .settings_window
             .borrow()
@@ -870,9 +896,17 @@ impl App {
         if let Some(dir) = self.settings.borrow().destination_folder.as_ref() {
             dialog = dialog.set_directory(dir);
         }
+        self.picking.set(true);
         let _ = slint::spawn_local(async move {
             let picked = dialog.pick_folder().await;
-            with_app(|app| app.set_default_folder(picked.map(|d| d.path().to_path_buf())));
+            with_app(|app| {
+                app.picking.set(false);
+                if app.pick_wanted.replace(false) {
+                    app.set_default_folder(picked.map(|d| d.path().to_path_buf()));
+                } else {
+                    app.show_choices();
+                }
+            });
         });
     }
 
@@ -911,6 +945,7 @@ impl App {
     /// never been set up. The right-click menu is the system's, not a
     /// setting, so it stays as it is.
     fn reset_settings(&self) {
+        self.pick_wanted.set(false);
         self.change_settings(|s| *s = Settings::default());
         let defaults = Settings::default();
         let ui = self.ui();

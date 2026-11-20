@@ -503,8 +503,8 @@ msgstr "कोई फ़ोल्डर नहीं चुना गया"
 msgid "When a file already exists"
 msgstr "जब फ़ाइल पहले से मौजूद हो"
 
-msgid "Existing files are replaced. They are deleted when the extraction completes."
-msgstr "मौजूदा फ़ाइलें बदल दी जाती हैं। एक्सट्रैक्शन पूरा होने पर वे हटा दी जाती हैं।"
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "मौजूदा फ़ाइलें बदल दी जाती हैं। पुरानी प्रतियाँ एक्सट्रैक्शन पूरा होने तक रखी जाती हैं, फिर हटा दी जाती हैं।"
 
 msgid "Existing files are kept, and the archive's copies of them are not."
 msgstr "मौजूदा फ़ाइलें रखी जाती हैं, और आर्काइव में उनकी प्रतियाँ नहीं रखी जातीं।"
