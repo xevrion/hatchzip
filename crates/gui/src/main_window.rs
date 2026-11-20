@@ -1215,7 +1215,7 @@ fn wire_settings(w: &SettingsWindow) {
     w.on_show_settings_file(|| with_app(|app| app.show_settings_file()));
     w.on_reset(|| with_app(|app| app.reset_settings()));
     let weak = w.as_weak();
-    w.on_close(move || {
+    w.on_close_requested(move || {
         if let Some(w) = weak.upgrade() {
             let _ = w.hide();
         }

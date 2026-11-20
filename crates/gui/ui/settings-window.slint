@@ -262,7 +262,7 @@ export component SettingsWindow inherits Window {
     callback shell-menu-toggled();
     callback show-settings-file();
     callback reset();
-    callback close();
+    callback close-requested();
 
     function step-section(delta: int) {
         let next = root.section + delta;
@@ -288,7 +288,7 @@ export component SettingsWindow inherits Window {
         focus-on-tab-navigation: false;
         key-pressed(event) => {
             if event.text == Key.Escape {
-                root.close();
+                root.close-requested();
                 return accept;
             }
             // Tab moving the focus, from the controls that turn it down.
