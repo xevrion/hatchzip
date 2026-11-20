@@ -533,9 +533,6 @@ msgstr "Mostrar en el Finder"
 msgid "Show in the file manager"
 msgstr "Mostrar en el gestor de ficheros"
 
-msgid "Reset all settings"
-msgstr "Restablecer todos los ajustes"
-
 msgid "Every setting returns to its default, including the language and the appearance."
 msgstr "Todos los ajustes vuelven a su valor predeterminado, incluidos el idioma y la apariencia."
 

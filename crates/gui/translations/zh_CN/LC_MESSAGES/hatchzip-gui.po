@@ -525,9 +525,6 @@ msgstr "在“访达”中显示"
 msgid "Show in the file manager"
 msgstr "在文件管理器中显示"
 
-msgid "Reset all settings"
-msgstr "重置所有设置"
-
 msgid "Every setting returns to its default, including the language and the appearance."
 msgstr "所有设置都会恢复默认值，包括语言和外观。"
 

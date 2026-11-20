@@ -533,9 +533,6 @@ msgstr "Finder में दिखाएँ"
 msgid "Show in the file manager"
 msgstr "फ़ाइल प्रबंधक में दिखाएँ"
 
-msgid "Reset all settings"
-msgstr "सभी सेटिंग्स रीसेट करें"
-
 msgid "Every setting returns to its default, including the language and the appearance."
 msgstr "हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है, भाषा और रूप भी।"
 
