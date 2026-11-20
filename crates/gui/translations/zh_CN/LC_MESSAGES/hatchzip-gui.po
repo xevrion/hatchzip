@@ -419,3 +419,28 @@ msgstr "唯一的障碍是预留空间：需要 {}，可用 {}，因此可以不
 
 msgid "Available: {}. Required: {}, plus {} reserved."
 msgstr "可用空间：{}。所需空间：{}，另需预留 {}。"
+
+msgid "Archive {} of {}"
+msgstr "压缩包 {0} / {1}"
+
+msgid "All {} archives completed."
+msgstr "所有 {} 个压缩包均已完成。"
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "压缩包 {0} / {1}。还有 {2} 个压缩包未开始。"
+
+msgid "Required: {}. Available: {}."
+msgstr "所需：{}。可用：{}。"
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "测试已取消。压缩包未作修改。"
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "解压已取消。压缩包未作修改。"
+
+msgid "{} {}"
+msgstr "{} {}"
+
+msgid "{} {}."
+msgstr "{} {}。"
