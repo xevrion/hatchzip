@@ -195,11 +195,12 @@ async fn main_and_settings(
     shots.take(ui.window(), "main-start").await?;
 
     // Opened the way a file dropped on the window is.
-    let drop_file = drops.on_drop.borrow();
-    (drop_file
-        .as_ref()
-        .context("the main window takes no drops")?)(archive.clone());
-    drop(drop_file);
+    {
+        let drop_file = drops.on_drop.borrow();
+        (drop_file
+            .as_ref()
+            .context("the main window takes no drops")?)(archive.clone());
+    }
     wait_until("the archive to open", || {
         ui.get_screen() == Screen::Opened && ui.get_plan().ready
     })
