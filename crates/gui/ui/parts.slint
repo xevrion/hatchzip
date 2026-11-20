@@ -250,6 +250,7 @@ export component SpacePanel inherits VerticalLayout {
 export component Progress inherits VerticalLayout {
     in property <TaskView> task;
     spacing: 8px;
+    vertical-stretch: 0;
 
     // The disk-space meter's bar, so the two read as one design. Checking,
     // which has no fraction, shows a spinner instead (Busy).

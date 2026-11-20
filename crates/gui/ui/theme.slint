@@ -56,7 +56,12 @@ export component VLine inherits Rectangle {
 export component Meter inherits Rectangle {
     in property <float> value;
     in property <bool> bad;
+    // A Rectangle stretches by default; a layout holding the bar would then
+    // take spare height from the window and spread it under the bar.
     height: 6px;
+    min-height: 6px;
+    max-height: 6px;
+    vertical-stretch: 0;
     border-radius: 3px;
     background: Theme.track;
     Rectangle {
