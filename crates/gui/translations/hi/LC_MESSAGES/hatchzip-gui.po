@@ -584,3 +584,11 @@ msgid "Extract {} archive inside"
 msgid_plural "Extract {} archives inside"
 msgstr[0] "अंदर का {} आर्काइव एक्सट्रैक्ट करें"
 msgstr[1] "अंदर के {} आर्काइव एक्सट्रैक्ट करें"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "अंदर का {} आर्काइव एक्सट्रैक्ट और हटाएँ"
+msgstr[1] "अंदर के {} आर्काइव एक्सट्रैक्ट और हटाएँ"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "इस रन में लिखी गई फ़ाइलों में ही आर्काइव खोजे गए।"

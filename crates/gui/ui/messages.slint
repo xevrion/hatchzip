@@ -23,6 +23,8 @@ export global Messages {
     public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
     public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
     public function inside-count(n: int, count: string) -> string { return @tr("Extract {} archive inside" | "Extract {} archives inside" % n, count); }
+    public function inside-count-remove(n: int, count: string) -> string { return @tr("Extract and remove {} archive inside" | "Extract and remove {} archives inside" % n, count); }
+    public function inside-partial() -> string { return @tr("Only the files this run wrote were checked for archives."); }
     public function waiting-disk() -> string { return @tr("Waiting for disk"); }
 
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }

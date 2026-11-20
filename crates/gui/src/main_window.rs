@@ -453,6 +453,7 @@ impl App {
         if self.runner.running() {
             return;
         }
+        self.runner.clear_queue();
         let ui = self.ui();
         let generation = self.next_generation();
         self.next_plan_generation();
@@ -1044,6 +1045,7 @@ impl App {
         let Some(archive) = self.archive.borrow().clone() else {
             return;
         };
+        self.runner.clear_queue();
         let ui = self.ui();
         let output = self.output.borrow().clone();
         let keep = self.keeps_archive();
@@ -1074,13 +1076,16 @@ impl App {
     /// folder next to it. Only the files the run wrote are considered, so a
     /// file that was already there is never extracted as if it were new.
     fn extract_inside(&self) {
-        let nested = self
+        let nested: Vec<PathBuf> = self
             .runner
             .task
             .borrow()
             .as_ref()
             .map(|t| t.nested.clone())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
+            .collect();
         if nested.is_empty() {
             return;
         }
@@ -1116,15 +1121,26 @@ impl App {
         if self.runner.running() {
             return;
         }
-        let Some(archive) = self.archive.borrow().clone() else {
+        let Some(archive) = self
+            .runner
+            .archive()
+            .or_else(|| self.archive.borrow().clone())
+        else {
             return;
         };
+        let name = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map_or_else(|| self.name.borrow().clone(), |t| t.name().to_string());
+        self.runner.clear_queue();
         // Restore writes to the archive, so our read handle goes first, as
         // for an extraction.
         let job = self.job.replace(SharedJob::default());
         self.runner.start_after(
             move || drop(job.lock().map(|mut j| j.take())),
-            Task::restore(&self.name.borrow()),
+            Task::restore(&name),
             Request::Restore { archive },
         );
     }
@@ -1133,6 +1149,7 @@ impl App {
         let Some(archive) = self.archive.borrow().clone() else {
             return;
         };
+        self.runner.clear_queue();
         let request = Request::Test {
             archive,
             password: self.password.borrow().clone(),
@@ -1141,6 +1158,7 @@ impl App {
     }
 
     fn back(&self) {
+        self.runner.clear_queue();
         let was_test = self
             .runner
             .task
@@ -1157,7 +1175,10 @@ impl App {
         }
         // Anything else may have changed the archive: look again. The path
         // is copied out first, since opening replaces it.
-        let path = self.archive.borrow().clone();
+        let path = self
+            .runner
+            .archive()
+            .or_else(|| self.archive.borrow().clone());
         if let Some(path) = path {
             self.open(path);
         }

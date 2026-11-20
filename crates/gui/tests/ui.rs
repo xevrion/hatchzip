@@ -475,15 +475,32 @@ fn nested_flow() {
     assert!(!outer.exists(), "the outer archive is gone");
     let nested = dir.path().join("game/data/inner.zip");
     assert!(nested.exists(), "the nested archive is in the output");
-    assert_eq!(ui.get_task().inside, "Extract 1 archive inside");
-    inside_window(&ui, "Extract 1 archive inside");
-    // It still fits at the main window's smallest size.
+    assert_eq!(ui.get_task().inside, "Extract and remove 1 archive inside");
+    inside_window(&ui, "Extract and remove 1 archive inside");
+    // It still fits at the main window's smallest size, in English and in
+    // Spanish, which is the widest.
     ui.window().set_size(LogicalSize::new(640.0, 440.0));
-    inside_window(&ui, "Extract 1 archive inside");
+    inside_window(&ui, "Extract and remove 1 archive inside");
+    ui.invoke_choose_language("es".into());
+    let spanish = ui
+        .global::<hatchzip_gui::Messages>()
+        .invoke_inside_count_remove(1, "1".into());
+    assert_eq!(spanish, "Extraer y eliminar el 1 archivo que contiene");
+    let mut view = ui.get_task();
+    view.inside = spanish.clone();
+    ui.set_task(view);
+    inside_window(&ui, spanish.as_str());
+    ui.invoke_choose_language("en".into());
+    let english = ui
+        .global::<hatchzip_gui::Messages>()
+        .invoke_inside_count_remove(1, "1".into());
+    let mut view = ui.get_task();
+    view.inside = english;
+    ui.set_task(view);
     ui.window().set_size(LogicalSize::new(980.0, 660.0));
     shot(ui.window(), "nested-1-offer");
 
-    click_control(&ui, "Extract 1 archive inside");
+    click_control(&ui, "Extract and remove 1 archive inside");
     let w = ui.as_weak();
     wait_until("the nested extraction", move || {
         let ui = w.unwrap();
@@ -522,6 +539,8 @@ fn nested_task_window_flow() {
     w.write_all(&inner_bytes).unwrap();
     w.finish().unwrap();
 
+    // The task window follows the selected language; use the widest label.
+    slint::select_bundled_translation("es").unwrap();
     let settings = Settings {
         keep_free: 0,
         ..stay_open()
@@ -539,13 +558,19 @@ fn nested_task_window_flow() {
         "{}",
         ui.get_task().message
     );
-    assert_eq!(ui.get_task().inside, "Extract 1 archive inside");
+    assert_eq!(
+        ui.get_task().inside,
+        "Extraer y eliminar el 1 archivo que contiene"
+    );
     let _ = ui.window().take_snapshot().unwrap();
     ui.window().set_size(LogicalSize::new(420.0, 270.0));
     let _ = ui.window().take_snapshot().unwrap();
-    let button = ElementHandle::find_by_accessible_label(&ui, "Extract 1 archive inside")
-        .next()
-        .expect("the offer is visible");
+    let button = ElementHandle::find_by_accessible_label(
+        &ui,
+        "Extraer y eliminar el 1 archivo que contiene",
+    )
+    .next()
+    .expect("the offer is visible");
     let p = button.absolute_position();
     let s = button.size();
     let window = ui.window().size().to_logical(ui.window().scale_factor());

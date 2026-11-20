@@ -63,6 +63,22 @@ impl Runner {
         *self.when_extracted.borrow_mut() = Some(Box::new(f));
     }
 
+    /// The archive the last request works on, which a nested run's window
+    /// needs instead of the parent it no longer has.
+    pub fn archive(&self) -> Option<std::path::PathBuf> {
+        self.request
+            .borrow()
+            .as_ref()
+            .map(|r| r.archive().to_path_buf())
+    }
+
+    /// Forgets the archives still queued after the current one. A run that
+    /// is not a step of the queue calls this before it starts.
+    pub fn clear_queue(&self) {
+        self.queue.borrow_mut().clear();
+        self.place.set((1, 1));
+    }
+
     /// The reserve the last request runs with, after a lowered offer.
     pub fn keep_free(&self) -> Option<u64> {
         match self.request.borrow().as_ref()? {
@@ -314,5 +330,26 @@ impl Runner {
             t.queue = self.step(t);
             (self.show)(t);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clearing_the_queue_forgets_the_rest() {
+        let runner = Runner::install(|_| {});
+        runner.queue.borrow_mut().push_back((
+            Task::test("a.zip"),
+            Request::Test {
+                archive: "game.zip".into(),
+                password: None,
+            },
+        ));
+        runner.place.set((2, 3));
+        runner.clear_queue();
+        assert!(runner.queue.borrow().is_empty());
+        assert_eq!(runner.place.get(), (1, 1));
     }
 }
