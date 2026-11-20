@@ -2,62 +2,71 @@
   lib,
   stdenv,
   rustPlatform,
-  fetchFromGitHub,
   installShellFiles,
   versionCheckHook,
-  nix-update-script,
+  src,
+  version ?
+    (builtins.fromTOML (
+      builtins.readFile "${src}/Cargo.toml"
+    )).workspace.package.version,
+  enableRar ? false,
 }:
-
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "hatchzip";
-  version = "0.1.8";
+  inherit src version;
 
-  src = fetchFromGitHub {
-    owner = "xevrion";
-    repo = "hatchzip";
-    tag = "v${finalAttrs.version}";
-    hash = "sha256-FrbIsX7mgdZEDpFogT+E1dxq6CrMvGwJNB05NdJNNy0=";
-  };
-
-  cargoHash = "sha256-LgGWDN+Dro56ujqbVvbrWKq+0aE1+uNpiK2vl5+2JDE=";
+  cargoLock.lockFile = "${src}/Cargo.lock";
 
   buildAndTestSubdir = "crates/cli";
 
   # The tests lower limits through environment variables that only debug
   # builds read.
   checkType = "debug";
-
-  nativeBuildInputs = [ installShellFiles ];
-
-  # Upstream's own installers also put the short name `hz` on PATH.
-  postInstall = ''
-    ln -s hatchzip $out/bin/hz
-  ''
-  + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
-    installShellCompletion --cmd hatchzip \
-      --bash <($out/bin/hatchzip completions bash) \
-      --fish <($out/bin/hatchzip completions fish) \
-      --zsh <($out/bin/hatchzip completions zsh)
-    $out/bin/hatchzip man > hatchzip.1
-    installManPage hatchzip.1
+  preBuild = ''
+    unset ZSTD_SYS_USE_PKG_CONFIG
+  '';
+  preCheck = ''
+    export HOME="$TMPDIR"
   '';
 
-  nativeInstallCheckInputs = [ versionCheckHook ];
-  doInstallCheck = true;
+  nativeBuildInputs = [installShellFiles];
 
-  passthru.updateScript = nix-update-script { };
+  # Enable RAR feature only if enableRar is selected
+  buildFeatures = lib.optionals enableRar [
+    "rar"
+  ];
+
+  # Upstream's own installers also put the short name `hz` on PATH.
+  postInstall =
+    ''
+      ln -s hatchzip $out/bin/hz
+    ''
+    + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+      installShellCompletion --cmd hatchzip \
+        --bash <($out/bin/hatchzip completions bash) \
+        --fish <($out/bin/hatchzip completions fish) \
+        --zsh <($out/bin/hatchzip completions zsh)
+      $out/bin/hatchzip man > hatchzip.1
+      installManPage hatchzip.1
+    ''
+    + lib.optionalString enableRar ''
+      install -Dm444 ${src}/LICENSE-UNRAR \
+        $out/share/licenses/hatchzip/LICENSE-UNRAR
+    '';
+
+  nativeInstallCheckInputs = [versionCheckHook];
+  doInstallCheck = true;
 
   meta = {
     description = "Extract huge archives in place, needing free space only for the contents";
     homepage = "https://hatchzip.dev";
     changelog = "https://github.com/xevrion/hatchzip/releases/tag/v${finalAttrs.version}";
-    license =
-      with lib.licenses;
-      OR [
-        mit
-        asl20
-      ];
-    maintainers = [ ];
+    license = with lib.licenses;
+      AND (
+        [(OR [mit asl20])]
+        ++ lib.optionals enableRar [unfreeRedistributable]
+      );
+    maintainers = [];
     mainProgram = "hatchzip";
   };
 })
