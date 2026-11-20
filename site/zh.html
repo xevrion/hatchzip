@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://gateway.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>HatchZip：解压压缩包，无需双倍磁盘空间</title>
+<meta name="description" content="HatchZip 是一款免费、开源的 ZIP、7z、RAR 和 tar 解压工具，采用就地解压，只需为解压出的文件预留空间，无需再为压缩包本身留出空间。">
+<link rel="canonical" href="https://hatchzip.dev/zh.html">
+<link rel="alternate" hreflang="en" href="https://hatchzip.dev/">
+<link rel="alternate" hreflang="zh-Hans" href="https://hatchzip.dev/zh.html">
+<link rel="alternate" hreflang="x-default" href="https://hatchzip.dev/">
+<link rel="me" href="https://github.com/xevrion">
+<link rel="me" href="https://x.com/xevrion_the1">
+<meta property="og:url" content="https://hatchzip.dev/zh.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HatchZip">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="HatchZip：解压压缩包，无需双倍磁盘空间">
+<meta property="og:description" content="一款免费、开源的压缩包解压工具，支持 Windows、macOS 和 Linux，采用就地解压，只需为解压出的文件预留空间。">
+<meta property="og:image" content="https://hatchzip.dev/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="HatchZip：解压超大压缩包，无需双倍磁盘空间。">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" type="text/plain" href="llms.txt" title="HatchZip for language models">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"https://hatchzip.dev/#website","name":"HatchZip","alternateName":"hatchzip.dev","url":"https://hatchzip.dev/","inLanguage":"zh-Hans"},
+{"@type":"SoftwareApplication","@id":"https://hatchzip.dev/#software","name":"HatchZip","alternateName":"hatchzip","description":"一款免费、开源的压缩包解压工具，可就地解压 ZIP、7z、RAR、tar 和分卷压缩包，只需为解压出的文件预留空间，而不必同时容纳文件和压缩包。","applicationCategory":"UtilitiesApplication","applicationSubCategory":"压缩包解压工具","operatingSystem":"Windows 10, Windows 11, macOS, Linux","softwareVersion":"0.1.10","url":"https://hatchzip.dev/","downloadUrl":"https://github.com/xevrion/hatchzip/releases/latest","installUrl":"https://hatchzip.dev/#download","license":["https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT","https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"image":"https://hatchzip.dev/img/og.png","screenshot":"https://hatchzip.dev/img/app-light.png","author":{"@type":"Person","@id":"https://hatchzip.dev/#author","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion","https://x.com/xevrion_the1"]},"codeRepository":"https://github.com/xevrion/hatchzip","sameAs":["https://github.com/xevrion/hatchzip","https://crates.io/crates/hatchzip"]},
+{"@type":"FAQPage","@id":"https://hatchzip.dev/#faq","mainEntity":[
+{"@type":"Question","name":"HatchZip 安全吗？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 会在做出任何改动之前检查解压后能否放得下。每个文件都会先写入并刷新到磁盘，然后才截掉压缩包中存放它的部分，因此即使崩溃，每个文件要么已经解压出来，要么仍在压缩包中。每个文件的 CRC-32 都会经过校验，遇到损坏的文件会停止解压。如需确认下载的文件是否为官方原版，请参阅“校验下载文件”页面（英文）。"}},
+{"@type":"Question","name":"HatchZip 需要联网吗？","acceptedAnswer":{"@type":"Answer","text":"不需要。HatchZip 没有任何网络代码和网络库，没有遥测，也没有账户，从不自行检查更新。它读取磁盘上的压缩包，并把文件写到压缩包旁边。如果依赖项中引入了 HTTP、TLS 或 socket 库，它的 CI 就会失败。桌面应用中只有两个链接，分别指向源代码和最新版本（位于“帮助”菜单的“检查更新”），都会在你的网页浏览器中打开。"}},
+{"@type":"Question","name":"HatchZip 能解压哪些压缩格式？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 .exe 文件）、7z、RAR 5 和 RAR 4、普通 tar、.tar.gz 和 .tgz、.tar.xz 和 .txz、ZIP 或 7z 的 .001 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压。暂不支持 .tar.zst。"}},
+{"@type":"Question","name":"HatchZip 需要多少可用空间？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 所需的空间约等于解压出的文件大小，再加上它一次能释放的最大部分：ZIP、tar 和 RAR 为一个文件，7z 为一个固实块。一个 180 GB、解压后为 200 GB 的压缩包，只需略多于 200 GB，而不是 380 GB。它默认还会预留 2 GB 可用空间。hatchzip check 会显示确切数字，且不做任何改动。"}},
+{"@type":"Question","name":"HatchZip 崩溃或被中止会怎样？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 会把进度保存在压缩包旁边的几个小文件中。遇到崩溃、断电或按下 Ctrl+C 后，在应用中打开同一个压缩包，或再次运行同一条命令，它就会从中断处继续。如果想放弃解压，hatchzip restore 会把剩下的部分恢复为普通压缩包，其中包含尚未解压的文件。"}},
+{"@type":"Question","name":"HatchZip 能在 FAT32 和 exFAT 驱动器上使用吗？","acceptedAnswer":{"@type":"Answer","text":"可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。.tar.gz 只有在文件系统能够释放文件的一部分时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。"}}
+]}
+]}
+</script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+<div class="page">
+<aside class="side">
+<a class="brand" href="zh.html"><img src="favicon.svg" alt="" width="48" height="48"><span>HatchZip</span></a>
+<nav aria-label="本页内容">
+<ul>
+<li><a href="#download">下载</a></li>
+<li><a href="#features">功能</a></li>
+<li><a href="#results">实测结果</a></li>
+<li><a href="#limits">限制</a></li>
+<li><a href="#faq">常见问题</a></li>
+<li><a href="verify.html">校验下载文件（英文）</a></li>
+<li><a href="https://github.com/xevrion/hatchzip/blob/main/docs/how-it-works.md">工作原理（英文）</a></li>
+<li><a href="https://github.com/xevrion/hatchzip">源代码</a></li>
+<li><a href="https://github.com/xevrion/hatchzip/issues">报告问题</a></li>
+</ul>
+<p class="label">指南</p>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">空间不足无法解压</a></li>
+<li><a href="zh-winrar-not-enough-space.html">WinRAR 空间不足错误</a></li>
+<li><a href="zh-7zip-not-enough-space.html">7-Zip 空间不足错误</a></li>
+</ul>
+<p class="label">语言</p>
+<ul>
+<li><a href="./" lang="en" hreflang="en">English</a></li>
+</ul>
+</nav>
+</aside>
+
+<div class="content">
+<header class="top">
+<div>
+<h1>HatchZip</h1>
+<p class="lead">解压超大压缩包，无需双倍磁盘空间。</p>
+</div>
+<div class="links">
+<a class="gh" href="https://github.com/xevrion/hatchzip"><svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>在 GitHub 上加星标</span></a>
+<a class="gh" href="sponsor.html"><svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="#bf3989" d="M7.655 14.916v-.001h-.002l-.006-.003-.018-.01a22.066 22.066 0 0 1-3.744-2.584C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.044 5.231-3.886 6.818a22.094 22.094 0 0 1-3.433 2.414 7.152 7.152 0 0 1-.31.17l-.018.01-.008.004a.75.75 0 0 1-.69 0Z"/></svg><span>赞助</span></a>
+<a class="gh" href="https://buymeacoffee.com/xevrion"><span>请我喝杯咖啡</span></a>
+</div>
+</header>
+<main>
+<p>HatchZip 是一款免费、开源的压缩包解压工具，支持 Windows、macOS 和 Linux，可以就地解压 ZIP、7z、RAR 和 tar 压缩包。压缩包中每一部分的文件安全写入磁盘后，它就会删除这一部分，因此只需为解压出的文件预留空间，而不必同时容纳文件和压缩包。它提供桌面应用和命令行工具两种形式。</p>
+<p>一个 180 GB、解压后为 200 GB 的压缩包，用 WinRAR、7-Zip 或 <code>unzip</code> 解压需要 380 GB 磁盘空间，因为压缩包和解压出的文件必须同时存在。HatchZip 只需略多于 200 GB：它从压缩包末尾开始解压，每解压完一部分，就把这一部分从压缩包文件中截掉，边解压边删除，空间也随之释放。</p>
+<img class="shot" src="img/how.webp" width="960" height="540" alt="动画演示：HatchZip 把压缩包的最后一部分解压到文件夹中，再把这一部分从压缩包中截掉，因此磁盘上从不会同时存放压缩包和全部文件。">
+
+<section aria-labelledby="download">
+<h2 id="download">下载</h2>
+<p class="gets">
+<a class="get" href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-setup.exe">Windows</a>
+<a class="get" href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-aarch64.dmg">macOS</a>
+<a class="get" href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.AppImage">Linux</a>
+</p>
+<p class="note">支持 64 位 Windows 10 和 11。macOS 版本适用于搭载 Apple 芯片（M1 及更新型号）的 Mac；较旧的 Intel Mac 请下载 <a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.dmg">Intel 版本</a>。Linux 版本为 AppImage，可在大多数发行版上运行；<a href="#all-downloads">.deb 和 .rpm 软件包</a>见下文。</p>
+
+<h3>使用方法</h3>
+<ol>
+<li>安装。HatchZip 目前尚未进行代码签名，因此 Windows 可能会显示“Windows 已保护你的电脑”：请点击“更多信息”，再点击“仍要运行”。在 Mac 上，先打开一次应用，然后在“系统设置”的“隐私与安全性”中允许它运行。</li>
+<li>右键点击压缩包，选择 HatchZip，再选择 Extract here（Windows 和 Linux）。在 Windows 11 上，该菜单位于“显示更多选项”中。</li>
+<li>也可以打开 HatchZip 应用，打开压缩包或把它拖到窗口上，然后选择“解压”。</li>
+</ol>
+<p>HatchZip 会在做出任何改动之前告诉你文件能否放得下。压缩包会随着文件解压出来而逐步删除，因此解压完成后，只剩下解压出的文件。</p>
+<picture>
+<source srcset="img/app-dark.png" media="(prefers-color-scheme: dark)">
+<img class="shot" src="img/app-light.png" width="980" height="660" alt="打开了压缩包的 HatchZip 窗口：左侧是文件列表，右侧是所需的磁盘空间，并与常规解压方式进行对比。">
+</picture>
+
+<h3 id="all-downloads">全部下载</h3>
+<table class="stack">
+<caption>命令行工具</caption>
+<thead>
+<tr><th scope="col">平台</th><th scope="col">文件</th><th scope="col">类型</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Windows x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-x86_64-windows.zip">hatchzip-x86_64-windows.zip</a></td><td data-label="类型">zip</td></tr>
+<tr><th scope="row">macOS Apple 芯片</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-aarch64-macos.tar.gz">hatchzip-aarch64-macos.tar.gz</a></td><td data-label="类型">tar.gz</td></tr>
+<tr><th scope="row">macOS Intel</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-x86_64-macos.tar.gz">hatchzip-x86_64-macos.tar.gz</a></td><td data-label="类型">tar.gz</td></tr>
+<tr><th scope="row">Linux x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-x86_64-linux.tar.gz">hatchzip-x86_64-linux.tar.gz</a></td><td data-label="类型">tar.gz</td></tr>
+<tr><th scope="row">Linux ARM64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-aarch64-linux.tar.gz">hatchzip-aarch64-linux.tar.gz</a></td><td data-label="类型">tar.gz</td></tr>
+</tbody>
+</table>
+
+<table class="stack">
+<caption>桌面应用</caption>
+<thead>
+<tr><th scope="col">平台</th><th scope="col">文件</th><th scope="col">类型</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Windows x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-setup.exe">HatchZip-x64-setup.exe</a></td><td data-label="类型">安装程序</td></tr>
+<tr><th scope="row">Windows x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64.msi">HatchZip-x64.msi</a></td><td data-label="类型">MSI 安装程序</td></tr>
+<tr><th scope="row">Windows x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-portable.zip">HatchZip-x64-portable.zip</a></td><td data-label="类型">便携版 zip</td></tr>
+<tr><th scope="row">macOS Apple 芯片</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-aarch64.dmg">HatchZip-aarch64.dmg</a></td><td data-label="类型">磁盘映像</td></tr>
+<tr><th scope="row">macOS Intel</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.dmg">HatchZip-x86_64.dmg</a></td><td data-label="类型">磁盘映像</td></tr>
+<tr><th scope="row">Linux x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip_amd64.deb">hatchzip_amd64.deb</a></td><td data-label="类型">deb 软件包</td></tr>
+<tr><th scope="row">Linux x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip-x86_64.rpm">hatchzip-x86_64.rpm</a></td><td data-label="类型">rpm 软件包</td></tr>
+<tr><th scope="row">Linux x64</th><td data-label="文件"><a href="https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.AppImage">HatchZip-x86_64.AppImage</a></td><td data-label="类型">AppImage</td></tr>
+</tbody>
+</table>
+<p class="note">MSI 安装的是与安装程序相同的应用，供部署工具使用；两者任选其一安装即可。便携版 zip 包含同样的应用和命令行工具：解压到任意位置后运行 <code>hatchzip-gui.exe</code> 即可。Windows 下载文件和 macOS 应用目前尚未进行代码签名；Windows 下载文件将通过 SignPath Foundation 签名，详见<a href="code-signing.html">代码签名政策（英文）</a>。在 Windows 上请点击“更多信息”，再点击“仍要运行”。在 macOS 上，先打开一次应用，然后在“系统设置”的“隐私与安全性”中允许它运行。</p>
+<p>HatchZip 不使用网络。如需确认下载的文件是否为官方原版，可以比对它的 SHA-256 校验和，或验证它经过签名的构建来源证明：<a href="verify.html">校验下载文件（英文）</a>。</p>
+
+<p>也可以在终端中安装。Linux 和 macOS：</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/xevrion/hatchzip/main/install.sh | sh</code></pre>
+<p>Windows（在 PowerShell 中）：</p>
+<pre><code>irm https://raw.githubusercontent.com/xevrion/hatchzip/main/install.ps1 | iex</code></pre>
+<p>如果已安装 Rust，也可以运行 <code>cargo binstall hatchzip</code> 下载发布版本，或运行 <code>cargo install hatchzip</code> 从源代码构建。</p>
+<p>然后运行 <code>hatchzip check game.zip</code> 查看能否放得下，运行 <code>hatchzip extract game.zip</code> 进行解压。也可以使用简短的命令名 <code>hz</code>，<code>man hatchzip</code> 提供完整手册。</p>
+<p><a href="https://github.com/xevrion/hatchzip/releases">所有版本</a></p>
+</section>
+
+<section aria-labelledby="features">
+<h2 id="features">功能</h2>
+<ul>
+<li>解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、普通 tar、<code>.tar.gz</code>、<code>.tgz</code>、<code>.tar.xz</code> 和 <code>.txz</code>，以及 ZIP 或 7z 的分卷压缩包（<code>.001</code>、<code>.002</code>、...）。</li>
+<li>解压 RAR 5 和 RAR 4，包括单个文件和分卷（<code>.part1.rar</code>、... 或 <code>.rar</code>、<code>.r00</code>、...），逐个文件释放压缩包占用的空间，每个分卷清空后即删除，也支持用“加密文件名”选项创建的压缩包。固实 RAR 只能在保留压缩包的情况下解压。RAR 支持包含在本网站和发布页面提供的下载文件中，通过 <code>cargo install hatchzip</code> 安装的版本不包含 RAR 支持。</li>
+<li><code>.tar.gz</code> 或 <code>.tar.xz</code> 会在做出任何改动之前从头到尾完整读取一遍，因此损坏的压缩包会被拒绝，且保持原样。之后，在 NTFS（Windows）、APFS（macOS）、ext4、XFS、btrfs 以及其他能够释放文件一部分的文件系统上，它会边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，中断后也能继续，但需要能同时容纳压缩包和文件的空间。</li>
+<li>在做出任何改动之前，先检查解压后能否放得下。</li>
+<li>在做出任何改动之前，在应用中以文件夹树的形式显示压缩包内容，并显示各文件夹的大小。</li>
+<li>空间足够同时容纳两者时，也可以常规解压并保留压缩包：使用 <code>--keep-archive</code>、应用中的选项，或右键菜单中的 Extract here (keep archive)。如果保留压缩包放不下，它会告诉你改用就地解压需要多少空间。</li>
+<li>可以依次解压多个压缩包，每个开始前都会检查所需空间。一旦某个压缩包未能完成，整个任务就会停止，并列出哪些已解压、哪些未解压。</li>
+<li>默认预留 2 GB 可用空间，确保磁盘不会被完全占满。可以用 <code>--keep-free</code> 修改。</li>
+<li>随时可以用 Ctrl+C 停止，即使中途崩溃也不要紧。再次运行同一条命令，它会从中断处继续。</li>
+<li>解压时逐个检查文件的 CRC-32。遇到损坏的文件会停止解压，该文件仍保留在压缩包中。</li>
+<li>如果压缩包旁边有与其同名的 <code>.sfv</code> 文件，会在做出任何改动之前用它校验每个分卷。</li>
+<li>从不覆盖已存在的文件，因此“解压到此处”是安全的。</li>
+<li>可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。它会在删除任何内容之前验证密码，并且从不保存密码。</li>
+<li>适用于任何能够缩短文件的文件系统：ext4、btrfs、XFS、NTFS、APFS，以及 exFAT 和 FAT32 格式的 U 盘。</li>
+</ul>
+</section>
+
+<section aria-labelledby="results">
+<h2 id="results">实测结果</h2>
+<p>同样的 200 MB 游戏数据（21 个文件），分别用相应的真实工具打包，在一个只剩约 50 MB 可用空间的 220 MiB 磁盘上解压：</p>
+<table class="stack">
+<thead>
+<tr><th scope="col">压缩包</th><th scope="col"><code>unzip</code> / <span class="nw">7-Zip</span></th><th scope="col">HatchZip</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">ZIP，180 MB</th><td data-label="unzip / 7-Zip"><code>unzip</code> 解压到第 6 个文件（共 21 个）时空间不足</td><td data-label="HatchZip">完成，每个文件逐字节一致</td></tr>
+<tr><th scope="row"><span class="nw">7-Zip</span> 25.01 创建的 7z，<code>-ms=20m</code>（10 个固实块）</th><td data-label="unzip / 7-Zip">需要 380 MB</td><td data-label="HatchZip">0.64 s 完成，每个文件逐字节一致</td></tr>
+<tr><th scope="row">分为 5 个 40 MB 分卷的 7z</th><td data-label="unzip / 7-Zip">需要 380 MB</td><td data-label="HatchZip">完成；分卷逐个删除，峰值占用 210 MB</td></tr>
+<tr><th scope="row">GNU tar 创建的 tar，200 MB</th><td data-label="unzip / 7-Zip">需要 400 MB</td><td data-label="HatchZip">0.12 s 完成，每个文件逐字节一致</td></tr>
+<tr><th scope="row"><span class="nw">7-Zip</span> 默认设置创建的 7z（1 个固实块）</th><td data-label="unzip / 7-Zip">需要 380 MB</td><td data-label="HatchZip">未做任何改动即拒绝：单个固实块必须全部解压出来后才能释放，因此需要 200 MB 可用空间</td></tr>
+</tbody>
+</table>
+<p>同样数据的 ZIP 解压耗时 0.25 到 0.35 s（其中包括 <code>unzip</code> 省略的一次 fsync），而 <code>unzip</code> 6.00 需要 1.48 到 1.50 s。为测试崩溃安全性，在每种格式解压过程中的许多时间点，于批次的两个不安全时刻分别强制结束进程；每次继续解压后的输出都完全一致。</p>
+<p class="note">测试环境：Fedora 43，Intel Core i7-14700HX，SK Hynix NVMe SSD，页面缓存已预热；磁盘空间测试使用 220 MiB 的 tmpfs 模拟空间已满的笔记本电脑磁盘，速度测试使用 ext4。速度提升来自并行解压多个文件，因此只包含一个超大文件的压缩包只能以单核速度解压。</p>
+</section>
+
+<section aria-labelledby="limits">
+<h2 id="limits">限制</h2>
+<ul>
+<li>用 7-Zip 默认设置创建的 7z 可能只有一个固实块。HatchZip 只有在这个块全部解压出来后才能释放它，因此需要能容纳整个块的可用空间。<code>hatchzip check</code> 会在做出任何改动之前告诉你。</li>
+<li>暂不支持 <code>.tar.zst</code>，会在解压前拒绝。</li>
+<li>以单个块创建（<code>xz -T1</code> 生成的就是这种）或没有完整性校验的 <code>.tar.xz</code>，只能在保留压缩包的情况下解压。</li>
+<li>固实 RAR 只能从头到尾一次性解码，因此无法边解压边释放空间；只能在保留压缩包的情况下解压。包含链接的 RAR 压缩包会在解压前被拒绝；加密了文件名的 RAR 压缩包在部分解压后无法恢复，只能继续完成解压。</li>
+<li>压缩包会在解压过程中逐步删除。如果下载的文件本身已损坏，损坏位置之前的文件会被解压出来，而压缩包已被部分删除。如果无法重新下载，请使用 <code>--verify-first</code>。</li>
+</ul>
+</section>
+
+<section aria-labelledby="faq">
+<h2 id="faq">常见问题</h2>
+<h3>HatchZip 安全吗？</h3>
+<p>HatchZip 会在做出任何改动之前检查解压后能否放得下。每个文件都会先写入并刷新到磁盘，然后才截掉压缩包中存放它的部分，因此即使崩溃，每个文件要么已经解压出来，要么仍在压缩包中。每个文件的 CRC-32 都会经过校验，遇到损坏的文件会停止解压。如需确认下载的文件是否为官方原版，请参阅<a href="verify.html">校验下载文件（英文）</a>。</p>
+<h3>HatchZip 需要联网吗？</h3>
+<p>不需要。HatchZip 没有任何网络代码和网络库，没有遥测，也没有账户，从不自行检查更新。它读取磁盘上的压缩包，并把文件写到压缩包旁边。如果依赖项中引入了 HTTP、TLS 或 socket 库，它的 CI 就会失败。桌面应用中只有两个链接，分别指向源代码和最新版本（位于“帮助”菜单的“检查更新”），都会在你的网页浏览器中打开。</p>
+<h3>HatchZip 能解压哪些压缩格式？</h3>
+<p>HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、RAR 5 和 RAR 4、普通 tar、<code>.tar.gz</code> 和 <code>.tgz</code>、<code>.tar.xz</code> 和 <code>.txz</code>、ZIP 或 7z 的 <code>.001</code> 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压。暂不支持 <code>.tar.zst</code>。</p>
+<h3>HatchZip 需要多少可用空间？</h3>
+<p>HatchZip 所需的空间约等于解压出的文件大小，再加上它一次能释放的最大部分：ZIP、tar 和 RAR 为一个文件，7z 为一个固实块。一个 180 GB、解压后为 200 GB 的压缩包，只需略多于 200 GB，而不是 380 GB。它默认还会预留 2 GB 可用空间。<code>hatchzip check</code> 会显示确切数字，且不做任何改动。</p>
+<h3>HatchZip 崩溃或被中止会怎样？</h3>
+<p>HatchZip 会把进度保存在压缩包旁边的几个小文件中。遇到崩溃、断电或按下 Ctrl+C 后，在应用中打开同一个压缩包，或再次运行同一条命令，它就会从中断处继续。如果想放弃解压，<code>hatchzip restore</code> 会把剩下的部分恢复为普通压缩包，其中包含尚未解压的文件。</p>
+<h3>HatchZip 能在 FAT32 和 exFAT 驱动器上使用吗？</h3>
+<p>可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。<code>.tar.gz</code> 只有在文件系统能够释放文件的一部分时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。</p>
+</section>
+
+<section aria-labelledby="guides">
+<h2 id="guides">指南</h2>
+<ul>
+<li><a href="zh-not-enough-space-to-extract.html">磁盘空间不足，无法解压 ZIP、RAR 或 7z</a>：原因和各种解决方法，附实测。</li>
+<li><a href="zh-winrar-not-enough-space.html">磁盘明明有空间，WinRAR 却提示空间不足</a>：临时文件夹、FAT32 及其他原因。</li>
+<li><a href="zh-7zip-not-enough-space.html">7-Zip 提示磁盘空间不足</a>：拖放、FAT32，以及放不下的压缩包。</li>
+</ul>
+</section>
+</main>
+
+<footer>
+<p>HatchZip 采用 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT">MIT</a> 或 <a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE">Apache-2.0</a> 许可证。下载版本使用 UnRAR 解码 RAR，UnRAR 适用其自身的<a href="https://github.com/xevrion/hatchzip/blob/main/LICENSE-UNRAR">许可证（英文）</a>。<a href="https://github.com/xevrion/hatchzip">GitHub 上的源代码</a>。<a href="verify.html">校验下载文件（英文）</a>。<a href="code-signing.html">代码签名政策（英文）</a>。<a href="https://github.com/xevrion/hatchzip/issues">报告问题</a>。</p>
+<p>由 Yash Bavadiya（<a href="https://x.com/xevrion_the1">@xevrion_the1</a>）开发。</p>
+<p>HatchZip 仅通过 <a href="https://github.com/xevrion/hatchzip/releases">github.com/xevrion/hatchzip</a> 和本网站分发。其他使用该名称的网站（例如 hatchzip.com）与本项目无关。</p>
+</footer>
+</div>
+</div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
+</body>
+</html>

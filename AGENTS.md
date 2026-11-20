@@ -50,6 +50,8 @@ The desktop app is translated; `crates/gui/translations/README.md` has the detai
 
 ## Copy
 
+- The site has Simplified Chinese copies of the homepage and the three guides (`site/zh.html`, `site/zh-*.html`). A change to one of those English pages updates its Chinese page in the same pull request, with the app's terms from `crates/gui/translations/zh_CN`.
+
 - README and docs are clear, neutral, professional English, sentence case headings, no first person.
 - No em dashes and no unicode arrows anywhere: code, comments, commits, docs, CLI output.
 
