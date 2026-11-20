@@ -13,6 +13,13 @@ export global Theme {
     out property <brush> faint: dark ? #ffffff66 : #00000066;
     out property <brush> danger: dark ? #ff99a4 : #c42b1c;
     out property <brush> panel: dark ? #ffffff08 : #00000005;
+    // Read-only path fields: a text field's white fill, so they don't read
+    // as disabled the way a gray one did in light, and an even edge without
+    // the editable field's darker bottom stroke or focus ring, so they don't
+    // invite typing. Not the palette's control background: on macOS that
+    // is gray in light and a bright gray in dark.
+    out property <brush> field: dark ? #ffffff0f : #ffffff;
+    out property <brush> field-edge: dark ? #ffffff1f : #00000024;
     out property <brush> track: dark ? #ffffff1f : #00000014;
     // Line icons that are controls, such as the gear: stronger than muted
     // text, so a thin outline still reads at 1x.
@@ -84,8 +91,8 @@ export component PathLine inherits Rectangle {
     min-height: line.preferred-height + 8px;
     border-radius: 4px;
     border-width: 1px;
-    border-color: Theme.line;
-    background: Theme.panel;
+    border-color: Theme.field-edge;
+    background: Theme.field;
     accessible-role: AccessibleRole.text;
     accessible-label: root.label;
     accessible-value: root.text;
@@ -124,8 +131,8 @@ export component PathBlock inherits Rectangle {
     min-height: max(28px, body.preferred-height + 12px);
     border-radius: 4px;
     border-width: 1px;
-    border-color: Theme.line;
-    background: Theme.panel;
+    border-color: Theme.field-edge;
+    background: Theme.field;
     accessible-role: AccessibleRole.text;
     accessible-label: root.label;
     accessible-value: root.text;
