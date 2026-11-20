@@ -324,7 +324,7 @@ pub fn build(
                 };
                 view.rate = ui.invoke_task_rate(human(speed).into(), duration.into());
             }
-            ui.set_task(view);
+            show_task(&ui, view);
         }
     });
     let app = Rc::new(App {
@@ -494,7 +494,7 @@ impl App {
         let ui = self.ui();
         let generation = self.next_generation();
         *self.runner.task.borrow_mut() = None;
-        ui.set_task(TaskView::default());
+        show_task(&ui, TaskView::default());
         ui.set_plan(PlanView::default());
         ui.set_entries(ModelRc::default());
         *self.entries.borrow_mut() = None;
@@ -827,7 +827,7 @@ impl App {
         // A test only reads, so the archive is as it was.
         if was_test {
             *self.runner.task.borrow_mut() = None;
-            self.ui().set_task(TaskView::default());
+            show_task(&self.ui(), TaskView::default());
             return;
         }
         // Anything else may have changed the archive: look again. The path
@@ -865,4 +865,15 @@ impl App {
             let _ = w.show();
         }
     }
+}
+
+/// Shows `view` in the main window. File > Open has a property of its own:
+/// bound to `task.phase`, Windows' native menu bar was rebuilt on every
+/// progress tick, which made the whole window flash during a run (#123).
+fn show_task(ui: &MainWindow, view: TaskView) {
+    ui.set_can_open(matches!(
+        view.phase,
+        crate::Phase::Idle | crate::Phase::Done
+    ));
+    ui.set_task(view);
 }

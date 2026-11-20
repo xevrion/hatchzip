@@ -169,6 +169,10 @@ export component MainWindow inherits Window {
     // The half-extracted run being resumed keeps its archive.
     in property <bool> kept-run;
     in property <TaskView> task;
+    // Set from Rust only when it changes: the menu bar is a native menu on
+    // Windows, rebuilt whenever a property it reads is touched, and `task`
+    // is replaced on every progress tick.
+    in property <bool> can-open: true;
     in property <bool> password-shown;
     in property <bool> password-wrong;
     in property <string> password-name;
@@ -291,7 +295,7 @@ export component MainWindow inherits Window {
             MenuItem {
                 title: @tr("Open…");
                 shortcut: @keys(Control + O);
-                enabled: root.task.phase == Phase.idle || root.task.phase == Phase.done;
+                enabled: root.can-open;
                 activated => {
                     root.open-archive();
                 }
