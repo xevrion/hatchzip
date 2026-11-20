@@ -40,6 +40,15 @@ msgstr "Buscar actualizaciones"
 msgid "About HatchZip"
 msgstr "Acerca de HatchZip"
 
+msgid "Version {}"
+msgstr "Versión {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "Extrae archivos grandes en el mismo lugar. El archivo se elimina de forma progresiva durante la extracción, así que solo se necesita espacio para los ficheros extraídos."
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "Con licencia MIT o Apache-2.0"
+
 msgid "Drop the archive to open it"
 msgstr "Suelta el archivo para abrirlo"
 

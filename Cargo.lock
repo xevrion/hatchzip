@@ -2038,6 +2038,7 @@ dependencies = [
  "serde_json",
  "slint",
  "slint-build",
+ "sys-locale",
  "tempfile",
  "winresource",
  "zip",

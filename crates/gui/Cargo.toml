@@ -20,6 +20,9 @@ png = "0.18.1"
 rfd = "0.17.2"
 serde.workspace = true
 serde_json.workspace = true
+# The system's preferred languages, in order, to pick a translation from
+# (src/locale.rs). Already in the tree through Slint.
+sys-locale = "0.3.2"
 # No Qt backend: winit with FemtoVG (OpenGL) first and the software renderer
 # as the fallback for machines without a working GPU driver. `~1.18` because
 # `unstable-winit-030`, needed for files dropped on the window, may change in

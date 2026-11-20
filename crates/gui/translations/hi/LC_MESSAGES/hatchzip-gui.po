@@ -40,6 +40,15 @@ msgstr "अपडेट देखें"
 msgid "About HatchZip"
 msgstr "HatchZip के बारे में"
 
+msgid "Version {}"
+msgstr "संस्करण {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "बड़े आर्काइव को उसी जगह एक्सट्रैक्ट करता है। एक्सट्रैक्शन के दौरान आर्काइव धीरे-धीरे हटता है, इसलिए केवल एक्सट्रैक्ट की गई फ़ाइलों के लिए जगह चाहिए।"
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "MIT या Apache-2.0 लाइसेंस के तहत उपलब्ध"
+
 msgid "Drop the archive to open it"
 msgstr "आर्काइव खोलने के लिए यहाँ छोड़ें"
 
