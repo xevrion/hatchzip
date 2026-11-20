@@ -83,6 +83,8 @@ fn every_setting_applies_at_once_and_is_saved() {
     let archive = make_zip(dir.path());
     let file = dir.path().join("config/settings.json");
     let chosen = dir.path().join("Extracted");
+    // A default folder only counts while it exists.
+    std::fs::create_dir(&chosen).unwrap();
     // A folder picked before, with "Next to the archive" in effect, so the
     // destination can be switched without a folder picker.
     let start = Settings {

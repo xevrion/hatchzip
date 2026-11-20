@@ -186,7 +186,19 @@ impl Settings {
         let tmp = path.with_extension("json.tmp");
         let json = serde_json::to_vec_pretty(self)?;
         std::fs::write(&tmp, json).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+        // Windows refuses to replace a file another program has open, and a
+        // virus scanner or a backup tool briefly opens a fresh one; it is
+        // closed again within milliseconds.
+        let mut tries = 0;
+        loop {
+            match std::fs::rename(&tmp, path) {
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 10 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                r => return r.with_context(|| format!("replacing {}", path.display())),
+            }
+        }
     }
 
     /// Saves to `path` on a background thread. Saves are queued in order, so
