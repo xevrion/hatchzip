@@ -22,8 +22,13 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
     let gui = Path::new("/opt/Hatch Zip/it's/hatchzip-gui");
 
     assert!(!is_registered(&dirs));
-    register(&dirs, gui).unwrap();
+    let places = register(&dirs, gui).unwrap();
     assert!(is_registered(&dirs));
+    assert!(
+        places
+            .iter()
+            .any(|p| p.starts_with("Thunar: ") && p.contains("thunar -q"))
+    );
 
     let kde = dirs.data.join("kio/servicemenus/hatchzip.desktop");
     let text = std::fs::read_to_string(&kde).unwrap();
@@ -77,7 +82,13 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
          <unique-id>hatchzip-extract-here-keep</unique-id>\n    \
          <command>'/opt/Hatch Zip/it'\\''s/hatchzip-gui' --keep-archive --extract-here %F</command>"
     ));
-    assert!(thunar.contains("<patterns>*.zip;*.7z;*.tar;"));
+    assert!(thunar.contains("<patterns>*.zip;*.ZIP;*.7z;*.7Z;*.tar;*.TAR;"));
+    assert!(thunar.contains(";*.XZ;*.001"));
+    assert_eq!(
+        thunar.matches("*.001").count(),
+        ACTIONS.len(),
+        "no upper-case 001"
+    );
 
     // Running it twice is harmless, and so is unregistering twice.
     register(&dirs, gui).unwrap();
@@ -171,7 +182,30 @@ fn thunar_keeps_every_action_that_is_not_hatchzips() {
     assert!(text.contains("<name>Open Terminal Here</name>"));
     assert_eq!(text.matches("<action>").count(), 1 + ACTIONS.len());
     unregister(&dirs).unwrap();
-    assert_eq!(std::fs::read_to_string(&uca).unwrap(), defaults);
+    assert!(
+        !uca.exists(),
+        "the copy goes, so Thunar reads the defaults again"
+    );
+    assert!(!dirs.config.join("hatchzip/thunar-uca-created").exists());
+
+    // Once the user adds an action to the copy, it is theirs to keep.
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    let added = text.replacen(
+        "<actions>\n",
+        "<actions>\n<action><unique-id>3-3</unique-id></action>\n",
+        1,
+    );
+    std::fs::write(&uca, &added).unwrap();
+    unregister(&dirs).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&uca).unwrap(),
+        defaults.replacen(
+            "<actions>\n",
+            "<actions>\n<action><unique-id>3-3</unique-id></action>\n",
+            1
+        )
+    );
 
     // The user's own file, as Thunar writes it, with an action of theirs on
     // either side of an older HatchZip entry.
@@ -198,12 +232,115 @@ fn thunar_keeps_every_action_that_is_not_hatchzips() {
         )
     );
 
-    // Something that is not an actions file is never overwritten.
+    // Something that is not an actions file is never overwritten, and only
+    // the Thunar menu is skipped.
     std::fs::write(&uca, "not xml").unwrap();
     std::fs::remove_dir_all(&dirs.data).unwrap();
-    assert!(register(&dirs, gui).is_err());
+    let places = register(&dirs, gui).unwrap();
+    assert!(places.iter().any(|p| p.starts_with("Thunar: skipped, ")));
     assert_eq!(std::fs::read_to_string(&uca).unwrap(), "not xml");
-    assert!(!dirs.data.exists(), "no other menu is written either");
+    assert!(dirs.data.join("kio/servicemenus/hatchzip.desktop").exists());
+}
+
+/// A Thunar file HatchZip can't read or edit skips only Thunar, and says
+/// which file it was.
+#[cfg(target_os = "linux")]
+#[test]
+fn thunar_skips_what_it_cannot_edit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use hatchzip_shell::{ACTIONS, unregister};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let system = tmp.path().join("xdg");
+    std::fs::create_dir_all(system.join("Thunar")).unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: vec![system.clone()],
+    };
+    std::fs::create_dir_all(dirs.config.join("Thunar")).unwrap();
+    let uca = dirs.config.join("Thunar/uca.xml");
+    let gui = Path::new("/usr/bin/hatchzip-gui");
+    let skipped = |places: Vec<String>| {
+        places
+            .into_iter()
+            .find(|p| p.starts_with("Thunar: skipped, "))
+            .unwrap_or_default()
+    };
+
+    // The user's file in Latin-1, which Thunar's parser refuses too.
+    let latin1 = b"<actions><action><name>Caf\xe9</name></action></actions>\n";
+    std::fs::write(&uca, latin1).unwrap();
+    let line = skipped(register(&dirs, gui).unwrap());
+    assert!(line.contains(&uca.display().to_string()), "{line}");
+    assert_eq!(std::fs::read(&uca).unwrap(), latin1);
+    assert!(dirs.data.join("kio/servicemenus/hatchzip.desktop").exists());
+    unregister(&dirs).unwrap_err();
+    std::fs::remove_file(&uca).unwrap();
+
+    // A system file that can't be copied names the system file.
+    let system_uca = system.join("Thunar/uca.xml");
+    std::fs::write(&system_uca, "<actions><action></actions>").unwrap();
+    let line = skipped(register(&dirs, gui).unwrap());
+    assert!(line.contains(&system_uca.display().to_string()), "{line}");
+    assert!(!uca.exists());
+    unregister(&dirs).unwrap();
+
+    // One that can't be read at all is reported, not passed over. Root reads
+    // it anyway, so this only shows as a normal user.
+    std::fs::write(&system_uca, "<actions/>").unwrap();
+    std::fs::set_permissions(&system_uca, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&system_uca).is_err() {
+        let line = skipped(register(&dirs, gui).unwrap());
+        assert!(line.contains(&system_uca.display().to_string()), "{line}");
+        assert!(!uca.exists());
+    }
+    std::fs::remove_file(&system_uca).unwrap();
+
+    // Only XML's own five entities exist in Thunar's file.
+    let nbsp = "<actions><action><name>A&nbsp;B</name></action></actions>\n";
+    std::fs::write(&uca, nbsp).unwrap();
+    assert!(!skipped(register(&dirs, gui).unwrap()).is_empty());
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), nbsp);
+
+    // A symlinked file stays a link, its target keeps its permissions, and
+    // a Thunar-only registration still counts as registered.
+    unregister(&dirs).unwrap();
+    std::fs::remove_file(&uca).unwrap();
+    let target = tmp.path().join("dotfiles/uca.xml");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, "<actions/>\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::os::unix::fs::symlink(&target, &uca).unwrap();
+    assert!(skipped(register(&dirs, gui).unwrap()).is_empty());
+    assert!(
+        std::fs::symlink_metadata(&uca)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let text = std::fs::read_to_string(&target).unwrap();
+    assert_eq!(text.matches("<action>").count(), ACTIONS.len());
+    assert_eq!(
+        std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    std::fs::remove_dir_all(&dirs.data).unwrap();
+    assert!(is_registered(&dirs));
+    unregister(&dirs).unwrap();
+    assert!(!is_registered(&dirs));
+    assert!(
+        std::fs::symlink_metadata(&uca)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        !std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("hatchzip-")
+    );
 }
 
 /// Files that would trip a plain text search: a comment naming the end tag, an
@@ -243,13 +380,12 @@ fn thunar_reads_the_file_as_xml_not_text() {
     assert!(!left.contains("hatchzip-"));
     assert!(left.ends_with("</actions><!-- Mentions </actions> here. -->\n"));
 
-    // A broken file is refused before any menu is written.
+    // A broken file is left alone, and only Thunar is skipped.
     let broken = "<actions><action><name>Incomplete</name></actions>";
     std::fs::write(&uca, broken).unwrap();
-    std::fs::remove_dir_all(&dirs.data).unwrap();
-    assert!(register(&dirs, gui).is_err());
+    let places = register(&dirs, gui).unwrap();
+    assert!(places.iter().any(|p| p.starts_with("Thunar: skipped, ")));
     assert_eq!(std::fs::read_to_string(&uca).unwrap(), broken);
-    assert!(!dirs.data.exists());
 
     // Both spellings of an empty root.
     for empty in ["<actions/>\n", "<actions />\n"] {
@@ -286,7 +422,8 @@ fn thunar_reads_the_file_as_xml_not_text() {
     // An unescaped `&` is not XML, so the file is refused.
     let amp = "<actions><action><name>Preview & open</name></action></actions>\n";
     std::fs::write(&uca, amp).unwrap();
-    assert!(register(&dirs, gui).is_err());
+    let places = register(&dirs, gui).unwrap();
+    assert!(places.iter().any(|p| p.starts_with("Thunar: skipped, ")));
     assert_eq!(std::fs::read_to_string(&uca).unwrap(), amp);
     let escaped = "<actions><action><name>Preview &amp; open &#38;</name></action></actions>\n";
     std::fs::write(&uca, escaped).unwrap();

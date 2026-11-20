@@ -25,10 +25,17 @@ pub fn unregister() -> Result<()> {
     hatchzip_shell::unregister(&hatchzip_shell::Dirs::current()?)
 }
 
-pub fn set_menu(on: bool) -> Result<()> {
+/// Returns the lines for menus that were skipped, such as a Thunar file
+/// HatchZip can't edit, so the switch can say so.
+pub fn set_menu(on: bool) -> Result<Vec<String>> {
     if on {
-        register().map(drop)
+        register().map(|places| {
+            places
+                .into_iter()
+                .filter(|p| p.contains(": skipped, "))
+                .collect()
+        })
     } else {
-        unregister()
+        unregister().map(|()| Vec::new())
     }
 }
