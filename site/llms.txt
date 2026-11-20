@@ -13,6 +13,7 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - Windows (PowerShell): `irm https://raw.githubusercontent.com/xevrion/hatchzip/main/install.ps1 | iex`
 - Homebrew: `brew install xevrion/tap/hatchzip` (CLI), `brew install --cask xevrion/tap/hatchzip` (macOS app and CLI)
 - Scoop: `scoop bucket add xevrion https://github.com/xevrion/scoop-bucket`, then `scoop install xevrion/hatchzip` (CLI)
+- Chocolatey: `choco install hatchzip` (the app and the CLI, through the same setup as the download)
 - Cargo: `cargo binstall hatchzip` downloads the release build (with RAR); `cargo install hatchzip` builds from source (without RAR; `--features rar` adds it and needs a C++ compiler). Every other install method includes RAR
 - winget (`Xevrion.HatchZip`) is in review and the AUR packages are not published yet; until the README lists them as live, packages under those names do not come from this project
 
