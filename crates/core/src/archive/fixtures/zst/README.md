@@ -21,7 +21,7 @@ tar so that pzstd writes more than one frame.
 | `zst-long27.tar.zst` | 1 | XXH64 | 128 MiB | 163,989 B | Compressed from stdin with `--zstd=wlog=27`, so the header names a window larger than the content. |
 | `zst-long31.tar.zst` | 1 | XXH64 | 2 GiB | 163,989 B | The same with `wlog=31`; the format refuses the window before anything is decoded. |
 | `zst-dict.tar.zst` | 1 | XXH64 | content size | 84,185 B | Compressed with a trained dictionary (`-D`); the frame names it, and the format refuses it. |
-| `zst-pzstd.tar.zst` | 2, plus 2 skips | XXH64 | 2 MiB | 5,169,704 B | `pzstd -p 4` on the 8 MiB tar: a skippable frame before every frame. |
+| `zst-pzstd.tar.zst` | 2, plus 2 skips | XXH64 | 2 MiB | 974,084 B | `pzstd -p 4` on the 8 MiB tar: a skippable frame before every frame. |
 | `zst-bad-check.tar.zst` | 1 | XXH64 | content size | 163,992 B | One byte flipped in the middle of `zst-one`; the checksum fails while decoding. |
 | `zst-truncated.tar.zst` | 1 | XXH64 | content size | 163,984 B | The last 8 bytes of `zst-one` removed; the frame's extent runs past the file. |
 | `zst-bad-magic.tar.zst` | 1 | XXH64 | content size | 163,992 B | The first byte of `zst-one` flipped; the format is no longer readable. |

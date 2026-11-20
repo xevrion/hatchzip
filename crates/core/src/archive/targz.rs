@@ -73,7 +73,9 @@ pub struct StreamPoint {
     #[serde(default, with = "hex")]
     pub window: Vec<u8>,
     /// Xz: which block of the stream the point is at, where its header
-    /// begins. The blocks before it never need decoding again.
+    /// begins. Zstd: how many frames preceded the point, so a resumed run
+    /// still knows the stream had more than one. The pieces before it never
+    /// need decoding again.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub block: u64,
     /// Bzip2: the stream's level digit and the combined CRC of its blocks

@@ -164,7 +164,7 @@ fn parse_frames<R: Read + Seek>(reader: &mut R, len: u64, from: u64) -> Result<V
             pos += 1;
             let exp = u64::from(wd >> 3);
             let mant = u64::from(wd & 0x07);
-            (1u64 << (10 + exp)) + (mant << (exp + 3))
+            (1u64 << (10 + exp)) + (mant << (exp + 7))
         };
         let dictionary = match dict_size {
             0 => None,
@@ -901,6 +901,19 @@ mod tests {
     #[test]
     fn a_window_descriptor_is_read_as_declared() {
         assert_eq!(frames("long27")[0].window, 1 << 27);
+    }
+
+    /// RFC 8878 adds `(windowBase / 8) * mantissa`, not `mantissa << exp`.
+    /// A hand-built header is the only way to cover a nonzero mantissa:
+    /// libzstd always writes 0.
+    #[test]
+    fn a_window_descriptor_scales_the_mantissa_by_eighths() {
+        // Descriptor 0, window descriptor exp 0 and mantissa 1: 1024 plus
+        // one eighth of 1024, then a last raw block of size 0.
+        let bytes = [0x28, 0xB5, 0x2F, 0xFD, 0x00, 0x01, 0x01, 0x00, 0x00];
+        let frames = parse_frames(&mut Cursor::new(bytes), bytes.len() as u64, 0).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].window, 1024 + 128);
     }
 
     #[test]

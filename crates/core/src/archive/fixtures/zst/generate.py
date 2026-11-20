@@ -82,7 +82,9 @@ def main() -> None:
     }
     big = {
         "game/README.txt": b"zstd fixture\n" * 100,
-        "game/random.bin": noise(BIG, 99),
+        # Compressible, so the fixture stays small; the file sizes still make
+        # pzstd write more than one frame.
+        "game/random.bin": (b"compressible pzstd frame\n" * (BIG // 24 + 1))[:BIG],
         "game/text.txt": text(BIG),
     }
     tar("payload.tar", small, True)

@@ -207,7 +207,7 @@ fn resume_byte(archive: &Path) -> Option<u64> {
 /// What a crashed run must leave: the archive at its full length, the frame
 /// header at the journaled point whole, and every byte from there on
 /// untouched.
-fn check_crashed(archive: &Path, original: &[u8], what: &str) {
+fn check_crashed(archive: &Path, original: &[u8], punched: bool, what: &str) {
     let now = fs::read(archive).unwrap();
     assert_eq!(
         now.len(),
@@ -230,6 +230,29 @@ fn check_crashed(archive: &Path, original: &[u8], what: &str) {
         now[byte..] == original[byte..],
         "{what}: changed past the resume point"
     );
+    if punched
+        && std::env::var_os("HATCHZIP_EXPECT_PUNCH").is_some()
+        && let Some(used) = allocated(archive)
+    {
+        let before = (original.len() as u64).next_multiple_of(4096);
+        assert!(
+            used + byte as u64 <= before + 2 * 65_536,
+            "{what}: {used} of {} bytes still allocated past a punch to {byte}",
+            original.len()
+        );
+    }
+}
+
+/// Bytes the archive occupies on disk, where the system can say.
+#[cfg(unix)]
+fn allocated(path: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Some(fs::metadata(path).ok()?.blocks() * 512)
+}
+
+#[cfg(not(unix))]
+fn allocated(_path: &Path) -> Option<u64> {
+    None
 }
 
 fn crash_at_every_point(files: &Files, afters: &[u32]) {
@@ -255,7 +278,7 @@ fn crash_at_every_point(files: &Files, afters: &[u32]) {
                 ]),
             );
             assert!(!crashed.status.success(), "{what} should have crashed");
-            check_crashed(&archive, &original, &what);
+            check_crashed(&archive, &original, point == "stream-after-punch", &what);
 
             assert_ok(&extract(&archive, &out, &stream_env(&[])));
             assert_tree(&out, files);
@@ -378,4 +401,33 @@ fn a_dictionary_frame_is_unsupported() {
     assert_eq!(fs::read(&archive).unwrap(), original);
     assert!(!out.exists());
     assert_no_side_files(&archive);
+}
+
+/// A split set is cut at arbitrary byte boundaries, including inside a
+/// frame; any volume names the whole set.
+#[test]
+fn a_split_set_extracts_from_any_volume() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path().join("game.tar.zst");
+    fs::write(&base, fs::read(fixture("zst-two.tar.zst")).unwrap()).unwrap();
+    let bytes = fs::read(&base).unwrap();
+    let volumes = split(&bytes, &base, 3);
+    fs::remove_file(&base).unwrap();
+    let out = tmp.path().join("out");
+    assert_ok(&extract(&volumes[2], &out, &stream_env(&[])));
+    assert_eq!(
+        fs::metadata(out.join("game/data/random.bin"))
+            .unwrap()
+            .len(),
+        128 * 1024
+    );
+    assert_eq!(
+        fs::metadata(out.join("game/data/text.txt")).unwrap().len(),
+        128 * 1024
+    );
+    assert!(out.join("game/README.txt").is_file());
+    assert_consumed(&volumes[0]);
+    for volume in &volumes {
+        assert!(!volume.exists(), "{} remains", volume.display());
+    }
 }
