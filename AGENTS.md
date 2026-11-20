@@ -45,7 +45,7 @@ The desktop app is translated; `crates/gui/translations/README.md` has the detai
 - Every user-facing string in `crates/gui` goes through `@tr()` in a `.slint` file. Text the Rust side needs is a Slint function wrapping one `@tr` (`ui.invoke_...()`), never English built with `format!` and shown as is.
 - One whole sentence per message. Don't join translated pieces with spaces or punctuation, and don't run translated text through `sentence()`, which adds a Latin `.`. Counted text uses Slint's plural form, `@tr("{} file" | "{} files" % n, n)`.
 - A change that adds or changes a `@tr` message updates every catalog in `crates/gui/translations/` in the same change, drafted from that catalog's existing terms. `cargo test -p hatchzip-gui --test catalog` lists anything missing or wrong; keep it passing.
-- A new language is a folder plus its name in `LANGUAGES` (`crates/gui/src/locale.rs`).
+- A new language is a folder plus its name in `LANGUAGES` and its native name in `NAMES` (`crates/gui/src/locale.rs`), which Settings > Language lists. Those names are never passed through `@tr`; a unit test fails if one is missing.
 - The command line stays English. So does `hatchzip-core`'s error text, which the CLI prints; the app translates what it shows through typed values, not by matching English.
 
 ## Copy

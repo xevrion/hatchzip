@@ -21,7 +21,10 @@ use crate::settings::{self, Settings};
 use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
-use crate::{AboutWindow, MainWindow, Mode, PlanView, Screen, TaskView, platform, shell};
+use crate::{
+    AboutWindow, LanguageItem, MainWindow, Mode, PlanView, Screen, TaskView, locale, platform,
+    shell,
+};
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
 const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
@@ -121,6 +124,16 @@ fn plural_count(n: usize) -> i32 {
     i32::try_from(n).unwrap_or(i32::MAX)
 }
 
+/// What the summary line under the archive name is made of, kept so it can
+/// be worded again in another language.
+struct Summary {
+    /// The format, the entry count and the archive's size, when there is
+    /// still an archive to describe.
+    archive: Option<(String, usize, u64)>,
+    left: Option<u64>,
+    total: u64,
+}
+
 struct App {
     ui: slint::Weak<MainWindow>,
     entries: RefCell<Option<Rc<EntriesModel>>>,
@@ -149,6 +162,7 @@ struct App {
     /// The person changed the right-click switch, so the startup check,
     /// which may answer later, must not overwrite it.
     shell_touched: Cell<bool>,
+    summary: RefCell<Option<Summary>>,
 }
 
 thread_local! {
@@ -188,18 +202,15 @@ pub fn build(
     settings_file: Option<PathBuf>,
 ) -> Result<MainWindow> {
     let ui = MainWindow::new()?;
-    crate::locale::apply();
+    locale::apply(settings.language.as_deref());
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
     ui.set_close_when_done(settings.close_when_done);
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
-    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
-        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
-        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
-        platform::ShellMenuName::Files => ui.invoke_shell_files(),
-    });
+    show_shell_menu_label(&ui);
+    show_language(&ui, settings.language.as_deref());
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
@@ -348,6 +359,7 @@ pub fn build(
         notice_timer: Timer::default(),
         loading_timer: Timer::default(),
         shell_touched: Cell::new(false),
+        summary: RefCell::new(None),
     });
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -461,6 +473,8 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
     let a = app.clone();
     ui.on_shell_menu_toggled(move || a.shell_menu_toggled());
     let a = app.clone();
+    ui.on_choose_language(move |code| a.choose_language(&code));
+    let a = app.clone();
     ui.on_give_back(move || a.give_back());
     let a = app.clone();
     ui.on_quit(move || {
@@ -496,6 +510,7 @@ impl App {
         let ui = self.ui();
         let generation = self.next_generation();
         *self.runner.task.borrow_mut() = None;
+        *self.summary.borrow_mut() = None;
         show_task(&ui, TaskView::default());
         ui.set_plan(PlanView::default());
         ui.set_entries(ModelRc::default());
@@ -557,30 +572,18 @@ impl App {
             }
         };
         ui.set_archive_name(loaded.name.as_str().into());
-        let mut summary = Vec::new();
-        if let Some(job) = &loaded.job {
-            summary.push(
-                ui.invoke_archive_kind(job.format_name.to_uppercase().into())
-                    .to_string(),
-            );
-            let count = job.item_count();
-            let entries = ui.invoke_entry_count(text::count(count).into(), plural_count(count));
-            match loaded.left {
-                None => {
-                    summary.push(human(job.storage.original_len()));
-                    summary.push(entries.to_string());
-                }
-                Some(left) => summary.push(
-                    ui.invoke_remaining_summary(human(left).into(), entries)
-                        .to_string(),
-                ),
-            }
-        }
-        summary.push(
-            ui.invoke_uncompressed_summary(human(loaded.total).into())
-                .to_string(),
-        );
-        ui.set_summary(summary.join(" \u{b7} ").into());
+        *self.summary.borrow_mut() = Some(Summary {
+            archive: loaded.job.as_ref().map(|job| {
+                (
+                    job.format_name.to_uppercase(),
+                    job.item_count(),
+                    job.storage.original_len(),
+                )
+            }),
+            left: loaded.left,
+            total: loaded.total,
+        });
+        self.show_summary();
         let tree = Rc::new(EntriesModel::new(loaded.entries));
         ui.set_entries(ModelRc::from(tree.clone()));
         *self.entries.borrow_mut() = Some(tree);
@@ -595,6 +598,55 @@ impl App {
         *self.output.borrow_mut() = loaded.output;
         *self.job.borrow_mut() = Arc::new(Mutex::new(loaded.job));
         self.refresh_plan();
+    }
+
+    fn show_summary(&self) {
+        let summary = self.summary.borrow();
+        let Some(facts) = summary.as_ref() else {
+            return;
+        };
+        let ui = self.ui();
+        let mut parts = Vec::new();
+        if let Some((format, count, size)) = &facts.archive {
+            parts.push(ui.invoke_archive_kind(format.as_str().into()).to_string());
+            let entries = ui.invoke_entry_count(text::count(*count).into(), plural_count(*count));
+            match facts.left {
+                None => {
+                    parts.push(human(*size));
+                    parts.push(entries.to_string());
+                }
+                Some(left) => parts.push(
+                    ui.invoke_remaining_summary(human(left).into(), entries)
+                        .to_string(),
+                ),
+            }
+        }
+        parts.push(
+            ui.invoke_uncompressed_summary(human(facts.total).into())
+                .to_string(),
+        );
+        ui.set_summary(parts.join(" \u{b7} ").into());
+    }
+
+    /// Settings > Language. Windows the right-click menu opens from now on
+    /// read the saved choice too.
+    fn choose_language(&self, code: &str) {
+        let choice = (!code.is_empty()).then(|| code.to_string());
+        self.change_settings(|s| s.language = choice.clone());
+        locale::select(choice.as_deref());
+        let ui = self.ui();
+        show_language(&ui, choice.as_deref());
+        // Text bound to @tr in the .slint files follows by itself; these were
+        // worded once from Rust and would stay in the old language.
+        show_shell_menu_label(&ui);
+        self.show_summary();
+        // A task's view is worded again from the task as it stands, which a
+        // finished one, no longer ticking, needs. The task is not touched.
+        self.runner.redraw();
+        if self.runner.task.borrow().is_none() && ui.get_screen() == Screen::Opened {
+            // The plan's refusal and hint are worded when it is worked out.
+            self.refresh_plan();
+        }
     }
 
     fn refresh_plan(&self) {
@@ -830,6 +882,8 @@ impl App {
         if was_test {
             *self.runner.task.borrow_mut() = None;
             show_task(&self.ui(), TaskView::default());
+            // The language may have changed while the test was on screen.
+            self.refresh_plan();
             return;
         }
         // Anything else may have changed the archive: look again. The path
@@ -867,6 +921,30 @@ impl App {
             let _ = w.show();
         }
     }
+}
+
+fn show_shell_menu_label(ui: &MainWindow) {
+    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
+        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
+        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
+        platform::ShellMenuName::Files => ui.invoke_shell_files(),
+    });
+}
+
+/// Checks the item in Settings > Language for `saved`. The list is built
+/// afresh each time; see `languages` in main-window.slint.
+fn show_language(ui: &MainWindow, saved: Option<&str>) {
+    let chosen = locale::chosen(saved);
+    let items: Vec<LanguageItem> = locale::NAMES
+        .iter()
+        .map(|(code, name)| LanguageItem {
+            code: (*code).into(),
+            name: (*name).into(),
+            chosen: chosen == Some(*code),
+        })
+        .collect();
+    ui.set_languages(ModelRc::new(slint::VecModel::from(items)));
+    ui.set_language_follows_system(chosen.is_none());
 }
 
 /// Shows `view` in the main window. File > Open has a property of its own:

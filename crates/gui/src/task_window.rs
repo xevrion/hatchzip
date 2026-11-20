@@ -99,7 +99,7 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
         anyhow::bail!("no destination folder was chosen");
     }
     let ui = TaskWindow::new()?;
-    crate::locale::apply();
+    crate::locale::apply(settings.language.as_deref());
     let jobs: Vec<(Task, Request)> = args
         .archives
         .iter()

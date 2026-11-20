@@ -31,6 +31,12 @@ msgstr "解压时逐步删除压缩包"
 msgid "Close the progress window when extraction completes"
 msgstr "解压完成后关闭进度窗口"
 
+msgid "Language"
+msgstr "语言"
+
+msgid "Use the system language"
+msgstr "使用系统语言"
+
 msgid "Help"
 msgstr "帮助"
 

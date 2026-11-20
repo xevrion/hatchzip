@@ -18,6 +18,14 @@ export struct EntryRow {
     depth: int,
 }
 
+// One row of Settings > Language. `name` is in that language's own script
+// and never translated; `code` is "en" or a folder in translations/.
+export struct LanguageItem {
+    code: string,
+    name: string,
+    chosen: bool,
+}
+
 component EntryList inherits VerticalLayout {
     in property <[EntryRow]> entries;
     in property <string> empty-text;
@@ -189,6 +197,11 @@ export component MainWindow inherits Window {
     // changing the right-click menu.
     in property <string> notice;
     in property <bool> notice-bad;
+    // Settings > Language. Replaced from Rust on every choice: activating a
+    // checkable item flips its own `checked`, which a plain binding would
+    // not recover from.
+    in property <[LanguageItem]> languages;
+    in-out property <bool> language-follows-system: true;
 
     public function shell-explorer() -> string { return @tr("Show in the Explorer context menu"); }
     public function shell-files() -> string { return @tr("Show in the file manager's context menu"); }
@@ -270,6 +283,8 @@ export component MainWindow inherits Window {
     callback verify-first-toggled();
     callback remove-archive-toggled();
     callback close-when-done-toggled();
+    // "" follows the system again; otherwise a code from `languages`.
+    callback choose-language(string);
     callback change-output();
     callback keep-free-edited(string);
     callback extract();
@@ -341,6 +356,26 @@ export component MainWindow inherits Window {
                 checked <=> root.close-when-done;
                 activated => {
                     root.close-when-done-toggled();
+                }
+            }
+            Menu {
+                title: @tr("Language");
+                MenuItem {
+                    title: @tr("Use the system language");
+                    checkable: true;
+                    checked <=> root.language-follows-system;
+                    activated => {
+                        root.choose-language("");
+                    }
+                }
+                MenuSeparator { }
+                for item in root.languages: MenuItem {
+                    title: item.name;
+                    checkable: true;
+                    checked: item.chosen;
+                    activated => {
+                        root.choose-language(item.code);
+                    }
                 }
             }
         }

@@ -31,6 +31,12 @@ msgstr "Eliminar el archivo durante la extracción"
 msgid "Close the progress window when extraction completes"
 msgstr "Cerrar la ventana de progreso al terminar la extracción"
 
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Use the system language"
+msgstr "Usar el idioma del sistema"
+
 msgid "Help"
 msgstr "Ayuda"
 

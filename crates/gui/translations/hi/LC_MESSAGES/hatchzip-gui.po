@@ -31,6 +31,12 @@ msgstr "एक्सट्रैक्शन के दौरान आर्क
 msgid "Close the progress window when extraction completes"
 msgstr "एक्सट्रैक्शन पूरा होने पर प्रगति विंडो बंद करें"
 
+msgid "Language"
+msgstr "भाषा"
+
+msgid "Use the system language"
+msgstr "सिस्टम की भाषा का उपयोग करें"
+
 msgid "Help"
 msgstr "मदद"
 

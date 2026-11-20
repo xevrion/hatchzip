@@ -134,7 +134,7 @@ Every figure in the README and docs was measured on real hardware. Changes that 
 
 ## Translations
 
-Translations of the desktop app are very welcome, and a new language needs no code beyond one line. [crates/gui/translations/README.md](crates/gui/translations/README.md) walks through adding one: copy a catalog, set its language and plural rule, translate, run `cargo test -p hatchzip-gui --test catalog`, and open a pull request. Fixes to an existing translation are welcome from native speakers too.
+Translations of the desktop app are very welcome, and a new language needs no code beyond two lines. [crates/gui/translations/README.md](crates/gui/translations/README.md) walks through adding one: copy a catalog, set its language and plural rule, translate, run `cargo test -p hatchzip-gui --test catalog`, and open a pull request. Fixes to an existing translation are welcome from native speakers too.
 
 When you change the app's text, mark it with `@tr()` and update every catalog in the same pull request; the test lists what's missing. The command line stays in English.
 
