@@ -159,6 +159,24 @@ This builds the command line tool from [crates.io](https://crates.io/crates/hatc
 
 With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), `cargo binstall hatchzip` downloads the release build for your system instead of compiling it, with RAR support, on Linux, macOS and Windows (x64; Arm on Linux and macOS).
 
+### With Nix
+
+Run HatchZip directly:
+
+```sh
+nix run github:xevrion/hatchzip
+```
+
+Or install it into your profile:
+
+```sh
+nix profile install github:xevrion/hatchzip
+```
+
+The default package does not include RAR support. To enable it use the
+`hatchzip-unfree` variant, which requires allowing unfree packages in Nix.
+
+
 ### From source
 
 With [Rust](https://rustup.rs) (the version is pinned in `rust-toolchain.toml` and installed automatically):
