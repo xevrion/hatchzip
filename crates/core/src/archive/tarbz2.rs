@@ -117,6 +117,7 @@ impl Walker {
                             CodecKind::Gzip => "a gzip member of",
                             CodecKind::Xz => "an xz block of",
                             CodecKind::Bzip2 => "a bzip2 block of",
+                            CodecKind::Zstd => "a zstd frame of",
                         }
                     );
                 }
