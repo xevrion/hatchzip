@@ -63,6 +63,14 @@ impl Runner {
         *self.when_extracted.borrow_mut() = Some(Box::new(f));
     }
 
+    /// The reserve the last request runs with, after a lowered offer.
+    pub fn keep_free(&self) -> Option<u64> {
+        match self.request.borrow().as_ref()? {
+            Request::Extract { keep_free, .. } => Some(*keep_free),
+            _ => None,
+        }
+    }
+
     /// The password the last request opened its archive with, if any.
     pub fn password(&self) -> Option<String> {
         self.request

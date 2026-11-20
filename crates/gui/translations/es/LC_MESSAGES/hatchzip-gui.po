@@ -579,3 +579,8 @@ msgstr "{} {}"
 
 msgid "{} {}."
 msgstr "{} {}."
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "Extraer {} archivo de dentro"
+msgstr[1] "Extraer {} archivos de dentro"

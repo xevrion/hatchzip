@@ -13,7 +13,7 @@ use slint::{CloseRequestResponse, ComponentHandle};
 
 use crate::args::{TaskArgs, TaskKind};
 use crate::runner::Runner;
-use crate::settings::{AfterExtracting, Appearance, Settings};
+use crate::settings::{AfterExtracting, Appearance, Existing, Settings};
 use crate::task::Task;
 use crate::work::Request;
 use crate::{Messages, Palette, TaskWindow};
@@ -64,7 +64,7 @@ pub fn run(mut args: TaskArgs) -> Result<()> {
 /// and verification settings apply. The archive is kept when the menu entry
 /// says so or when the main window's setting does, so someone who never
 /// wants archives removed gets that from every entry.
-fn job_for(
+pub(crate) fn job_for(
     kind: &TaskKind,
     archive: &Path,
     keep_archive: bool,
@@ -90,6 +90,7 @@ fn job_for(
                 password: None,
                 here: *kind == TaskKind::ExtractHere,
                 existing: settings.existing_files,
+                nested: false,
             },
         ),
         None => (
@@ -100,6 +101,37 @@ fn job_for(
             },
         ),
     }
+}
+
+/// A nested archive found inside a finished extraction: next to itself in
+/// its own folder, asking about existing files, and not scanned again.
+pub(crate) fn nested_job(
+    archive: &Path,
+    keep_archive: bool,
+    keep_free: u64,
+    verify_first: bool,
+) -> (Task, Request) {
+    let primary = session::locate(archive).map_or_else(|_| archive.to_path_buf(), |(p, _)| p);
+    let name = primary
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let out = session::default_output(&primary);
+    (
+        Task::extract(&name, Some(&out), keep_archive),
+        Request::Extract {
+            archive: archive.to_path_buf(),
+            output: Some(out),
+            keep_free,
+            verify_first,
+            keep_archive,
+            password: None,
+            here: false,
+            existing: Existing::Ask,
+            nested: true,
+        },
+    )
 }
 
 /// The window, shown, and the function that starts the task. Nothing
@@ -175,6 +207,33 @@ fn build_in(
         if let Some(out) = task.as_ref().and_then(|t| t.output.clone()) {
             let _ = open::that_detached(out);
         }
+    });
+    let r = runner.clone();
+    let keep = args.keep_archive || settings.keep_archive;
+    ui.on_extract_inside(move || {
+        let keep = r.task.borrow().as_ref().map_or(keep, |t| t.keeps_archive());
+        let keep_free = r.keep_free().unwrap_or(settings.keep_free);
+        let nested = r
+            .task
+            .borrow()
+            .as_ref()
+            .map(|t| t.nested.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
+            .collect::<Vec<_>>();
+        let password = r.password();
+        let jobs = nested
+            .iter()
+            .map(|path| {
+                let (task, mut request) = nested_job(path, keep, keep_free, settings.verify_first);
+                if let Some(p) = &password {
+                    request.set_password(p.clone());
+                }
+                (task, request)
+            })
+            .collect();
+        r.start_queue(jobs);
     });
     let r = runner.clone();
     ui.on_give_back(move || r.give_back());

@@ -277,7 +277,9 @@ pub fn build(
     app.runner.when_extracted(|| {
         with_app(|app| {
             if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder {
-                app.open_folder();
+                // The parent's output, once, even when a nested queue just
+                // finished in folders inside it.
+                app.open_parent_folder();
             }
         });
     });
@@ -377,6 +379,8 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
     ui.on_keep_free_edited(move |text| a.keep_free_edited(&text));
     let a = app.clone();
     ui.on_extract(move || a.extract());
+    let a = app.clone();
+    ui.on_extract_inside(move || a.extract_inside());
     let a = app.clone();
     ui.on_test(move || a.test());
     let a = app.clone();
@@ -1053,6 +1057,7 @@ impl App {
             password: self.password.borrow().clone(),
             here: false,
             existing: self.settings.borrow().existing_files,
+            nested: false,
         };
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
@@ -1063,6 +1068,47 @@ impl App {
             Task::extract(&self.name.borrow(), Some(&output), keep),
             request,
         );
+    }
+
+    /// Queues the archives this run left in the output, each into its own
+    /// folder next to it. Only the files the run wrote are considered, so a
+    /// file that was already there is never extracted as if it were new.
+    fn extract_inside(&self) {
+        let nested = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map(|t| t.nested.clone())
+            .unwrap_or_default();
+        if nested.is_empty() {
+            return;
+        }
+        let keep = self
+            .runner
+            .task
+            .borrow()
+            .as_ref()
+            .map(Task::keeps_archive)
+            .unwrap_or_else(|| self.keeps_archive());
+        let keep_free = self
+            .runner
+            .keep_free()
+            .unwrap_or_else(|| self.keep_free.get());
+        let verify_first = self.ui().get_verify_first();
+        let password = self.password.borrow().clone();
+        let jobs = nested
+            .iter()
+            .map(|path| {
+                let (task, mut request) =
+                    crate::task_window::nested_job(path, keep, keep_free, verify_first);
+                if let Some(p) = &password {
+                    request.set_password(p.clone());
+                }
+                (task, request)
+            })
+            .collect();
+        self.runner.start_queue(jobs);
     }
 
     /// Stops a half-done extraction for good and makes the archive whole.
@@ -1120,6 +1166,15 @@ impl App {
     fn open_folder(&self) {
         let task = self.runner.task.borrow();
         if let Some(out) = task.as_ref().and_then(|t| t.output.clone()) {
+            let _ = open::that_detached(out);
+        }
+    }
+
+    /// The main window's output, not the last nested archive's folder. The
+    /// "After extracting" setting opens this once per run.
+    fn open_parent_folder(&self) {
+        let out = self.output.borrow().clone();
+        if !out.as_os_str().is_empty() {
             let _ = open::that_detached(out);
         }
     }

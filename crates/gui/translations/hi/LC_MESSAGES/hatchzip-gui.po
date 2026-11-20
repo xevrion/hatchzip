@@ -579,3 +579,8 @@ msgstr "{} {}"
 
 msgid "{} {}."
 msgstr "{} {}।"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "अंदर का {} आर्काइव एक्सट्रैक्ट करें"
+msgstr[1] "अंदर के {} आर्काइव एक्सट्रैक्ट करें"

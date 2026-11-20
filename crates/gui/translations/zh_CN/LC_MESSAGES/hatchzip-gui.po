@@ -570,3 +570,7 @@ msgstr "{}{}"
 
 msgid "{} {}."
 msgstr "{}{}。"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "解压里面的 {} 个压缩包"

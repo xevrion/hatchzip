@@ -420,6 +420,156 @@ fn here_flow() {
     assert!(task_window::build(one(TaskKind::ExtractFiles(None), &archive), stay_open()).is_err());
 }
 
+/// A finished extraction offers the archives among the files it wrote, once,
+/// and clicking the offer extracts each into its own folder.
+fn nested_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deeper = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    deeper
+        .start_file("deep.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    deeper.write_all(b"deep").unwrap();
+    let deeper = deeper.finish().unwrap().into_inner();
+    let inner = dir.path().join("inner.zip");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(&inner).unwrap());
+    w.start_file("inside.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(b"inside").unwrap();
+    w.start_file("deeper.zip", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(&deeper).unwrap();
+    w.finish().unwrap();
+    let inner_bytes = std::fs::read(&inner).unwrap();
+
+    let outer = dir.path().join("game.zip");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(&outer).unwrap());
+    w.start_file("data/inner.zip", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(&inner_bytes).unwrap();
+    w.finish().unwrap();
+
+    let drops = Drops::default();
+    let ui = main_window::build(
+        Some(outer.clone()),
+        &drops,
+        Settings {
+            keep_free: 0,
+            ..Settings::default()
+        },
+        None,
+    )
+    .unwrap();
+    ui.window().set_size(LogicalSize::new(980.0, 660.0));
+    let w = ui.as_weak();
+    wait_until("the archive to open", move || {
+        let ui = w.unwrap();
+        ui.get_screen() == Screen::Opened && ui.get_plan().ready
+    });
+    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().refusal);
+
+    click_control(&ui, "Extract");
+    let w = ui.as_weak();
+    wait_until("the extraction", move || {
+        w.unwrap().get_task().phase == Phase::Done
+    });
+    assert!(!outer.exists(), "the outer archive is gone");
+    let nested = dir.path().join("game/data/inner.zip");
+    assert!(nested.exists(), "the nested archive is in the output");
+    assert_eq!(ui.get_task().inside, "Extract 1 archive inside");
+    inside_window(&ui, "Extract 1 archive inside");
+    // It still fits at the main window's smallest size.
+    ui.window().set_size(LogicalSize::new(640.0, 440.0));
+    inside_window(&ui, "Extract 1 archive inside");
+    ui.window().set_size(LogicalSize::new(980.0, 660.0));
+    shot(ui.window(), "nested-1-offer");
+
+    click_control(&ui, "Extract 1 archive inside");
+    let w = ui.as_weak();
+    wait_until("the nested extraction", move || {
+        let ui = w.unwrap();
+        !nested.exists() && ui.get_task().phase == Phase::Done
+    });
+    assert_eq!(
+        std::fs::read(dir.path().join("game/data/inner/inside.txt")).unwrap(),
+        b"inside"
+    );
+    assert!(
+        dir.path().join("game/data/inner/deeper.zip").exists(),
+        "an archive inside the nested one stays where it landed"
+    );
+    assert!(!dir.path().join("game/data/inner/deeper").exists());
+    assert_eq!(ui.get_task().inside, "", "one level only");
+    shot(ui.window(), "nested-2-done");
+    ui.hide().unwrap();
+}
+
+/// The right-click window offers the same archives when it is set to stay
+/// open after the extraction.
+fn nested_task_window_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let inner = dir.path().join("inner.zip");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(&inner).unwrap());
+    w.start_file("inside.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(b"inside").unwrap();
+    w.finish().unwrap();
+    let inner_bytes = std::fs::read(&inner).unwrap();
+
+    let outer = dir.path().join("game.zip");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(&outer).unwrap());
+    w.start_file("data/inner.zip", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(&inner_bytes).unwrap();
+    w.finish().unwrap();
+
+    let settings = Settings {
+        keep_free: 0,
+        ..stay_open()
+    };
+    let (ui, start) = task_window::build(one(TaskKind::ExtractTo, &outer), settings).unwrap();
+    start();
+    let w = ui.as_weak();
+    wait_until("the extraction", move || {
+        let t = w.unwrap().get_task();
+        t.phase == Phase::Done || t.phase == Phase::Failed
+    });
+    assert_eq!(
+        ui.get_task().phase,
+        Phase::Done,
+        "{}",
+        ui.get_task().message
+    );
+    assert_eq!(ui.get_task().inside, "Extract 1 archive inside");
+    let _ = ui.window().take_snapshot().unwrap();
+    ui.window().set_size(LogicalSize::new(420.0, 270.0));
+    let _ = ui.window().take_snapshot().unwrap();
+    let button = ElementHandle::find_by_accessible_label(&ui, "Extract 1 archive inside")
+        .next()
+        .expect("the offer is visible");
+    let p = button.absolute_position();
+    let s = button.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "the offer fits at 420 x 270: position {p:?}, size {s:?}, window {window:?}"
+    );
+    ui.invoke_extract_inside();
+    let nested = dir.path().join("game/data/inner.zip");
+    let w = ui.as_weak();
+    wait_until("the nested extraction", move || {
+        let ui = w.unwrap();
+        !nested.exists() && ui.get_task().phase == Phase::Done
+    });
+    assert_eq!(
+        std::fs::read(dir.path().join("game/data/inner/inside.txt")).unwrap(),
+        b"inside"
+    );
+    ui.hide().unwrap();
+}
+
 /// By default the small window closes itself once everything is extracted,
 /// as other extractors' do, but a test's result stays on screen.
 fn close_flow() {
@@ -1330,4 +1480,6 @@ fn windows_end_to_end() {
     close_flow();
     here_flow();
     keep_setting_flow();
+    nested_flow();
+    nested_task_window_flow();
 }
