@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::{ACTIONS, Action, Dirs};
+use crate::{ACTIONS, Action, Dirs, NotInstalled};
 
 const MARK: &str = "Added by HatchZip; `hatchzip-gui --unregister-shell` removes it.";
 
@@ -19,9 +19,12 @@ const MARK: &str = "Added by HatchZip; `hatchzip-gui --unregister-shell` removes
 const WORKFLOW: &str = include_str!("macos-quick-action.wflow");
 
 /// The types the actions are offered on. A file matches a type it conforms
-/// to, so `org.gnu.gnu-zip-archive` also covers `.tgz`. `.001` has no
-/// declared type, so it gets the dynamic one macOS derives from the
-/// extension.
+/// to, so `org.gnu.gnu-zip-archive` also covers `.tgz`. macOS itself declares
+/// neither zstd type, older versions may lack the xz ones, and nothing
+/// declares `.001`, so HatchZip.app's Info.plist declares all of them;
+/// otherwise whether the entries show would depend on which other apps are
+/// installed. The dynamic type is what `.001` gets when no installed app
+/// declares it, as with a development build.
 const FILE_TYPES: &[&str] = &[
     "public.zip-archive",
     "org.7-zip.7-zip-archive",
@@ -34,6 +37,7 @@ const FILE_TYPES: &[&str] = &[
     "org.tukaani.tar-xz-archive",
     "com.facebook.zstandard-archive",
     "com.facebook.zstandard-tar-archive",
+    "io.github.xevrion.hatchzip.split-part",
     "dyn.ah62d4rv4ge8xaqbv",
 ];
 /// `.r00` has the same type; HatchZip.app declares both extensions.
@@ -69,6 +73,9 @@ fn sh_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
+/// HatchZip.app's `CFBundleIdentifier`, from `packaging/macos/Info.plist`.
+const BUNDLE_ID: &str = "io.github.xevrion.hatchzip";
+
 /// `HatchZip.app` when `gui` is the executable inside it.
 fn app_bundle(gui: &Path) -> Option<&Path> {
     let macos = gui.parent()?;
@@ -85,12 +92,12 @@ fn app_bundle(gui: &Path) -> Option<&Path> {
 fn script(gui: &Path, action: &Action) -> String {
     let run = match app_bundle(gui) {
         // Launched through Launch Services, the app runs on its own instead
-        // of as a child the Quick Action waits for. `-n` because `open`
-        // passes `--args` only to an app it starts, and would just bring an
-        // open HatchZip forward.
-        Some(app) => format!(
-            "exec /usr/bin/open -n -a {} --args {}",
-            sh_quote(app),
+        // of as a child the Quick Action waits for. By bundle id, so the
+        // entries keep working after the app is moved or updated. `-n`
+        // because `open` passes `--args` only to an app it starts, and would
+        // just bring an open HatchZip forward.
+        Some(_) => format!(
+            "exec /usr/bin/open -n -b {BUNDLE_ID} --args {}",
             action.flag
         ),
         // A build run from outside an app bundle.
@@ -170,6 +177,22 @@ fn write_bundle(dirs: &Dirs, gui: &Path, action: &Action) -> Result<()> {
     fs::rename(&tmp, &dest).with_context(|| format!("creating {}", dest.display()))
 }
 
+/// A mounted disk image goes away when it is ejected, and Gatekeeper runs a
+/// quarantined app that was never moved from a temporary copy that goes away
+/// at logout, so entries registered from either would stop working.
+fn temporary_copy(app: &Path) -> bool {
+    app.starts_with("/Volumes")
+        || app
+            .components()
+            .any(|c| c.as_os_str() == "AppTranslocation")
+}
+
+/// Whether `dirs` is the real `~/Library/Services`, so that tests writing to
+/// a temporary folder leave the user's services cache alone.
+fn is_current(dirs: &Dirs) -> bool {
+    current_dirs().is_ok_and(|d| d.data == dirs.data)
+}
+
 /// Finder reads Quick Actions from a cache. Best effort: when this fails,
 /// the change shows once macOS rebuilds the cache by itself.
 fn refresh_services() {
@@ -183,10 +206,15 @@ fn refresh_services() {
 }
 
 pub fn register(dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
+    if app_bundle(gui).is_some_and(temporary_copy) {
+        return Err(NotInstalled.into());
+    }
     for a in ACTIONS {
         write_bundle(dirs, gui, a)?;
     }
-    refresh_services();
+    if is_current(dirs) {
+        refresh_services();
+    }
     Ok(vec![format!(
         "Finder Quick Actions: {}",
         dirs.data.display()
@@ -198,7 +226,9 @@ pub fn unregister(dirs: &Dirs) -> Result<()> {
         remove_dir(&staging(dirs, a.id))?;
         remove_dir(&bundle(dirs, a.id))?;
     }
-    refresh_services();
+    if is_current(dirs) {
+        refresh_services();
+    }
     Ok(())
 }
 

@@ -151,6 +151,9 @@ msgstr "संदर्भ मेन्यू प्रविष्टिया�
 msgid "Context menu entries removed."
 msgstr "संदर्भ मेन्यू प्रविष्टियाँ हटा दी गई हैं।"
 
+msgid "Move HatchZip to the Applications folder and open it from there, then turn this on again."
+msgstr "HatchZip को Applications फ़ोल्डर में ले जाएँ, उसे वहीं से खोलें, फिर इसे दोबारा चालू करें।"
+
 msgid "No entries remaining"
 msgstr "कोई प्रविष्टि शेष नहीं है"
 

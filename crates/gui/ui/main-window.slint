@@ -199,6 +199,7 @@ export component MainWindow inherits Window {
     public function destination-title() -> string { return @tr("Select destination folder"); }
     public function menu-added() -> string { return @tr("Context menu entries added."); }
     public function menu-removed() -> string { return @tr("Context menu entries removed."); }
+    public function menu-move-app() -> string { return @tr("Move HatchZip to the Applications folder and open it from there, then turn this on again."); }
     public function no-entries() -> string { return @tr("No entries remaining"); }
     public function keep-archive-hint(reason: string) -> string { return @tr("{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive.", reason); }
     public function checking-space() -> string { return @tr("Checking disk space…"); }

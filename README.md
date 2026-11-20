@@ -96,11 +96,17 @@ The installers also put the `hatchzip` command (and its short name `hz`) on your
 
 ### Right-click menu on macOS
 
-The macOS app adds its Finder entries when asked: move HatchZip to Applications, open it, and turn on **Show in the Finder context menu** in the Settings menu. Right-click or Control-click an archive in Finder, then choose **Quick Actions** to find **HatchZip: Extract here**, **HatchZip: Extract here (keep archive)**, **HatchZip: Extract files…**, **HatchZip: Extract to a new folder** and **HatchZip: Test archive**.
+The macOS app adds its Finder entries when asked: move HatchZip to Applications, open it, and turn on **Show in the Finder context menu** in the Settings menu. The setting refuses while HatchZip runs from the disk image or from the temporary copy macOS makes of an app that was never moved, since the entries would stop working once that copy is gone. Right-click or Control-click an archive in Finder, then choose **Quick Actions** to find **HatchZip: Extract here**, **HatchZip: Extract here (keep archive)**, **HatchZip: Extract files…**, **HatchZip: Extract to a new folder** and **HatchZip: Test archive**.
 
-The entries are Quick Action workflows in `~/Library/Services`, one per entry, and point at the app where it was when the menu was turned on; after moving the app, turn the setting off and on again. Turning it off, or running `hatchzip-gui --unregister-shell`, removes them.
+The entries are Quick Action workflows in `~/Library/Services`, one per entry. They open HatchZip by its bundle identifier, so they keep working after the app is moved or updated. Turning the setting off, or running `/Applications/HatchZip.app/Contents/MacOS/hatchzip-gui --unregister-shell`, removes them, and so does `brew uninstall --cask hatchzip`. Before deleting the app by hand, turn the setting off; entries left behind can be removed by deleting `~/Library/Services/hatchzip-*.workflow`.
 
-If the entries do not appear, check that they are turned on in System Settings, Privacy & Security, Extensions, Finder (on macOS 15 and later, System Settings, General, Login Items & Extensions, Finder).
+If the entries do not appear, check that they are turned on:
+
+- macOS 11 and 12: System Preferences, Extensions, Finder.
+- macOS 13 and 14: System Settings, Privacy & Security, Extensions, Finder.
+- macOS 15 and later: System Settings, General, Login Items & Extensions, Extensions, Finder.
+
+Services can also be turned off in System Settings (System Preferences on macOS 11 and 12), Keyboard, Keyboard Shortcuts, Services, Files and Folders.
 
 ### Command line only
 

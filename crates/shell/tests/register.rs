@@ -207,8 +207,7 @@ fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
     let foreign = dirs.data.join("Other.workflow/Contents/Info.plist");
     std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
     std::fs::write(&foreign, "not ours").unwrap();
-    // A space, a quote and the characters XML needs escaped.
-    let gui = Path::new("/Applications/Hatch Zip's & <x>.app/Contents/MacOS/hatchzip-gui");
+    let gui = Path::new("/Applications/HatchZip.app/Contents/MacOS/hatchzip-gui");
 
     assert!(!is_registered(&dirs));
     register(&dirs, gui).unwrap();
@@ -251,6 +250,8 @@ fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
             "org.7-zip.7-zip-archive",
             "public.tar-archive",
             "org.gnu.gnu-zip-archive",
+            "com.facebook.zstandard-archive",
+            "io.github.xevrion.hatchzip.split-part",
         ] {
             assert!(text.contains(&format!("<string>{t}</string>")), "{t}");
         }
@@ -276,9 +277,10 @@ fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
             "/bin/sh"
         );
         let script = plist_value(&wflow, "actions.0.action.ActionParameters.COMMAND_STRING");
+        // By bundle id, so moving the app doesn't break the entries.
         assert!(
             script.ends_with(&format!(
-                "\nexec /usr/bin/open -n -a '/Applications/Hatch Zip'\\''s & <x>.app' --args {} \"$@\"",
+                "\nexec /usr/bin/open -n -b io.github.xevrion.hatchzip --args {} \"$@\"",
                 a.flag
             )),
             "{script}"
@@ -297,6 +299,25 @@ fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
         .collect();
     assert_eq!(left, ["Other.workflow"]);
     assert_eq!(std::fs::read_to_string(&foreign).unwrap(), "not ours");
+}
+
+/// An app run from its disk image, or from the copy Gatekeeper makes of a
+/// quarantined app that was never moved, is somewhere that goes away.
+#[cfg(target_os = "macos")]
+#[test]
+fn finder_quick_actions_refuse_an_app_that_is_not_installed() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("Services"),
+    };
+    for gui in [
+        "/Volumes/HatchZip/HatchZip.app/Contents/MacOS/hatchzip-gui",
+        "/private/var/folders/x/y/T/AppTranslocation/1234/d/HatchZip.app/Contents/MacOS/hatchzip-gui",
+    ] {
+        let e = register(&dirs, Path::new(gui)).unwrap_err();
+        assert!(e.is::<hatchzip_shell::NotInstalled>(), "{gui}: {e:#}");
+        assert!(!dirs.data.exists(), "{gui}");
+    }
 }
 
 /// The script a Quick Action runs, run as Automator runs it, hands every

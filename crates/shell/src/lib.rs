@@ -86,6 +86,22 @@ impl Dirs {
     }
 }
 
+/// Why [`register`] refused: the app runs from somewhere it won't stay, such
+/// as a mounted disk image, so it has to be moved to Applications first.
+#[derive(Debug)]
+pub struct NotInstalled;
+
+impl std::fmt::Display for NotInstalled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "HatchZip runs from a disk image or a temporary copy; move it to Applications, \
+             open it from there and try again",
+        )
+    }
+}
+
+impl std::error::Error for NotInstalled {}
+
 /// Adds the menu entries, pointing them at `gui`, the `hatchzip-gui`
 /// executable. Safe to run again, for instance after an update moves it.
 /// Returns a short description of each place an entry was written.

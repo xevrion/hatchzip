@@ -151,6 +151,9 @@ msgstr "已添加右键菜单项。"
 msgid "Context menu entries removed."
 msgstr "已移除右键菜单项。"
 
+msgid "Move HatchZip to the Applications folder and open it from there, then turn this on again."
+msgstr "请将 HatchZip 移到“应用程序”文件夹并从那里打开，然后再次开启此选项。"
+
 msgid "No entries remaining"
 msgstr "没有剩余条目"
 

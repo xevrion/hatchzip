@@ -25,6 +25,15 @@ cask "hatchzip" do
   binary "#{appdir}/HatchZip.app/Contents/MacOS/hatchzip", target: "hz"
   manpage "#{appdir}/HatchZip.app/Contents/Resources/man/man1/hatchzip.1"
 
+  # The Finder Quick Actions live outside the app and would stay in Finder,
+  # doing nothing, after the app is gone.
+  uninstall_preflight do
+    system_command "#{appdir}/HatchZip.app/Contents/MacOS/hatchzip-gui",
+                   args:         ["--unregister-shell"],
+                   must_succeed: false
+  end
+  uninstall delete: "~/Library/Services/hatchzip-*.workflow"
+
   zap trash: [
     "~/Library/Application Support/HatchZip",
     "~/Library/Preferences/io.github.xevrion.hatchzip.plist",

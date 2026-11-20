@@ -691,7 +691,12 @@ impl App {
                     Err(e) => {
                         // Show the box as it really is.
                         app.ui().set_shell_menu_on(!on);
-                        (sentence(&format!("{e:#}")), true)
+                        let text = if e.is::<hatchzip_shell::NotInstalled>() {
+                            app.ui().invoke_menu_move_app().to_string()
+                        } else {
+                            sentence(&format!("{e:#}"))
+                        };
+                        (text, true)
                     }
                 };
                 app.notify(&text, bad);
