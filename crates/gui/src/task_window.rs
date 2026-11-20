@@ -16,7 +16,7 @@ use crate::runner::Runner;
 use crate::settings::{AfterExtracting, Appearance, Settings};
 use crate::task::Task;
 use crate::work::Request;
-use crate::{Palette, TaskWindow};
+use crate::{Messages, Palette, TaskWindow};
 
 /// Where each kind of task puts the files. `None` for a test, and for files
 /// whose folder is not chosen yet. "Extract to a folder" honours the default
@@ -31,8 +31,15 @@ pub fn output_for(kind: &TaskKind, primary: &Path, settings: &Settings) -> Optio
 }
 
 pub fn run(mut args: TaskArgs) -> Result<()> {
+    // The window exists before the picker so its title comes from the same
+    // translated messages as the rest, and the picker still runs on the
+    // thread that will show it.
+    let settings = Settings::saved();
+    let ui = TaskWindow::new()?;
+    crate::locale::apply(settings.language.as_deref());
     if args.kind == TaskKind::ExtractFiles(None) {
-        let mut dialog = rfd::FileDialog::new().set_title("Select destination folder");
+        let title = ui.global::<Messages>().invoke_destination_title();
+        let mut dialog = rfd::FileDialog::new().set_title(title.as_str());
         if let Some(dir) = args
             .archives
             .first()
@@ -47,7 +54,7 @@ pub fn run(mut args: TaskArgs) -> Result<()> {
         };
         args.kind = TaskKind::ExtractFiles(Some(folder));
     }
-    let (ui, start) = build(args, Settings::saved())?;
+    let (ui, start) = build_in(ui, args, settings)?;
     crate::backend::when_drawn(ui.window(), start);
     ui.run()?;
     Ok(())
@@ -98,11 +105,21 @@ fn job_for(
 /// The window, shown, and the function that starts the task. Nothing
 /// touches an archive until that is called.
 pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnOnce() + 'static)> {
+    let ui = TaskWindow::new()?;
+    crate::locale::apply(settings.language.as_deref());
+    build_in(ui, args, settings)
+}
+
+/// Fills a window made outside, so `run` can reach the picker's title through
+/// it before the folder is known.
+fn build_in(
+    ui: TaskWindow,
+    args: TaskArgs,
+    settings: Settings,
+) -> Result<(TaskWindow, impl FnOnce() + 'static)> {
     if args.kind == TaskKind::ExtractFiles(None) {
         anyhow::bail!("no destination folder was chosen");
     }
-    let ui = TaskWindow::new()?;
-    crate::locale::apply(settings.language.as_deref());
     crate::locale::style(ui.global::<crate::Theme>());
     if settings.appearance != Appearance::System {
         ui.global::<Palette>()
@@ -123,11 +140,11 @@ pub fn build(args: TaskArgs, settings: Settings) -> Result<(TaskWindow, impl FnO
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            ui.set_task(task.view.clone());
+            ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
             ui.set_plan(task.plan.clone());
         }
     });
-    ui.set_task(task.view.clone());
+    ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
     let open_folder = settings.after_extracting == AfterExtracting::OpenFolder;
     if settings.close_when_done || open_folder {
         let (weak, r) = (ui.as_weak(), Rc::downgrade(&runner));
