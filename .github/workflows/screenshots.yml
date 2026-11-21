@@ -1,0 +1,66 @@
+name: screenshots
+
+# Draws every window of the desktop app on each system and keeps the PNGs as
+# an artifact, so a change to the GUI can be looked at without building it.
+# Informational only: not a required check, and nothing here gates a merge.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/gui/**'
+      - '.github/workflows/screenshots.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Reading the code is all this needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: screenshots (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    env:
+      # The software renderer draws into a buffer on any machine, GPU or not;
+      # Slint's winit backend reads this the same way the app does.
+      SLINT_BACKEND: winit-software
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # rustup is on the runner, rust-toolchain.toml picks the version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # fontconfig to link, xkbcommon-x11 that winit loads for the keyboard
+      # on X11, a virtual X server to open windows on, and fonts
+      # for Hindi (Devanagari, in fonts-noto-core) and Simplified Chinese
+      # (fonts-noto-cjk), which the runner image lacks. macOS and Windows
+      # ship fonts for both.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-x11-0 xvfb fonts-noto-core fonts-noto-cjk
+          fc-list :lang=hi family | sort -u | head -5
+          fc-list :lang=zh-cn family | sort -u | head -5
+      # xvfb-run's default screen is 640x480 at 8 bits, smaller than the
+      # main window and too shallow for the software renderer's buffers.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" cargo run --locked --example screenshots -p hatchzip-gui -- screenshots
+      - if: runner.os != 'Linux'
+        run: cargo run --locked --example screenshots -p hatchzip-gui -- screenshots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: screenshots-${{ matrix.os }}
+          path: screenshots/
+          retention-days: 14
+          if-no-files-found: error

@@ -31,7 +31,9 @@ fn run(launch: Launch) -> Result<()> {
             return Ok(());
         }
         Launch::UnregisterShell => {
-            shell::unregister()?;
+            for skipped in shell::unregister()? {
+                println!("{skipped}");
+            }
             println!("Context menu entries removed.");
             return Ok(());
         }

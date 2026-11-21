@@ -121,6 +121,7 @@ fn build_in(
     if args.kind == TaskKind::ExtractFiles(None) {
         anyhow::bail!("no destination folder was chosen");
     }
+    crate::locale::style(ui.global::<crate::Theme>());
     if settings.appearance != Appearance::System {
         ui.global::<Palette>()
             .set_color_scheme(crate::settings_window::color_scheme(settings.appearance));

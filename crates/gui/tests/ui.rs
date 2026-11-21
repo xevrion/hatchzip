@@ -1386,7 +1386,12 @@ fn windows_end_to_end() {
     let linux = std::env::consts::OS == "linux";
     if linux {
         // SAFETY: no other thread exists yet in this one-test binary.
-        unsafe { std::env::set_var("XDG_DATA_HOME", data.path()) };
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", data.path());
+            // The Thunar actions too, never the real user's.
+            std::env::set_var("XDG_CONFIG_HOME", data.path().join("config"));
+            std::env::set_var("XDG_CONFIG_DIRS", data.path().join("system-config"));
+        }
     }
     slint::platform::set_platform(Box::new(TestingBackend::new(TestingBackendOptions {
         mock_time: false,

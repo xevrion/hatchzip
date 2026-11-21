@@ -6,6 +6,20 @@ pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Explorer
 /// Explorer, through the per-user registry hive.
 pub const SHELL_MENU: bool = true;
 
+/// The menu bar is a native Win32 menu, with its own edge.
+pub const IN_WINDOW_MENU: bool = false;
+
+/// The system's UI face for each script. Left to itself, the software
+/// renderer drew Latin text in Arial, and Simplified Chinese in a Japanese
+/// face that lacks most of its characters.
+pub fn font_family(language: &str) -> &'static str {
+    match language {
+        "zh_CN" => "Microsoft YaHei UI",
+        "hi" => "Nirmala UI",
+        _ => "Segoe UI",
+    }
+}
+
 /// `%APPDATA%\HatchZip`, which roams with the user's profile.
 pub fn config_dir() -> Option<PathBuf> {
     let appdata = std::env::var_os("APPDATA").filter(|v| !v.is_empty())?;
