@@ -757,16 +757,36 @@ fn restoring_before_the_first_commit_leaves_the_original() {
     assert_side_files_gone(&archive);
 }
 
+/// A native split ZIP of `files` and `EMPTY_DIR`, made from [`zip_bytes`]
+/// so `unzip -t` can read every method in it.
+fn split_of(dir: &Path, files: &Files, s: &Split) -> PathBuf {
+    let segments = split_zip_segments(&zip_bytes(files, false), s);
+    write_split_zip(dir, "game", &segments, s.upper)
+}
+
 /// A native split ZIP of the sample in two segments: `.z01` holds everything
 /// up to inside small.pak, the `.zip` the rest and the index. A cut among
 /// the last entries stays inside the `.zip`; one below small.pak leaves only
 /// `.z01`, and restore writes a new `.zip` holding just the index.
 fn two_segment_split(dir: &Path, files: &Files) -> PathBuf {
-    split_zip_of(
+    let size = 3_200_000;
+    let mut z = zip::ZipArchive::new(Cursor::new(zip_bytes(files, false))).unwrap();
+    let i = z.index_for_name("game/data/small.pak").unwrap();
+    let f = z.by_index_raw(i).unwrap();
+    let (header, end) = (
+        f.header_start(),
+        f.data_start().unwrap() + f.compressed_size(),
+    );
+    let marker = Split::default().marker.len() as u64;
+    assert!(
+        header + marker < size && size < end + marker,
+        "small.pak is at {header}..{end}: the cut is not inside it"
+    );
+    split_of(
         dir,
         files,
         &Split {
-            size: 3_200_000,
+            size: size as usize,
             ..Split::default()
         },
     )
@@ -774,9 +794,7 @@ fn two_segment_split(dir: &Path, files: &Files) -> PathBuf {
 
 /// How many one-entry commits leave the cut below small.pak, inside `.z01`.
 fn commits_into_the_first_segment(files: &Files) -> u32 {
-    let tmp = TempDir::new().unwrap();
-    let bytes = fs::read(zip_of(tmp.path(), "whole.zip", files)).unwrap();
-    let z = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let z = zip::ZipArchive::new(Cursor::new(zip_bytes(files, false))).unwrap();
     // Everything after the directory, settings.ini and big.pak.
     z.len() as u32 - 3
 }
@@ -833,44 +851,46 @@ fn check_restored_split(first: &Path, out: &Path, files: &Files) {
 fn restores_a_native_split_zip() {
     let files = sample_files();
     let low = commits_into_the_first_segment(&files);
-    let builds: [(&str, Build, u32); 5] = [
-        ("cut inside the .zip", two_segment_split, 0),
-        ("only .z01 left", two_segment_split, low - 1),
-        (
-            "cut in a middle segment",
-            |d, f| split_zip_of(d, f, &Split::default()),
-            8,
-        ),
-        (
-            "cut at a segment boundary",
-            |d, f| {
-                split_zip_of(
-                    d,
-                    f,
-                    &Split {
-                        at_headers: true,
-                        ..Split::default()
-                    },
-                )
+    let many: Build = |d, f| split_of(d, f, &Split::default());
+    let zip64: Build = |d, f| {
+        split_of(
+            d,
+            f,
+            &Split {
+                zip64: true,
+                ..Split::default()
             },
-            5,
-        ),
-        (
-            "ZIP64 fields",
-            |d, f| {
-                split_zip_of(
-                    d,
-                    f,
-                    &Split {
-                        zip64: true,
-                        ..Split::default()
-                    },
-                )
+        )
+    };
+    let boundaries: Build = |d, f| {
+        split_of(
+            d,
+            f,
+            &Split {
+                at_headers: true,
+                ..Split::default()
             },
-            8,
+        )
+    };
+    // With 200 000-byte segments, big.pak's header is in `.z01` and every
+    // entry after small.pak in the `.zip`. `low` commits cut at big.pak, so
+    // restore shortens `.z01`, deletes every segment after it and writes the
+    // index alone as a new `.zip`: two parts are left.
+    let builds: [(&str, Build, u32, Option<usize>); 7] = [
+        ("cut inside the .zip", two_segment_split, 0, Some(2)),
+        ("only .z01 left", two_segment_split, low - 1, Some(2)),
+        ("many segments, cut inside the .zip", many, 8, None),
+        ("cut in the first of many segments", many, low, Some(2)),
+        ("cut at a segment boundary", boundaries, 5, None),
+        ("ZIP64 fields, cut inside the .zip", zip64, 8, None),
+        (
+            "ZIP64 fields, cut in the first of many segments",
+            zip64,
+            low,
+            Some(2),
         ),
     ];
-    for (what, build, after) in builds {
+    for (what, build, after, parts) in builds {
         let tmp = TempDir::new().unwrap();
         let first = build(tmp.path(), &files);
         let out = tmp.path().join("out");
@@ -882,8 +902,8 @@ fn restores_a_native_split_zip() {
             !tmp.path().join("game.zip.hatchzip").exists(),
             "{what}: stub left"
         );
-        if what == "only .z01 left" {
-            assert_eq!(split_zip_parts(&first).len(), 2, "{what}");
+        if let Some(n) = parts {
+            assert_eq!(split_zip_parts(&first).len(), n, "{what}");
         }
         check_restored_split(&first, &out, &files);
     }
@@ -935,7 +955,9 @@ fn restoring_a_native_split_zip_never_writes_over_a_file() {
     let tmp = TempDir::new().unwrap();
     let first = two_segment_split(tmp.path(), &files);
     let out = tmp.path().join("out");
-    crash_extract(&first, &out, "after-journal", low - 1);
+    // Killed while extracting big.pak: the commits up to small.pak are
+    // journaled and applied, so `.z01` is cut and the `.zip` deleted.
+    crash_extract(&first, &out, "after-extract", low);
     let last = first.with_extension("zip");
     assert!(!last.exists());
     fs::write(&last, b"someone else's").unwrap();

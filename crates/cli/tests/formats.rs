@@ -1014,6 +1014,55 @@ fn a_native_split_zip_with_a_part_missing_or_extra_is_refused() {
     assert_split_refused(&first, &first, "game.z02 is empty");
 }
 
+/// APPNOTE lets a ZIP64 writer saturate the disk numbers to 0xFFFF and keep
+/// the real ones in the ZIP64 end record and extra fields. A ZIP that is one
+/// file written so extracts, as it did before split ZIP support, and the
+/// last segment of a split ZIP written so is still refused on its own.
+#[test]
+fn a_one_file_zip64_with_saturated_disk_numbers_extracts() {
+    let files = sample_files();
+    let tmp = TempDir::new().unwrap();
+    let whole = zip_of(tmp.path(), "whole.zip", &files);
+    let bytes = fs::read(&whole).unwrap();
+    fs::remove_file(&whole).unwrap();
+    let one = Split {
+        size: 1 << 40,
+        marker: b"",
+        zip64: true,
+        ..Split::default()
+    };
+    let segments = split_zip_segments(&bytes, &one);
+    assert_eq!(segments.len(), 1);
+    let archive = tmp.path().join("game.zip");
+    fs::write(&archive, &segments[0]).unwrap();
+    let out = tmp.path().join("out");
+    assert_ok(&extract(&archive, &out, &[]));
+    assert_tree(&out, &files);
+    assert_consumed(&archive);
+
+    let tmp = TempDir::new().unwrap();
+    let first = split_zip_of(
+        tmp.path(),
+        &files,
+        &Split {
+            zip64: true,
+            ..Split::default()
+        },
+    );
+    let last = first.with_extension("zip");
+    let zip = fs::read(&last).unwrap();
+    for p in split_zip_parts(&first) {
+        fs::remove_file(p).unwrap();
+    }
+    fs::write(&last, &zip).unwrap();
+    let run = extract(&last, &tmp.path().join("out"), &[]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(stderr.contains("the last part of a split ZIP"), "{stderr}");
+    assert_eq!(fs::read(&last).unwrap(), zip);
+    assert_no_side_files(&last);
+}
+
 #[test]
 fn a_native_split_zip_with_a_wrong_index_or_a_foreign_part_is_refused() {
     let files = sample_files();
