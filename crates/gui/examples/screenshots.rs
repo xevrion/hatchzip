@@ -31,7 +31,9 @@ use hatchzip_core::human;
 use hatchzip_gui::args::{TaskArgs, TaskKind};
 use hatchzip_gui::backend::{self, Drops};
 use hatchzip_gui::settings::{Appearance, Settings};
-use hatchzip_gui::{MainWindow, Phase, Screen, TaskView, locale, main_window, task_window};
+use hatchzip_gui::{
+    MainWindow, Messages, Phase, Screen, TaskView, locale, main_window, task_window,
+};
 use i_slint_backend_testing::ElementHandle;
 use slint::{ComponentHandle, LogicalSize, Timer};
 
@@ -229,19 +231,20 @@ async fn main_and_settings(
 
     let name = ui.get_archive_name();
     let output = ui.get_output();
-    let destination = ui.invoke_task_destination(output.clone());
+    let messages = ui.global::<Messages>();
+    let destination = messages.invoke_task_destination(output.clone());
     let done = total * 42 / 100;
     ui.set_task(TaskView {
         phase: Phase::Working,
-        heading: ui.invoke_task_heading(Phase::Working, false, false, name.clone()),
+        heading: messages.invoke_task_heading(Phase::Working, false, false, name.clone()),
         detail: destination.clone(),
         fraction: 0.42,
-        amounts: ui.invoke_task_amounts(human(done).into(), human(total).into()),
-        rate: ui.invoke_task_rate(
+        amounts: messages.invoke_task_amounts(human(done).into(), human(total).into()),
+        rate: messages.invoke_task_rate(
             human(48_000_000).into(),
-            ui.invoke_time_minutes(2, "2".into()),
+            messages.invoke_time_minutes(2, "2".into()),
         ),
-        archive_left: ui.invoke_task_archive_left(human(total - done).into()),
+        archive_left: messages.invoke_task_archive_left(human(total - done).into()),
         ..TaskView::default()
     });
     shots.take(ui.window(), "main-running").await?;
@@ -250,9 +253,9 @@ async fn main_and_settings(
     let reason = "Unexpected end of data in Northwind/data/level07.pak.";
     ui.set_task(TaskView {
         phase: Phase::Failed,
-        heading: ui.invoke_task_heading(Phase::Failed, false, false, name),
+        heading: messages.invoke_task_heading(Phase::Failed, false, false, name),
         detail: destination,
-        message: ui.invoke_task_resumable_error(reason.into()),
+        message: messages.invoke_task_resumable_error(reason.into()),
         can_retry: true,
         can_give_back: true,
         ..TaskView::default()
