@@ -224,7 +224,27 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
         journal.save(&paths)?;
 
         let written = match &new_last {
-            Some(last) => write_new_part(last, &index.append),
+            Some(last) => match write_new_part(last, &index.append) {
+                // Another program put a file there after the check above.
+                // Nothing was written, and undoing a restore cuts that name
+                // away, so the restore is called off before anything else.
+                Err(e)
+                    if e.chain().any(|c| {
+                        c.downcast_ref::<io::Error>()
+                            .is_some_and(|io| io.kind() == io::ErrorKind::AlreadyExists)
+                    }) =>
+                {
+                    journal.restoring = None;
+                    journal.save(&paths)?;
+                    bail!(
+                        "{} appeared while restore was starting, and restore writes the \
+                         archive's new index there. Move it away and run restore again. The \
+                         archive was not modified",
+                        last.display()
+                    );
+                }
+                r => r,
+            },
             None => job.storage.write_at(keep, &index.append),
         };
         written.context("writing the new index")?;
