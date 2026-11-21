@@ -17,6 +17,8 @@ export struct EntryRow {
     link: bool,
     expanded: bool,
     depth: int,
+    // Part of the selection that "Extract selected…" extracts.
+    selected: bool,
 }
 
 // Opens the Settings window from the top right corner, where people look
@@ -73,9 +75,16 @@ component EntryList inherits VerticalLayout {
     in property <string> empty-text;
     property <int> selected: 0;
     property <length> row-height: 26px;
+    // How the click being made changes the selection: 0 only moves the
+    // cursor there, 1 adds or removes the row (Ctrl or Cmd), 2 selects the
+    // range from the last row clicked (Shift). Read from the press, which
+    // carries the keys.
+    property <int> click-mode: 0;
     init => { scope.focus(); }
     callback toggle(int, int);
     callback navigate(int, bool) -> int;
+    // Changes the rows "Extract selected…" takes, with a mode as above.
+    callback choose(int, int);
     function show-selection() {
         let y = list.content-y + root.selected * root.row-height;
         if y < 0px { list.content-y -= y; }
@@ -121,19 +130,26 @@ component EntryList inherits VerticalLayout {
             accessible-expandable: row.dir;
             accessible-expanded: row.expanded;
             accessible-item-selectable: true;
+            // The cursor is the selected item; being chosen for "Extract
+            // selected…" is a separate checked state, so a screen reader can
+            // tell the two apart.
             accessible-item-selected: root.selected == index;
+            accessible-checkable: true;
+            accessible-checked: row.selected;
             accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
             accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 1); } }
             // The selection stays visible when the keyboard moves to the
             // footer, in gray, and shows the accent while the list has it.
-            background: root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
+            // Rows chosen for "Extract selected…" keep the selection colour,
+            // and the cursor bar is drawn on them too, in their text colour.
+            background: row.selected ? Palette.selection-background : root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
             if root.selected == index && scope.has-focus: Rectangle {
                 x: 4px;
                 y: (parent.height - self.height) / 2;
                 width: 3px;
                 height: 16px;
                 border-radius: 1.5px;
-                background: Palette.accent-background;
+                background: row.selected ? Palette.selection-foreground : Palette.accent-background;
             }
             HorizontalLayout {
                 padding-left: Theme.gutter + row.depth * 16px;
@@ -159,23 +175,32 @@ component EntryList inherits VerticalLayout {
                 }
                 Text {
                     text: row.name;
+                    color: row.selected ? Palette.selection-foreground : Palette.foreground;
                     overflow: elide;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
                 Text {
                     text: row.link ? @tr("link") : row.size;
-                    color: Theme.muted;
+                    color: row.selected ? Palette.selection-foreground : Theme.muted;
                     vertical-alignment: center;
                     horizontal-alignment: right;
                     width: 90px;
                 }
             }
             TouchArea {
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down {
+                        root.click-mode = event.modifiers.shift ? 2 : (event.modifiers.control || event.modifiers.meta) ? 1 : 0;
+                    }
+                }
                 clicked => {
                     root.selected = index;
                     scope.focus();
-                    if row.dir { root.toggle(index, 0); }
+                    root.choose(index, root.click-mode);
+                    // A plain click opens or closes a folder and chooses
+                    // nothing; adding one to the selection leaves it as it is.
+                    if row.dir && root.click-mode == 0 { root.toggle(index, 0); }
                 }
             }
         }
@@ -190,6 +215,19 @@ component EntryList inherits VerticalLayout {
                     root.selected = min(root.entries.length - 1, root.selected + 1);
                     root.show-selection();
                 }
+                return accept;
+            }
+            // Space adds the row under the cursor to the selection, or takes
+            // it out, so the keyboard can choose several.
+            if event.text == Key.Space {
+                if root.selected >= 0 && root.selected < root.entries.length {
+                    root.choose(root.selected, 1);
+                }
+                return accept;
+            }
+            // Escape empties the selection.
+            if event.text == Key.Escape {
+                root.choose(root.selected, 3);
                 return accept;
             }
             if event.text == Key.LeftArrow || event.text == Key.RightArrow {
@@ -215,6 +253,11 @@ export component MainWindow inherits Window {
     in property <string> summary;
     in property <string> error-text;
     in property <[EntryRow]> entries;
+    // Rows chosen in the tree for "Extract selected…".
+    in property <int> selection-count;
+    // "2 items selected. ...", said after what Extract does, which a
+    // selection does not change.
+    in property <string> selection-text;
     in property <PlanView> plan;
     in property <string> output;
     in-out property <string> keep-free: "2";
@@ -253,6 +296,8 @@ export component MainWindow inherits Window {
     callback open-archive();
     callback toggle-entry(int, int);
     callback navigate-entry(int, bool) -> int;
+    callback choose-entry(int, int);
+    callback extract-selected();
     callback password-ok(string);
     callback password-cancel();
     callback replace-answer(int, bool);
@@ -508,6 +553,7 @@ export component MainWindow inherits Window {
                 empty-text: root.mode == Mode.orphan ? @tr("All entries have been extracted.") : @tr("This archive is empty.");
                 toggle(row, action) => { root.toggle-entry(row, action); }
                 navigate(row, right) => { return root.navigate-entry(row, right); }
+                choose(row, mode) => { root.choose-entry(row, mode); }
             }
             VLine { }
             // The plan can outgrow a small window; its content must not
@@ -631,12 +677,21 @@ export component MainWindow inherits Window {
                 // padding inside the Text's box clipped Devanagari vowel signs.
                 spacing: 12px;
                 Text {
-                    text: root.mode != Mode.fresh ? "" : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
+                    text: root.mode != Mode.fresh ? "" : (root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.")) + (root.selection-count > 0 ? " " + root.selection-text : "");
                     color: Theme.muted;
                     font-size: Theme.small-size;
                     wrap: word-wrap;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
+                }
+                // Only what is chosen, into a folder picked now, and the
+                // archive is kept whatever the Remove setting says.
+                if root.mode == Mode.fresh && root.selection-count > 0: Button {
+                    text: @tr("Extract selected…");
+                    enabled: root.keep-free-valid;
+                    clicked => {
+                        root.extract-selected();
+                    }
                 }
                 if root.mode == Mode.fresh: Button {
                     text: @tr("Test");
@@ -652,7 +707,8 @@ export component MainWindow inherits Window {
                     }
                 }
                 Button {
-                    text: root.mode == Mode.fresh ? @tr("Extract") : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
+                    // With rows chosen, say that this one still takes everything.
+                    text: root.mode == Mode.fresh ? (root.selection-count > 0 ? @tr("Extract all") : @tr("Extract")) : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
                     primary: true;
                     enabled: root.mode == Mode.orphan || (root.plan.ready && root.plan.fits && root.keep-free-valid);
                     clicked => {

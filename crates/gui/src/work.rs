@@ -58,6 +58,9 @@ pub enum Request {
         /// Files already where entries go: ask, or answer for all of them
         /// up front as the command line's `--replace` and `--skip-existing`.
         existing: Existing,
+        /// Only these entries, and everything inside the folders among them,
+        /// which keeps the archive. `None` extracts every entry.
+        only: Option<Vec<PathBuf>>,
     },
     Test {
         archive: PathBuf,
@@ -134,6 +137,9 @@ pub enum Update {
     Extracted {
         output: PathBuf,
         keep: bool,
+        /// Only the entries chosen when the run started were extracted,
+        /// whichever way it was resumed.
+        selected: bool,
         warning: Option<String>,
     },
     Tested(usize),
@@ -179,15 +185,18 @@ pub fn run(
             password,
             here,
             existing,
+            only,
         } => extract(
             archive,
             output.clone(),
             Choices {
                 keep_free: *keep_free,
                 verify_first: *verify_first,
-                keep_archive: *keep_archive,
+                // The entries left out stay in the archive.
+                keep_archive: *keep_archive || only.is_some(),
                 here: *here,
                 existing: *existing,
+                only: only.clone(),
             },
             Secret {
                 password: password.clone(),
@@ -234,10 +243,12 @@ struct Secret<'a> {
 
 /// `session::open_encrypted`, reporting a password the person typed so a
 /// rerun can use it.
+#[allow(clippy::too_many_arguments)]
 fn open(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     secret: Secret,
     counters: &Counters,
@@ -248,6 +259,7 @@ fn open(
         primary,
         paths,
         output,
+        only,
         writable,
         secret.password,
         &counters.reading,
@@ -272,6 +284,7 @@ struct Choices {
     keep_archive: bool,
     here: bool,
     existing: Existing,
+    only: Option<Vec<PathBuf>>,
 }
 
 fn extract(
@@ -289,6 +302,7 @@ fn extract(
         keep_archive,
         here,
         existing,
+        only,
     } = choices;
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
@@ -300,10 +314,21 @@ fn extract(
     // "Extract here" opens for the folder named after the archive, the safe
     // choice, and moves next to the archive once its contents allow.
     let output = if here { None } else { output };
-    let (job, journal) = match open(&primary, &paths, output, true, secret, counters, send)? {
+    let opened = open(
+        &primary,
+        &paths,
+        output,
+        only.as_deref(),
+        true,
+        secret,
+        counters,
+        send,
+    )?;
+    let (job, journal) = match opened {
         State::Orphan(mut journal) => {
             let warning = engine::finish_orphaned(&mut journal, &paths)?;
             send(Update::Extracted {
+                selected: journal.only.is_some(),
                 output: journal.output,
                 keep: journal.keep,
                 warning,
@@ -386,6 +411,7 @@ fn extract(
 
     let output = journal.output.clone();
     let keep = journal.keep;
+    let selected = journal.only.is_some();
     counters.total.store(journal.total_size, Ordering::Relaxed);
     counters.done.store(
         journal.total_size.saturating_sub(job.remaining_size()),
@@ -422,6 +448,7 @@ fn extract(
             send(Update::Extracted {
                 output,
                 keep,
+                selected,
                 warning,
             });
         }
@@ -438,7 +465,7 @@ fn test(
 ) -> Result<()> {
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
-    let job = match open(&primary, &paths, None, false, secret, counters, send)? {
+    let job = match open(&primary, &paths, None, None, false, secret, counters, send)? {
         State::Fresh(job, _) => job,
         _ => bail!(
             "this archive is partially extracted and cannot be tested. Resume or restore it first"
@@ -510,6 +537,7 @@ mod tests {
             password: None,
             here: false,
             existing: Existing::Ask,
+            only: None,
         };
         assert!(extract.set_keep_free(500_000_000));
         match extract {
@@ -705,6 +733,7 @@ mod tests {
             password: None,
             here: false,
             existing: Existing::Ask,
+            only: None,
         }
     }
 
@@ -718,6 +747,7 @@ mod tests {
             password: None,
             here: false,
             existing: Existing::Ask,
+            only: None,
         }
     }
 
@@ -970,6 +1000,7 @@ mod tests {
             password: None,
             here: false,
             existing: Existing::Ask,
+            only: None,
         };
         assert_eq!(collect(&request, &counters), ["checking", "no space"]);
         assert!(!session::locate(&archive).unwrap().1.exists());

@@ -21,12 +21,14 @@ export global Messages {
     public function verifying-message() -> string { return @tr("Verifying archive before extracting…"); }
     public function paused-message() -> string { return @tr("Progress is saved. The extraction can be resumed now or later."); }
     public function extracted-kept() -> string { return @tr("All entries were extracted. The archive was kept."); }
+    public function extracted-selected() -> string { return @tr("The selected entries were extracted. The archive was kept."); }
     public function extracted-removed() -> string { return @tr("All entries were extracted. The archive was removed."); }
     public function waiting-disk() -> string { return @tr("Waiting for disk"); }
 
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
     public function archive-kind(name: string) -> string { return @tr("{} archive", name); }
     public function entry-count(number: string, n: int) -> string { return @tr("{} entry" | "{} entries" % n, number); }
+    public function selection-count(number: string, n: int) -> string { return @tr("{} item selected. Extracting the selection keeps the archive unchanged." | "{} items selected. Extracting the selection keeps the archive unchanged." % n, number); }
     public function remaining-summary(size: string, entries: string) -> string { return @tr("{} in {} remaining", size, entries); }
     public function uncompressed-summary(size: string) -> string { return @tr("{} uncompressed", size); }
 

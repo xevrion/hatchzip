@@ -248,7 +248,9 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
             view.message = messages.invoke_task_no_space(task.plan.short.clone());
         }
         crate::Phase::Done if !view.is_test && !task.is_restoring() => {
-            view.message = if task.keeps_archive() {
+            view.message = if task.extracts_selection() {
+                messages.invoke_extracted_selected()
+            } else if task.keeps_archive() {
                 messages.invoke_extracted_kept()
             } else {
                 messages.invoke_extracted_removed()

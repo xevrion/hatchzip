@@ -21,6 +21,9 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
     Ok((primary, paths))
 }
 
+// Made once per open and taken apart at once, so the size of the largest
+// variant costs nothing worth boxing for.
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     /// Nothing touched yet. Nothing changes on disk until [`begin`] writes
     /// the journal.
@@ -54,10 +57,16 @@ pub fn case_sensitive(dir: &Path) -> bool {
 /// [`open_encrypted`] for the ask-and-retry loop front ends want. What
 /// opening reads is counted in `reads`, which a front end can show from
 /// another thread: a compressed tar is read in full here.
+///
+/// `only` limits a fresh extraction to those entries and the folders among
+/// them (see [`Job::select`]), which [`begin`] then allows only while the
+/// archive is kept. A half-extracted archive goes on with the selection its
+/// journal records, and one given here must be part of it.
 pub fn open(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<&str>,
     reads: &Arc<Reads>,
@@ -106,13 +115,19 @@ pub fn open(
         if journal.done {
             return Ok(State::Orphan(journal));
         }
+        if let Some(given) = only {
+            check_same_selection(&journal, given)?;
+        }
         let job = Job::resume(&journal, tail, writable, password, reads.clone())?;
         check_no_links_on_the_way(&job, &journal.output)?;
         return Ok(State::Resume(job, journal));
     }
-    let job = Job::open(primary, writable, password, reads.clone())?;
+    let mut job = Job::open(primary, writable, password, reads.clone())?;
     if writable && job.format_name == crate::archive::SPLIT_ZIP {
         paths.check_stub()?;
+    }
+    if let Some(given) = only {
+        job.select(given)?;
     }
     let output = match output {
         Some(o) => std::path::absolute(o)?,
@@ -152,6 +167,31 @@ pub(crate) fn check_first_part_gone(journal: &Journal) -> Result<()> {
             );
         }
         start = start.saturating_add(*len);
+    }
+    Ok(())
+}
+
+/// A resume goes on with what its journal records. Asking for entries now is
+/// fine when they are all part of that selection, and refused otherwise,
+/// before the archive is opened for writing.
+fn check_same_selection(journal: &Journal, given: &[PathBuf]) -> Result<()> {
+    let Some(recorded) = &journal.only else {
+        bail!(
+            "this archive is partially extracted with every entry selected. Resume it without \
+             choosing entries, or run restore first. Nothing was modified"
+        );
+    };
+    for g in given {
+        let p = crate::engine::selection_path(g)?;
+        // A path inside a recorded folder is part of the selection too.
+        if !crate::engine::picks(recorded, &p) {
+            bail!(
+                "this archive is partially extracted with other entries selected, and '{}' is \
+                 not one of them. Resume it without choosing entries to finish those, or run \
+                 restore first. Nothing was modified",
+                p.display()
+            );
+        }
     }
     Ok(())
 }
@@ -273,10 +313,12 @@ fn check_path_lengths(job: &Job, out: &Path) -> Result<()> {
 /// up. Archives with a password are proven with [`Job::check_password`]
 /// before this returns, so nothing is deleted on a wrong guess. Returns the
 /// state and the password that worked.
+#[allow(clippy::too_many_arguments)]
 pub fn open_encrypted(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<String>,
     reads: &Arc<Reads>,
@@ -286,6 +328,7 @@ pub fn open_encrypted(
         primary,
         paths,
         output,
+        only,
         writable,
         password,
         reads,
@@ -302,6 +345,7 @@ pub fn open_encrypted_noting(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     mut password: Option<String>,
     reads: &Arc<Reads>,
@@ -314,6 +358,7 @@ pub fn open_encrypted_noting(
             primary,
             paths,
             output.clone(),
+            only,
             writable,
             password.as_deref(),
             reads,
@@ -767,6 +812,13 @@ pub fn begin(
              choose another destination. Nothing was modified"
         );
     }
+    if job.selection().is_some() && !keep_archive {
+        // Truncating would destroy the entries left out.
+        bail!(
+            "only some entries are selected, and those are extracted only while the archive is \
+             kept. Nothing was modified"
+        );
+    }
     if keep_archive {
         job.storage.protect();
     } else if let Some(why) = job.in_place_refusal() {
@@ -804,6 +856,7 @@ pub fn begin(
         case_folders: job.case_folders(),
         case_beyond_ascii: job.case_beyond_ascii(),
         folders,
+        only: job.selection().map(<[PathBuf]>::to_vec),
     };
     Journal::create(paths, &job.storage, plan)
 }
@@ -1012,7 +1065,8 @@ mod tests {
         let before = fs::read(&archive).unwrap();
         let (primary, paths) = locate(&archive).unwrap();
         let reads = Arc::default();
-        let State::Fresh(job, out) = open(&primary, &paths, None, true, None, &reads).unwrap()
+        let State::Fresh(job, out) =
+            open(&primary, &paths, None, None, true, None, &reads).unwrap()
         else {
             panic!("a new archive opens fresh");
         };
