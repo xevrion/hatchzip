@@ -28,6 +28,7 @@ export global Messages {
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
     public function archive-kind(name: string) -> string { return @tr("{} archive", name); }
     public function entry-count(number: string, n: int) -> string { return @tr("{} entry" | "{} entries" % n, number); }
+    public function selection-count(number: string, n: int) -> string { return @tr("{} item selected. Extracting the selection keeps the archive unchanged." | "{} items selected. Extracting the selection keeps the archive unchanged." % n, number); }
     public function remaining-summary(size: string, entries: string) -> string { return @tr("{} in {} remaining", size, entries); }
     public function uncompressed-summary(size: string) -> string { return @tr("{} uncompressed", size); }
 

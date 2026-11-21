@@ -137,6 +137,9 @@ pub enum Update {
     Extracted {
         output: PathBuf,
         keep: bool,
+        /// Only the entries chosen when the run started were extracted,
+        /// whichever way it was resumed.
+        selected: bool,
         warning: Option<String>,
     },
     Tested(usize),
@@ -325,6 +328,7 @@ fn extract(
         State::Orphan(mut journal) => {
             let warning = engine::finish_orphaned(&mut journal, &paths)?;
             send(Update::Extracted {
+                selected: journal.only.is_some(),
                 output: journal.output,
                 keep: journal.keep,
                 warning,
@@ -407,6 +411,7 @@ fn extract(
 
     let output = journal.output.clone();
     let keep = journal.keep;
+    let selected = journal.only.is_some();
     counters.total.store(journal.total_size, Ordering::Relaxed);
     counters.done.store(
         journal.total_size.saturating_sub(job.remaining_size()),
@@ -443,6 +448,7 @@ fn extract(
             send(Update::Extracted {
                 output,
                 keep,
+                selected,
                 warning,
             });
         }

@@ -570,26 +570,48 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
     );
 
     // The single root opens by itself: Northwind, bin, data, README.txt.
+    // A plain click only moves the cursor; Space chooses the row under it.
     click_control(&ui, "Northwind/README.txt");
-    assert_eq!(ui.get_selection_count(), 1);
+    assert_eq!(ui.get_selection_count(), 0, "a plain click chooses nothing");
     let key = |key: Key| {
         ui.window()
             .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
     };
+    let chosen = |path: &str| inside_window(&ui, path).accessible_checked();
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 1);
     key(Key::UpArrow);
+    key(Key::Space);
+    assert_eq!(chosen("Northwind/data"), Some(true));
+    key(Key::Space);
+    assert_eq!(
+        chosen("Northwind/data"),
+        Some(false),
+        "Space again takes the row out, although the cursor is on it"
+    );
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_item_selected(),
+        Some(true),
+        "the cursor is the selected item"
+    );
     key(Key::Space);
     assert_eq!(ui.get_selection_count(), 2);
     for path in ["Northwind/README.txt", "Northwind/data"] {
-        assert_eq!(
-            inside_window(&ui, path).accessible_item_selected(),
-            Some(true),
-            "{path} is chosen"
-        );
+        assert_eq!(chosen(path), Some(true), "{path} is chosen");
     }
-    assert_eq!(
-        inside_window(&ui, "Northwind/bin").accessible_item_selected(),
-        Some(false)
-    );
+    assert_eq!(chosen("Northwind/bin"), Some(false));
+    // Extract still removes the archive, and the footer still says so.
+    let removed = "The archive is removed progressively during extraction. An interrupted \
+                   extraction can be resumed. 2 items selected. Extracting the selection keeps \
+                   the archive unchanged.";
+    inside_window(&ui, removed);
+    key(Key::Escape);
+    assert_eq!(ui.get_selection_count(), 0, "Escape empties the selection");
+    assert_eq!(chosen("Northwind/README.txt"), Some(false));
+    key(Key::Space);
+    key(Key::DownArrow);
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 2);
     inside_window(&ui, "Extract selected…");
     inside_window(&ui, "Extract");
     shot(ui.window(), &format!("{tag}-21-selection"));

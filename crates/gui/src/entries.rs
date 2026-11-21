@@ -188,12 +188,21 @@ impl Entries {
         }
     }
 
-    /// Changes the selection with the row at `row`: `mode` 0 selects only
-    /// it, 1 adds it or takes it out, and 2 selects every row from the last
-    /// one chosen to it. Returns the visible rows whose look changed.
+    /// Changes the selection with the row at `row`: `mode` 0 chooses
+    /// nothing and only makes it where a Shift-click starts, 1 adds it or
+    /// takes it out, 2 selects every row from the last one clicked to it,
+    /// and 3 empties the selection. Returns the visible rows whose look
+    /// changed.
     pub fn choose(&mut self, row: usize, mode: i32) -> Vec<usize> {
-        let Some(&(node, _)) = self.visible.get(row) else {
+        let node = self.visible.get(row).map(|&(n, _)| n);
+        if mode == 0 {
+            self.anchor = node.or(self.anchor);
             return Vec::new();
+        }
+        let node = match (mode, node) {
+            (3, _) => 0,
+            (_, Some(n)) => n,
+            (_, None) => return Vec::new(),
         };
         let before: Vec<bool> = self
             .visible
@@ -218,11 +227,7 @@ impl Entries {
                     self.nodes[n].selected = true;
                 }
             }
-            _ => {
-                self.clear_selection();
-                self.nodes[node].selected = true;
-                self.anchor = Some(node);
-            }
+            _ => self.clear_selection(),
         }
         before
             .iter()
@@ -238,9 +243,11 @@ impl Entries {
         }
     }
 
-    /// How many rows are chosen, shown or inside a closed folder.
+    /// How many paths [`Self::chosen`] gives, without building them.
     pub fn chosen_count(&self) -> usize {
-        self.nodes.iter().filter(|n| n.selected).count()
+        (1..self.nodes.len())
+            .filter(|&i| self.nodes[i].selected && !self.inside_chosen(i))
+            .count()
     }
 
     /// The paths to extract: every chosen row, except those inside a chosen
@@ -539,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_are_chosen_alone_added_and_by_range() {
+    fn rows_are_added_by_range_and_cleared() {
         let model = EntriesModel::new(Entries::new(vec![
             file("a.txt", 1),
             file("b.txt", 1),
@@ -553,24 +560,31 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         // The folder sorts first: d, a.txt, b.txt, c.txt.
-        assert_eq!(model.choose(1, 0), 1);
+        assert_eq!(model.choose(1, 0), 0, "a plain click chooses nothing");
+        assert_eq!(model.choose(1, 1), 1);
         assert_eq!(model.choose(3, 1), 2);
         assert_eq!(names(), ["a.txt", "c.txt"]);
         assert_eq!(model.choose(3, 1), 1, "a second Ctrl-click takes it out");
-        assert_eq!(model.choose(1, 0), 1);
-        assert_eq!(model.choose(3, 2), 3);
+        assert_eq!(model.choose(1, 0), 1, "nor does it clear the selection");
+        assert_eq!(model.choose(3, 2), 3, "Shift selects from the click");
         assert_eq!(names(), ["a.txt", "b.txt", "c.txt"]);
-        assert_eq!(model.choose(0, 0), 1);
+        assert_eq!(model.choose(0, 3), 0, "Escape empties it");
+        assert!(names().is_empty());
+        assert_eq!(model.choose(0, 1), 1);
         assert_eq!(names(), ["d"]);
         // Inside a chosen folder, a chosen file adds nothing to extract.
         model.toggle(0, Some(true));
-        assert_eq!(model.choose(1, 1), 2);
+        assert_eq!(model.choose(1, 1), 1);
+        assert_eq!(names(), ["d", "d/e.txt"]);
         assert_eq!(model.chosen(), ["d"]);
         // A closed folder keeps what was chosen inside it.
-        model.choose(1, 0);
+        model.choose(0, 1);
         model.toggle(0, Some(false));
         assert_eq!(model.chosen(), ["d/e.txt"]);
         assert!(names().is_empty());
+        // Escape works with no row under the cursor too.
+        assert_eq!(model.choose(99, 3), 0);
+        assert!(model.chosen().is_empty());
     }
 
     #[test]

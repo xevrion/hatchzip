@@ -156,9 +156,16 @@ fn the_space_plan_counts_only_the_selection() {
     let (primary, paths) = session::locate(&archive).unwrap();
     let reads = Default::default();
     let chosen = [PathBuf::from("game/config")];
-    let State::Fresh(job, out) =
-        session::open(&primary, &paths, None, Some(chosen.as_slice()), false, None, &reads).unwrap()
-    else {
+    let State::Fresh(job, out) = session::open(
+        &primary,
+        &paths,
+        None,
+        Some(chosen.as_slice()),
+        false,
+        None,
+        &reads,
+    )
+    .unwrap() else {
         panic!("a new archive opens fresh");
     };
     let plan = session::plan(&job, &out, false, 0, true).unwrap();
@@ -207,9 +214,16 @@ fn a_selection_without_keeping_the_archive_is_refused() {
     let (primary, paths) = session::locate(&archive).unwrap();
     let reads = Default::default();
     let chosen = [PathBuf::from("game/many")];
-    let State::Fresh(job, out) =
-        session::open(&primary, &paths, None, Some(chosen.as_slice()), true, None, &reads).unwrap()
-    else {
+    let State::Fresh(job, out) = session::open(
+        &primary,
+        &paths,
+        None,
+        Some(chosen.as_slice()),
+        true,
+        None,
+        &reads,
+    )
+    .unwrap() else {
         panic!("a new archive opens fresh");
     };
     let err = session::begin(&job, &paths, out.clone(), false, None)
@@ -222,8 +236,9 @@ fn a_selection_without_keeping_the_archive_is_refused() {
     assert_unchanged(&before);
 }
 
-/// A crash leaves a version 9 journal with the selection; running the same
-/// command, or plain extract, goes on with exactly those entries.
+/// A crash leaves a version 9 journal with the selection; plain extract, or
+/// a path inside one of the folders chosen, goes on with exactly those
+/// entries.
 #[test]
 fn a_crashed_selection_resumes_with_the_same_entries() {
     let files = sample_files();
@@ -264,23 +279,28 @@ fn a_crashed_selection_resumes_with_the_same_entries() {
             assert!(stderr(&other).contains("other entries selected"), "{what}");
             assert!(!out.join("game/data").exists(), "{what}");
 
-            let resumed = hatchzip(
-                &[
-                    "extract",
-                    archive.to_str().unwrap(),
-                    "-o",
-                    out.to_str().unwrap(),
-                    "--keep-free",
-                    "0",
-                ],
-                &[],
-            );
-            assert_ok(&resumed);
-            assert!(
-                stdout(&resumed).contains("started with --only"),
-                "{what}: {}",
-                stdout(&resumed)
-            );
+            if point == "after-journal" {
+                // Part of the selection, so the run goes on with all of it.
+                assert_ok(&only(&archive, &out, &["game/config/settings.ini"], &[]));
+            } else {
+                let resumed = hatchzip(
+                    &[
+                        "extract",
+                        archive.to_str().unwrap(),
+                        "-o",
+                        out.to_str().unwrap(),
+                        "--keep-free",
+                        "0",
+                    ],
+                    &[],
+                );
+                assert_ok(&resumed);
+                assert!(
+                    stdout(&resumed).contains("started with --only"),
+                    "{what}: {}",
+                    stdout(&resumed)
+                );
+            }
             assert_selected(&out, &files, CHOSEN);
             assert_unchanged(&before);
             assert_no_side_files(&archive);
@@ -314,6 +334,74 @@ fn a_crashed_stream_selection_starts_over() {
     assert_selected(&out, &files, CHOSEN);
     assert_unchanged(&before);
     assert_no_side_files(&archive);
+}
+
+/// A crash inside the stream, just past a file left out and after a chosen
+/// one was written, leaves no resume point. The rerun deletes what the
+/// first one wrote, starts the stream over and leaves only the selection,
+/// with no part files, while the archive never changes.
+#[test]
+fn a_selection_crashed_inside_the_stream_starts_over() {
+    let files = sample_files();
+    let tmp = TempDir::new().unwrap();
+    let archive = targz_of(tmp.path(), "game.tar.gz", &files);
+    let before = snapshot(&archive);
+    let out = tmp.path().join("out");
+    let crashed = only(
+        &archive,
+        &out,
+        CHOSEN,
+        &[("HATCHZIP_CRASH_AT", "stream-skipped")],
+    );
+    assert!(!crashed.status.success());
+    // game/config sorts before game/data, the first file left out.
+    assert!(
+        out.join("game/config").exists(),
+        "the crash came after a chosen file was written"
+    );
+    let j = journal(&archive);
+    assert!(j.get("resume").is_none_or(|r| r.is_null()), "{j}");
+    assert_unchanged(&before);
+    assert_ok(&only(&archive, &out, CHOSEN, &[]));
+    assert_selected(&out, &files, CHOSEN);
+    assert_unchanged(&before);
+    assert_no_side_files(&archive);
+}
+
+/// `--only` on an archive half extracted in place is refused with advice
+/// about `--only`, not about the `--keep-archive` it implies.
+#[test]
+fn only_on_an_archive_extracted_in_place_is_refused() {
+    let files = sample_files();
+    let tmp = TempDir::new().unwrap();
+    let archive = zip_of(tmp.path(), "game.zip", &files);
+    let out = tmp.path().join("out");
+    let a = archive.to_str().unwrap();
+    let o = out.to_str().unwrap();
+    let crashed = hatchzip(
+        &["extract", a, "-o", o, "--keep-free", "0", "--yes"],
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "1"),
+        ],
+    );
+    assert!(!crashed.status.success());
+    let before = snapshot(&archive);
+    let refused = only(&archive, &out, &["game/config"], &[]);
+    assert!(!refused.status.success());
+    let err = stderr(&refused);
+    assert!(
+        err.contains("Resume without --only") && !err.contains("--keep-archive"),
+        "{err}"
+    );
+    assert_unchanged(&before);
+    // The run it refused to change goes on as it started.
+    assert_ok(&hatchzip(
+        &["extract", a, "-o", o, "--keep-free", "0", "--yes"],
+        &[],
+    ));
+    assert!(!archive.exists());
 }
 
 /// A tar hard link is made from its extracted target, so choosing the link

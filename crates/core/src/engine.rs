@@ -531,7 +531,8 @@ impl Job {
         for p in &paths {
             if !items().any(|i| i.path.starts_with(p)) {
                 bail!(
-                    "'{}' is not in the archive, so nothing was extracted. Nothing was modified",
+                    "'{}' is not in the archive. Run `hatchzip list` on it to see its paths, and \
+                     give one as listed. Nothing was modified",
                     p.display()
                 );
             }
@@ -1715,7 +1716,11 @@ impl Run<'_> {
                         }
                     }
                 }
-                Event::FileEnd if skipping => skipping = false,
+                Event::FileEnd if skipping => {
+                    skipping = false;
+                    // Inside the stream, past a file left out.
+                    crash_point("stream-skipped");
+                }
                 Event::FileEnd => {
                     let f = open
                         .take()

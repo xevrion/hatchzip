@@ -151,7 +151,8 @@ fn check_same_selection(journal: &Journal, given: &[PathBuf]) -> Result<()> {
     };
     for g in given {
         let p = crate::engine::selection_path(g)?;
-        if !recorded.contains(&p) {
+        // A path inside a recorded folder is part of the selection too.
+        if !crate::engine::picks(recorded, &p) {
             bail!(
                 "this archive is partially extracted with other entries selected, and '{}' is \
                  not one of them. Resume it without choosing entries to finish those, or run \

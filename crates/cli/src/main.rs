@@ -873,7 +873,17 @@ fn extract(
     if opts.keep {
         let (_, paths) = locate(archive)?;
         if paths.exists() {
-            session::keeps_archive(&Journal::load(&paths)?.0, true)?;
+            let journal = Journal::load(&paths)?.0;
+            // --only keeps the archive without --keep-archive being typed,
+            // so the advice is about --only.
+            if opts.implied_keep && !journal.keep {
+                bail!(
+                    "this archive is partially extracted in place with every entry, and --only \
+                     needs the archive kept. Resume without --only, or run restore first. \
+                     Nothing was modified"
+                );
+            }
+            session::keeps_archive(&journal, true)?;
         }
     }
     let (state, paths) = open(archive, output, opts.only.as_deref(), true, secret)?;
@@ -883,7 +893,9 @@ fn extract(
             if let Some(warning) = engine::finish_orphaned(&mut journal, &paths)? {
                 eprintln!("warning: {warning}");
             }
-            if journal.keep {
+            if journal.only.is_some() {
+                say!("This extraction was started with --only; the archive is kept.");
+            } else if journal.keep {
                 say!("This extraction was started with --keep-archive; the archive is kept.");
             }
             say!(

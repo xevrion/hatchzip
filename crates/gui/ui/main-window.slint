@@ -75,9 +75,10 @@ component EntryList inherits VerticalLayout {
     in property <string> empty-text;
     property <int> selected: 0;
     property <length> row-height: 26px;
-    // How the click being made changes the selection: 0 selects only the
-    // row, 1 adds or removes it (Ctrl or Cmd), 2 selects the range from the
-    // last row chosen (Shift). Read from the press, which carries the keys.
+    // How the click being made changes the selection: 0 only moves the
+    // cursor there, 1 adds or removes the row (Ctrl or Cmd), 2 selects the
+    // range from the last row clicked (Shift). Read from the press, which
+    // carries the keys.
     property <int> click-mode: 0;
     init => { scope.focus(); }
     callback toggle(int, int);
@@ -129,7 +130,12 @@ component EntryList inherits VerticalLayout {
             accessible-expandable: row.dir;
             accessible-expanded: row.expanded;
             accessible-item-selectable: true;
-            accessible-item-selected: root.selected == index || row.selected;
+            // The cursor is the selected item; being chosen for "Extract
+            // selected…" is a separate checked state, so a screen reader can
+            // tell the two apart.
+            accessible-item-selected: root.selected == index;
+            accessible-checkable: true;
+            accessible-checked: row.selected;
             accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
             accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 1); } }
             // The selection stays visible when the keyboard moves to the
@@ -192,7 +198,8 @@ component EntryList inherits VerticalLayout {
                     root.selected = index;
                     scope.focus();
                     root.choose(index, root.click-mode);
-                    // Adding a folder to the selection leaves it as it is.
+                    // A plain click opens or closes a folder and chooses
+                    // nothing; adding one to the selection leaves it as it is.
                     if row.dir && root.click-mode == 0 { root.toggle(index, 0); }
                 }
             }
@@ -216,6 +223,11 @@ component EntryList inherits VerticalLayout {
                 if root.selected >= 0 && root.selected < root.entries.length {
                     root.choose(root.selected, 1);
                 }
+                return accept;
+            }
+            // Escape empties the selection.
+            if event.text == Key.Escape {
+                root.choose(root.selected, 3);
                 return accept;
             }
             if event.text == Key.LeftArrow || event.text == Key.RightArrow {
@@ -243,6 +255,9 @@ export component MainWindow inherits Window {
     in property <[EntryRow]> entries;
     // Rows chosen in the tree for "Extract selected…".
     in property <int> selection-count;
+    // "2 items selected. ...", said after what Extract does, which a
+    // selection does not change.
+    in property <string> selection-text;
     in property <PlanView> plan;
     in property <string> output;
     in-out property <string> keep-free: "2";
@@ -662,7 +677,7 @@ export component MainWindow inherits Window {
                 // padding inside the Text's box clipped Devanagari vowel signs.
                 spacing: 12px;
                 Text {
-                    text: root.mode != Mode.fresh ? "" : root.selection-count > 0 ? @tr("{} item selected. Extracting the selection keeps the archive unchanged." | "{} items selected. Extracting the selection keeps the archive unchanged." % root.selection-count, root.selection-count) : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
+                    text: root.mode != Mode.fresh ? "" : (root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.")) + (root.selection-count > 0 ? " " + root.selection-text : "");
                     color: Theme.muted;
                     font-size: Theme.small-size;
                     wrap: word-wrap;

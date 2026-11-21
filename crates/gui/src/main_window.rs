@@ -398,7 +398,12 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
             (Some(tree), Ok(index)) => tree.choose(index, mode),
             _ => return,
         };
-        a.ui().set_selection_count(plural_count(count));
+        let ui = a.ui();
+        ui.set_selection_count(plural_count(count));
+        ui.set_selection_text(
+            ui.global::<Messages>()
+                .invoke_selection_count(text::count(count).into(), plural_count(count)),
+        );
     });
     let a = app.clone();
     ui.on_extract_selected(move || a.extract_selected());
@@ -1134,10 +1139,13 @@ impl App {
         if chosen.is_empty() {
             return;
         }
+        let Some(archive) = self.archive.borrow().clone() else {
+            return;
+        };
         let only: Vec<PathBuf> = chosen.into_iter().map(PathBuf::from).collect();
         if let Some(answer) = PICKED.with(|p| p.borrow().as_ref().map(|f| f())) {
             if let Some(dir) = answer {
-                self.extract_only(only, dir);
+                self.extract_only(&archive, only, dir);
             }
             return;
         }
@@ -1152,17 +1160,22 @@ impl App {
         }
         let _ = slint::spawn_local(async move {
             if let Some(dir) = dialog.pick_folder().await {
-                with_app(|app| app.extract_only(only, dir.path().to_path_buf()));
+                with_app(|app| app.extract_only(&archive, only, dir.path().to_path_buf()));
             }
         });
     }
 
-    fn extract_only(&self, only: Vec<PathBuf>, output: PathBuf) {
-        let Some(archive) = self.archive.borrow().clone() else {
+    /// `archive` is the one open when the folder was asked for: the picker
+    /// may not block the window, and the paths belong to that archive.
+    fn extract_only(&self, archive: &Path, only: Vec<PathBuf>, output: PathBuf) {
+        if self.runner.running()
+            || self.mode.get() != Mode::Fresh
+            || self.archive.borrow().as_deref() != Some(archive)
+        {
             return;
-        };
+        }
         let request = Request::Extract {
-            archive,
+            archive: archive.to_path_buf(),
             output: Some(output.clone()),
             keep_free: self.keep_free.get(),
             verify_first: self.ui().get_verify_first(),

@@ -299,9 +299,12 @@ impl Task {
             Update::Extracted {
                 output,
                 keep,
+                selected,
                 warning,
             } => {
                 self.keep = keep;
+                // A right-click resume of a selection learns it only here.
+                self.selected |= selected;
                 self.warning = warning;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
@@ -521,6 +524,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: false,
+            selected: false,
             warning: None,
         });
         assert_eq!(t.view.phase, Phase::Done);
@@ -557,6 +561,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: true,
+            selected: false,
             warning: None,
         });
         assert_eq!(
@@ -794,6 +799,7 @@ mod tests {
             task.apply(Update::Extracted {
                 output: "out".into(),
                 keep,
+                selected: false,
                 warning: None,
             });
             assert_eq!(task.keeps_archive(), keep);
