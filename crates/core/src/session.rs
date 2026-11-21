@@ -21,6 +21,9 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
     Ok((primary, paths))
 }
 
+// Made once per open and taken apart at once, so the size of the largest
+// variant costs nothing worth boxing for.
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     /// Nothing touched yet. Nothing changes on disk until [`begin`] writes
     /// the journal.
