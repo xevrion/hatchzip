@@ -1,6 +1,8 @@
 //! The language in the Settings window, through the same callbacks its
 //! controls call.
-use hatchzip_gui::{Screen, SettingsWindow, backend::Drops, main_window, settings::Settings};
+use hatchzip_gui::{
+    MainWindow, Screen, SettingsWindow, backend::Drops, main_window, settings::Settings,
+};
 use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
 use slint::{ComponentHandle, Model, Timer, TimerMode};
 use std::cell::Cell;
