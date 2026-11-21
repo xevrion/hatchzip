@@ -1,6 +1,6 @@
 [package]
 name = "hatchzip-shell"
-description = "Adds HatchZip to the file manager's right-click menu on Windows and Linux."
+description = "Adds HatchZip to the file manager's right-click menu on Windows, macOS and Linux."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -961,7 +961,15 @@ impl App {
                         if let Some(w) = app.settings_window.borrow().as_ref() {
                             w.set_shell_menu_on(!on);
                         }
-                        (sentence(&format!("{e:#}")), true)
+                        let text = if e.is::<hatchzip_shell::NotInstalled>() {
+                            app.ui()
+                                .global::<Messages>()
+                                .invoke_menu_move_app()
+                                .to_string()
+                        } else {
+                            sentence(&format!("{e:#}"))
+                        };
+                        (text, true)
                     }
                 };
                 let shown_in_settings = in_settings

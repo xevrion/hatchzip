@@ -75,8 +75,8 @@ pub const ALL_EXTENSIONS: &[&str] = &[
 /// location; tests point it somewhere temporary.
 #[derive(Clone, Debug)]
 pub struct Dirs {
-    /// `$XDG_DATA_HOME` on Linux. Unused on Windows, where entries go to the
-    /// per-user registry hive.
+    /// `$XDG_DATA_HOME` on Linux, `~/Library/Services` on macOS. Unused on
+    /// Windows, where entries go to the per-user registry hive.
     pub data: PathBuf,
     /// `$XDG_CONFIG_HOME` on Linux, where Thunar keeps its actions. Unused
     /// elsewhere.
@@ -91,6 +91,22 @@ impl Dirs {
         platform::current_dirs()
     }
 }
+
+/// Why [`register`] refused: the app runs from somewhere it won't stay, such
+/// as a mounted disk image, so it has to be moved to Applications first.
+#[derive(Debug)]
+pub struct NotInstalled;
+
+impl std::fmt::Display for NotInstalled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "HatchZip runs from a disk image or a temporary copy; move it to Applications, \
+             open it from there and try again",
+        )
+    }
+}
+
+impl std::error::Error for NotInstalled {}
 
 /// Adds the menu entries, pointing them at `gui`, the `hatchzip-gui`
 /// executable. Safe to run again, for instance after an update moves it.
