@@ -30,7 +30,6 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - `hatchzip extract game.zip`: extracts into `game/` next to the archive and removes the archive as it goes; `-y` skips the confirmation, `-o DIR` extracts elsewhere
 - `hatchzip extract game.zip --verify-first`: read everything once before deleting anything
 - `hatchzip extract game.zip --keep-archive`: a normal extraction that keeps the archive unchanged and needs space for all extracted files. In the app: clear "Remove the archive during extraction"; in the right-click menu: "Extract here (keep archive)"
-- Right-click menu: Extract here, Extract here (keep archive), Extract files, Extract to a new folder and Test archive. Windows Explorer and Linux file managers get it from the installer or the app's Settings menu; on macOS, Finder lists the entries under Quick Actions once "Show in the Finder context menu" is turned on in the app's Settings menu
 - `hatchzip extract a.zip b.7z c.tar.gz`: several archives one after another, each checked for space just before it starts
 - `hatchzip restore game.zip`: turn a half-extracted archive back into a normal archive
 - `hatchzip list`, `hatchzip test`: list or verify without changing anything
