@@ -50,6 +50,8 @@ pub fn current_dirs() -> Result<Dirs> {
     let home = std::env::home_dir().ok_or_else(|| anyhow!("no home folder"))?;
     Ok(Dirs {
         data: home.join("Library/Services"),
+        config: PathBuf::new(),
+        system_config: Vec::new(),
     })
 }
 

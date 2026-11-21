@@ -567,6 +567,8 @@ fn finder_quick_actions_point_at_the_app_and_go_away_cleanly() {
     let tmp = tempfile::TempDir::new().unwrap();
     let dirs = Dirs {
         data: tmp.path().join("Library/Services"),
+        config: tmp.path().join("config"),
+        system_config: Vec::new(),
     };
     // Someone else's Quick Action, which must survive both directions.
     let foreign = dirs.data.join("Other.workflow/Contents/Info.plist");
@@ -674,6 +676,8 @@ fn finder_quick_actions_refuse_an_app_that_is_not_installed() {
     let tmp = tempfile::TempDir::new().unwrap();
     let dirs = Dirs {
         data: tmp.path().join("Services"),
+        config: tmp.path().join("config"),
+        system_config: Vec::new(),
     };
     for gui in [
         "/Volumes/HatchZip/HatchZip.app/Contents/MacOS/hatchzip-gui",
@@ -696,6 +700,8 @@ fn finder_quick_action_passes_every_selected_archive_at_once() {
     let tmp = tempfile::TempDir::new().unwrap();
     let dirs = Dirs {
         data: tmp.path().join("Services"),
+        config: tmp.path().join("config"),
+        system_config: Vec::new(),
     };
     // Stands in for the GUI: writes its arguments, one per line.
     let bin = tmp.path().join("it's a \"dir\"");
