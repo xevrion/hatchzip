@@ -25,7 +25,7 @@ use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
 use crate::{
     AboutWindow, MainWindow, Messages, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView,
-    locale, platform, shell,
+    Theme, locale, platform, shell,
 };
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
@@ -63,6 +63,8 @@ struct Loaded {
     mode: Mode,
     /// Half extracted by a run that keeps the archive.
     kept: bool,
+    /// Half extracted by a run of entries chosen in the tree.
+    selected: bool,
     output: PathBuf,
     job: Option<Job>,
     password: Option<String>,
@@ -77,11 +79,18 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let (state, password) =
-        session::open_encrypted(&primary, &paths, None, false, password, reads, |wrong| {
-            crate::password::ask(&file_name, wrong)
-        })?;
+    let (state, password) = session::open_encrypted(
+        &primary,
+        &paths,
+        None,
+        None,
+        false,
+        password,
+        reads,
+        |wrong| crate::password::ask(&file_name, wrong),
+    )?;
     let mut kept = false;
+    let mut selected = false;
     let (job, mode, output, total, left) = match state {
         State::Fresh(job, out) => {
             let total = job.remaining_size();
@@ -90,6 +99,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         State::Resume(job, journal) => {
             let left = job.remaining_size();
             kept = journal.keep;
+            selected = journal.only.is_some();
             (
                 Some(job),
                 Mode::Resume,
@@ -111,6 +121,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         entries: Entries::new(job.as_ref().map(entries::collect).unwrap_or_default()),
         mode,
         kept,
+        selected,
         output,
         job,
         password,
@@ -145,6 +156,8 @@ struct App {
     mode: Cell<Mode>,
     /// The half-extracted run being resumed keeps its archive.
     kept_run: Cell<bool>,
+    /// ... and extracts only the entries chosen when it started.
+    selected_run: Cell<bool>,
     output: RefCell<PathBuf>,
     /// Where a fresh archive goes next to itself, before the default
     /// destination in Settings applies.
@@ -183,8 +196,19 @@ struct App {
     pick_wanted: Cell<bool>,
 }
 
+/// Answers the folder picker of "Extract selected…" in tests.
+type FolderAnswer = Box<dyn Fn() -> Option<PathBuf>>;
+
 thread_local! {
     static APP: RefCell<Option<Rc<App>>> = const { RefCell::new(None) };
+    /// Answers the folder picker of "Extract selected…" instead of a dialog.
+    static PICKED: RefCell<Option<FolderAnswer>> = const { RefCell::new(None) };
+}
+
+/// Makes "Extract selected…" take its folder from `answer` instead of
+/// asking with a dialog, which a test without a display can't answer.
+pub fn answer_folder_picker(answer: impl Fn() -> Option<PathBuf> + 'static) {
+    PICKED.with(|p| *p.borrow_mut() = Some(Box::new(answer)));
 }
 
 /// Runs `f` on the UI thread with the app, from any thread.
@@ -221,6 +245,7 @@ pub fn build(
 ) -> Result<MainWindow> {
     let ui = MainWindow::new()?;
     locale::apply(settings.language.as_deref());
+    locale::style(ui.global::<Theme>());
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
@@ -250,6 +275,7 @@ pub fn build(
         name: RefCell::new(String::new()),
         mode: Cell::new(Mode::Fresh),
         kept_run: Cell::new(false),
+        selected_run: Cell::new(false),
         output: RefCell::new(PathBuf::new()),
         next_to: RefCell::new(PathBuf::new()),
         output_chosen: Cell::new(false),
@@ -370,6 +396,21 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
         }
     });
     let a = app.clone();
+    ui.on_choose_entry(move |row, mode| {
+        let count = match (a.entries.borrow().as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.choose(index, mode),
+            _ => return,
+        };
+        let ui = a.ui();
+        ui.set_selection_count(plural_count(count));
+        ui.set_selection_text(
+            ui.global::<Messages>()
+                .invoke_selection_count(text::count(count).into(), plural_count(count)),
+        );
+    });
+    let a = app.clone();
+    ui.on_extract_selected(move || a.extract_selected());
+    let a = app.clone();
     ui.on_open_archive(move || a.pick_archive());
     let a = app.clone();
     ui.on_change_output(move || a.pick_output());
@@ -457,6 +498,7 @@ impl App {
         show_task(&ui, TaskView::default());
         ui.set_plan(PlanView::default());
         ui.set_entries(ModelRc::default());
+        ui.set_selection_count(0);
         *self.entries.borrow_mut() = None;
         ui.set_archive_name(
             path.file_name()
@@ -536,6 +578,8 @@ impl App {
         *self.entries.borrow_mut() = Some(tree);
         ui.set_mode(loaded.mode);
         ui.set_kept_run(loaded.kept);
+        ui.set_selection_count(0);
+        self.selected_run.set(loaded.selected);
         // A half-extracted archive goes on where it started.
         let output = match loaded.mode {
             Mode::Fresh => self.settings.borrow().output_for(&loaded.output),
@@ -596,6 +640,13 @@ impl App {
         self.change_settings(|s| s.language = choice.clone());
         locale::select(choice.as_deref());
         let ui = self.ui();
+        locale::style(ui.global::<Theme>());
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
+        if let Some(w) = self.about.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
         // Text bound to @tr in the .slint files follows by itself; these were
         // worded once from Rust and would stay in the old language.
         show_shell_menu_label(&ui);
@@ -885,6 +936,7 @@ impl App {
             Some(w) => w,
             None => {
                 let Ok(w) = SettingsWindow::new() else { return };
+                locale::style(w.global::<Theme>());
                 let settings = self.settings.borrow().clone();
                 if settings.appearance != Appearance::System {
                     w.global::<Palette>()
@@ -930,20 +982,22 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (
-                        app.ui()
-                            .global::<Messages>()
-                            .invoke_menu_added()
-                            .to_string(),
-                        false,
-                    ),
-                    Ok(()) => (
-                        app.ui()
-                            .global::<Messages>()
-                            .invoke_menu_removed()
-                            .to_string(),
-                        false,
-                    ),
+                    Ok(skipped) => {
+                        let ui = app.ui();
+                        let messages = ui.global::<Messages>();
+                        let mut text = if on {
+                            messages.invoke_menu_added()
+                        } else {
+                            messages.invoke_menu_removed()
+                        }
+                        .to_string();
+                        // The other menus went through; say which one didn't.
+                        for line in &skipped {
+                            text.push(' ');
+                            text.push_str(&sentence(line));
+                        }
+                        (text, !skipped.is_empty())
+                    }
                     Err(e) => {
                         // Show the switch as it really is.
                         app.ui().set_shell_menu_on(!on);
@@ -1053,16 +1107,89 @@ impl App {
             password: self.password.borrow().clone(),
             here: false,
             existing: self.settings.borrow().existing_files,
+            only: None,
         };
+        let mut task = Task::extract(&self.name.borrow(), Some(&output), keep);
+        if self.mode.get() == Mode::Resume && self.selected_run.get() {
+            task = task.selecting();
+        }
+        self.start_extraction(task, request);
+    }
+
+    fn start_extraction(&self, task: Task, request: Request) {
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
         // plan still being worked out.
         let job = self.job.replace(SharedJob::default());
         self.runner.start_after(
             move || drop(job.lock().map(|mut j| j.take())),
-            Task::extract(&self.name.borrow(), Some(&output), keep),
+            task,
             request,
         );
+    }
+
+    /// Asks where the rows chosen in the tree go, starting where the whole
+    /// archive would, then extracts only those, keeping the archive
+    /// whatever "Remove the archive during extraction" says.
+    fn extract_selected(&self) {
+        if self.runner.running() || self.mode.get() != Mode::Fresh {
+            return;
+        }
+        let chosen = match self.entries.borrow().as_ref() {
+            Some(tree) => tree.chosen(),
+            None => return,
+        };
+        if chosen.is_empty() {
+            return;
+        }
+        let Some(archive) = self.archive.borrow().clone() else {
+            return;
+        };
+        let only: Vec<PathBuf> = chosen.into_iter().map(PathBuf::from).collect();
+        if let Some(answer) = PICKED.with(|p| p.borrow().as_ref().map(|f| f())) {
+            if let Some(dir) = answer {
+                self.extract_only(&archive, only, dir);
+            }
+            return;
+        }
+        let ui = self.ui();
+        let output = self.output.borrow().clone();
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_title(ui.global::<Messages>().invoke_destination_title().as_str())
+            .set_parent(&ui.window().window_handle());
+        // The destination itself may not exist yet; its parent does.
+        if let Some(dir) = output.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+        let _ = slint::spawn_local(async move {
+            if let Some(dir) = dialog.pick_folder().await {
+                with_app(|app| app.extract_only(&archive, only, dir.path().to_path_buf()));
+            }
+        });
+    }
+
+    /// `archive` is the one open when the folder was asked for: the picker
+    /// may not block the window, and the paths belong to that archive.
+    fn extract_only(&self, archive: &Path, only: Vec<PathBuf>, output: PathBuf) {
+        if self.runner.running()
+            || self.mode.get() != Mode::Fresh
+            || self.archive.borrow().as_deref() != Some(archive)
+        {
+            return;
+        }
+        let request = Request::Extract {
+            archive: archive.to_path_buf(),
+            output: Some(output.clone()),
+            keep_free: self.keep_free.get(),
+            verify_first: self.ui().get_verify_first(),
+            keep_archive: true,
+            password: self.password.borrow().clone(),
+            here: false,
+            existing: self.settings.borrow().existing_files,
+            only: Some(only),
+        };
+        let task = Task::extract(&self.name.borrow(), Some(&output), true).selecting();
+        self.start_extraction(task, request);
     }
 
     /// Stops a half-done extraction for good and makes the archive whole.
@@ -1128,6 +1255,7 @@ impl App {
         let mut about = self.about.borrow_mut();
         if about.is_none() {
             let Ok(w) = AboutWindow::new() else { return };
+            locale::style(w.global::<Theme>());
             let appearance = self.settings.borrow().appearance;
             if appearance != Appearance::System {
                 w.global::<Palette>()
@@ -1205,7 +1333,7 @@ fn wire_settings(w: &SettingsWindow) {
     w.on_show_settings_file(|| with_app(|app| app.show_settings_file()));
     w.on_reset(|| with_app(|app| app.reset_settings()));
     let weak = w.as_weak();
-    w.on_close(move || {
+    w.on_close_requested(move || {
         if let Some(w) = weak.upgrade() {
             let _ = w.hide();
         }

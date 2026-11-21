@@ -62,6 +62,8 @@ Examples:
   hatchzip extract patch.zip -o Game --replace
                                        Extract over an existing folder, replacing its files
   hatchzip extract a.zip b.7z c.tar.gz Extract several archives, one after another
+  hatchzip extract game.zip --only docs --only bin/tool.exe
+                                       Extract only those entries, keeping game.zip
   hatchzip extract big.zip --verify-first --keep-free 10GB
   hatchzip test game.7z                Verify every entry without writing files
   hatchzip restore game.zip            Restore a partially extracted archive
@@ -133,7 +135,12 @@ pub enum Command {
             checked by name and signature for archives, and those are extracted too, each in \
             its own folder next to it. One level only: archives inside those are not scanned. \
             A split set counts once, by its first volume, and only names with an archive \
-            extension are considered, so a .jar or a .docx is left alone."
+            extension are considered, so a .jar or a .docx is left alone.\n\n\
+            With --only, only the entries given, and everything inside the folders among \
+            them, are extracted, with paths as list shows them. The archive is kept, as with \
+            --keep-archive, which --only implies: the entries left out remain in it. A hard \
+            link given brings its target along. An interrupted extraction resumes with the \
+            same entries."
     )]
     Extract {
         #[command(flatten)]
@@ -155,6 +162,10 @@ pub enum Command {
         /// one level deep
         #[arg(long)]
         nested: bool,
+        /// Extract only this entry, or everything inside this folder, as list
+        /// shows it. Repeat for several. Implies --keep-archive
+        #[arg(long, value_name = "PATH", conflicts_with = "nested")]
+        only: Vec<PathBuf>,
     },
     /// Show the space plan for an archive without modifying it
     #[command(visible_alias = "c")]

@@ -76,6 +76,7 @@ pub struct Item {
     pub mtime: Option<SystemTime>,
 }
 
+#[derive(Clone)]
 pub struct Unit {
     /// Where the unit's bytes begin. Once it is committed the archive is
     /// truncated to this offset.

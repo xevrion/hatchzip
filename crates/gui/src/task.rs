@@ -63,6 +63,8 @@ pub struct Task {
     /// The extraction keeps the archive: nothing to count down, nothing to
     /// restore.
     keep: bool,
+    /// Only the entries chosen in the tree are extracted.
+    selected: bool,
     rate: Rate,
     /// When the current check began, as the ticks saw it.
     checking_since: Option<Instant>,
@@ -95,6 +97,18 @@ impl Task {
             task.set_output(o);
         }
         task
+    }
+
+    /// An extraction of the entries chosen in the tree, which always keeps
+    /// the archive.
+    pub fn selecting(mut self) -> Self {
+        self.selected = true;
+        self.keep = true;
+        self
+    }
+
+    pub fn extracts_selection(&self) -> bool {
+        self.selected
     }
 
     pub fn test(name: &str) -> Self {
@@ -130,6 +144,7 @@ impl Task {
             restoring: false,
             resumable: false,
             keep: false,
+            selected: false,
             rate: Rate::default(),
             checking_since: None,
         };
@@ -284,15 +299,20 @@ impl Task {
             Update::Extracted {
                 output,
                 keep,
+                selected,
                 warning,
             } => {
                 self.keep = keep;
+                // A right-click resume of a selection learns it only here.
+                self.selected |= selected;
                 self.warning = warning;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.message = if keep {
+                v.message = if self.selected {
+                    "The selected entries were extracted. The archive was kept."
+                } else if keep {
                     "All entries were extracted. The archive was kept."
                 } else {
                     "All entries were extracted. The archive was removed."
@@ -504,6 +524,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: false,
+            selected: false,
             warning: None,
         });
         assert_eq!(t.view.phase, Phase::Done);
@@ -540,6 +561,7 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: true,
+            selected: false,
             warning: None,
         });
         assert_eq!(
@@ -777,6 +799,7 @@ mod tests {
             task.apply(Update::Extracted {
                 output: "out".into(),
                 keep,
+                selected: false,
                 warning: None,
             });
             assert_eq!(task.keeps_archive(), keep);

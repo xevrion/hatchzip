@@ -1,5 +1,5 @@
 import { Button, CheckBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
-import { Theme, Line, VLine, FolderIcon, FileIcon, DropIcon } from "theme.slint";
+import { Theme, Line, VLine, PathLine, FolderIcon, FileIcon, DropIcon } from "theme.slint";
 import { Messages } from "messages.slint";
 import { Phase, PlanView, TaskView, SpacePanel, Progress, Outcome, Busy, TaskButtons, PasswordPrompt, ReplacePrompt } from "parts.slint";
 
@@ -17,6 +17,8 @@ export struct EntryRow {
     link: bool,
     expanded: bool,
     depth: int,
+    // Part of the selection that "Extract selected…" extracts.
+    selected: bool,
 }
 
 // Opens the Settings window from the top right corner, where people look
@@ -50,17 +52,19 @@ component GearButton inherits Rectangle {
             root.clicked();
         }
     }
+    // The outline fills its box, so it reads at the size of the title next
+    // to it instead of as a faint speck.
     Path {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 18px;
-        height: 18px;
-        viewbox-x: -1;
-        viewbox-y: -1;
-        viewbox-width: 18;
-        viewbox-height: 18;
-        stroke: Theme.muted;
-        stroke-width: 1.2px;
+        width: 20px;
+        height: 20px;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        stroke: Theme.icon;
+        stroke-width: 1.5px;
         fill: transparent;
         commands: "M 13.13 6.30 L 15.06 6.57 L 15.06 9.43 L 13.13 9.70 A 5.4 5.4 0 0 1 12.83 10.42 L 14.00 11.98 L 11.98 14.00 L 10.42 12.83 A 5.4 5.4 0 0 1 9.70 13.13 L 9.43 15.06 L 6.57 15.06 L 6.30 13.13 A 5.4 5.4 0 0 1 5.58 12.83 L 4.02 14.00 L 2.00 11.98 L 3.17 10.42 A 5.4 5.4 0 0 1 2.87 9.70 L 0.94 9.43 L 0.94 6.57 L 2.87 6.30 A 5.4 5.4 0 0 1 3.17 5.58 L 2.00 4.02 L 4.02 2.00 L 5.58 3.17 A 5.4 5.4 0 0 1 6.30 2.87 L 6.57 0.94 L 9.43 0.94 L 9.70 2.87 A 5.4 5.4 0 0 1 10.42 3.17 L 11.98 2.00 L 14.00 4.02 L 12.83 5.58 A 5.4 5.4 0 0 1 13.13 6.30 Z M 10.3 8 A 2.3 2.3 0 1 1 5.7 8 A 2.3 2.3 0 1 1 10.3 8 Z";
     }
@@ -71,9 +75,16 @@ component EntryList inherits VerticalLayout {
     in property <string> empty-text;
     property <int> selected: 0;
     property <length> row-height: 26px;
+    // How the click being made changes the selection: 0 only moves the
+    // cursor there, 1 adds or removes the row (Ctrl or Cmd), 2 selects the
+    // range from the last row clicked (Shift). Read from the press, which
+    // carries the keys.
+    property <int> click-mode: 0;
     init => { scope.focus(); }
     callback toggle(int, int);
     callback navigate(int, bool) -> int;
+    // Changes the rows "Extract selected…" takes, with a mode as above.
+    callback choose(int, int);
     function show-selection() {
         let y = list.content-y + root.selected * root.row-height;
         if y < 0px { list.content-y -= y; }
@@ -119,21 +130,40 @@ component EntryList inherits VerticalLayout {
             accessible-expandable: row.dir;
             accessible-expanded: row.expanded;
             accessible-item-selectable: true;
+            // The cursor is the selected item; being chosen for "Extract
+            // selected…" is a separate checked state, so a screen reader can
+            // tell the two apart.
             accessible-item-selected: root.selected == index;
+            accessible-checkable: true;
+            accessible-checked: row.selected;
             accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
             accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 1); } }
-            background: root.selected == index && scope.has-focus ? Palette.alternate-background : transparent;
+            // The selection stays visible when the keyboard moves to the
+            // footer, in gray, and shows the accent while the list has it.
+            // Rows chosen for "Extract selected…" keep the selection colour,
+            // and the cursor bar is drawn on them too, in their text colour.
+            background: row.selected ? Palette.selection-background : root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
+            if root.selected == index && scope.has-focus: Rectangle {
+                x: 4px;
+                y: (parent.height - self.height) / 2;
+                width: 3px;
+                height: 16px;
+                border-radius: 1.5px;
+                background: row.selected ? Palette.selection-foreground : Palette.accent-background;
+            }
             HorizontalLayout {
                 padding-left: Theme.gutter + row.depth * 16px;
                 padding-right: Theme.gutter;
                 spacing: 8px;
+                // Centred like the icons, or it sits above the name.
                 Path {
+                    y: (parent.height - self.height) / 2;
                     width: 14px;
                     height: 14px;
                     viewbox-width: 14;
                     viewbox-height: 14;
                     stroke: Theme.muted;
-                    stroke-width: 1.4px;
+                    stroke-width: 1.25px;
                     fill: transparent;
                     commands: !row.dir ? "" : row.expanded ? "M 3 5 L 7 9 L 11 5" : "M 5 3 L 9 7 L 5 11";
                 }
@@ -145,23 +175,32 @@ component EntryList inherits VerticalLayout {
                 }
                 Text {
                     text: row.name;
+                    color: row.selected ? Palette.selection-foreground : Palette.foreground;
                     overflow: elide;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
                 Text {
                     text: row.link ? @tr("link") : row.size;
-                    color: Theme.muted;
+                    color: row.selected ? Palette.selection-foreground : Theme.muted;
                     vertical-alignment: center;
                     horizontal-alignment: right;
                     width: 90px;
                 }
             }
             TouchArea {
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down {
+                        root.click-mode = event.modifiers.shift ? 2 : (event.modifiers.control || event.modifiers.meta) ? 1 : 0;
+                    }
+                }
                 clicked => {
                     root.selected = index;
                     scope.focus();
-                    if row.dir { root.toggle(index, 0); }
+                    root.choose(index, root.click-mode);
+                    // A plain click opens or closes a folder and chooses
+                    // nothing; adding one to the selection leaves it as it is.
+                    if row.dir && root.click-mode == 0 { root.toggle(index, 0); }
                 }
             }
         }
@@ -176,6 +215,19 @@ component EntryList inherits VerticalLayout {
                     root.selected = min(root.entries.length - 1, root.selected + 1);
                     root.show-selection();
                 }
+                return accept;
+            }
+            // Space adds the row under the cursor to the selection, or takes
+            // it out, so the keyboard can choose several.
+            if event.text == Key.Space {
+                if root.selected >= 0 && root.selected < root.entries.length {
+                    root.choose(root.selected, 1);
+                }
+                return accept;
+            }
+            // Escape empties the selection.
+            if event.text == Key.Escape {
+                root.choose(root.selected, 3);
                 return accept;
             }
             if event.text == Key.LeftArrow || event.text == Key.RightArrow {
@@ -201,6 +253,11 @@ export component MainWindow inherits Window {
     in property <string> summary;
     in property <string> error-text;
     in property <[EntryRow]> entries;
+    // Rows chosen in the tree for "Extract selected…".
+    in property <int> selection-count;
+    // "2 items selected. ...", said after what Extract does, which a
+    // selection does not change.
+    in property <string> selection-text;
     in property <PlanView> plan;
     in property <string> output;
     in-out property <string> keep-free: "2";
@@ -239,6 +296,8 @@ export component MainWindow inherits Window {
     callback open-archive();
     callback toggle-entry(int, int);
     callback navigate-entry(int, bool) -> int;
+    callback choose-entry(int, int);
+    callback extract-selected();
     callback password-ok(string);
     callback password-cancel();
     callback replace-answer(int, bool);
@@ -266,6 +325,7 @@ export component MainWindow inherits Window {
     min-width: 640px;
     min-height: 440px;
     background: Palette.background;
+    default-font-family: Theme.font-family;
 
     MenuBar {
         Menu {
@@ -314,8 +374,14 @@ export component MainWindow inherits Window {
 
     if root.screen == Screen.empty: Rectangle {
         background: root.drop-hover ? Theme.panel : transparent;
+        if Theme.menu-edge: Line {
+            y: 0;
+            width: parent.width;
+        }
         VerticalLayout {
             alignment: center;
+            padding-left: 40px;
+            padding-right: 40px;
             spacing: 14px;
             HorizontalLayout {
                 alignment: center;
@@ -327,11 +393,17 @@ export component MainWindow inherits Window {
                 font-weight: 600;
                 horizontal-alignment: center;
             }
-            Text {
-                text: @tr("The archive is removed progressively during extraction, so only the space for the extracted files is required.");
-                color: Theme.muted;
-                horizontal-alignment: center;
-                wrap: word-wrap;
+            // Capped at a readable line length in a wide window.
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    max-width: Theme.even-lines ? min(520px, intro-measure.preferred-width / ceil(intro-measure.preferred-width / 520px) + self.font-size) : 520px;
+                    text: intro-measure.text;
+                    color: Theme.muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    height: self.preferred-height;
+                }
             }
             HorizontalLayout {
                 alignment: center;
@@ -344,17 +416,42 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-            Text {
-                text: root.formats;
-                wrap: word-wrap;
-                color: Theme.faint;
-                font-size: Theme.small-size;
-                horizontal-alignment: center;
+            // Muted, not faint: small text needs the contrast.
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    max-width: Theme.even-lines ? min(520px, formats-measure.preferred-width / ceil(formats-measure.preferred-width / 520px) + self.font-size) : 520px;
+                    text: root.formats;
+                    wrap: word-wrap;
+                    height: self.preferred-height;
+                    color: Theme.muted;
+                    font-size: Theme.small-size;
+                    horizontal-alignment: center;
+                }
             }
         }
+        // The two paragraphs on one line each, unseen: their widths tell how
+        // many lines they wrap to, to share the text evenly between them.
+        // Placed, so they stay out of this screen's size.
+        intro-measure := Text {
+            x: 0;
+            y: 0;
+            visible: false;
+            text: @tr("The archive is removed progressively during extraction, so only the space for the extracted files is required.");
+            accessible-role: none;
+        }
+        formats-measure := Text {
+            x: 0;
+            y: 0;
+            visible: false;
+            text: root.formats;
+            font-size: Theme.small-size;
+            accessible-role: none;
+        }
         GearButton {
+            // Where the opened header puts it, so it doesn't jump on opening.
             x: parent.width - self.width - 12px;
-            y: 12px;
+            y: Theme.menu-edge ? 15px : 14px;
             clicked => {
                 root.open-settings();
             }
@@ -414,12 +511,13 @@ export component MainWindow inherits Window {
     }
 
     if root.screen == Screen.opened: VerticalLayout {
+        if Theme.menu-edge: Line { }
         // Header: what this archive is.
         HorizontalLayout {
             padding-left: Theme.gutter;
             padding-right: 12px;
-            padding-top: 16px;
-            padding-bottom: 14px;
+            padding-top: 14px;
+            padding-bottom: 12px;
             spacing: 12px;
             VerticalLayout {
                 horizontal-stretch: 1;
@@ -455,6 +553,7 @@ export component MainWindow inherits Window {
                 empty-text: root.mode == Mode.orphan ? @tr("All entries have been extracted.") : @tr("This archive is empty.");
                 toggle(row, action) => { root.toggle-entry(row, action); }
                 navigate(row, right) => { return root.navigate-entry(row, right); }
+                choose(row, mode) => { root.choose-entry(row, mode); }
             }
             VLine { }
             // The plan can outgrow a small window; its content must not
@@ -467,16 +566,33 @@ export component MainWindow inherits Window {
                 plan-panel := SpacePanel {
                     width: space-scroll.visible-width;
                     plan: root.plan;
+                    stale: root.task.phase == Phase.done || root.task.phase == Phase.failed;
+                }
+                // While there is more below, the last visible row fades out
+                // instead of ending cut through the middle of a line. It
+                // stays at the bottom of the visible part as the panel
+                // scrolls, and sits outside the content size, so nothing
+                // moves.
+                if plan-panel.preferred-height > space-scroll.visible-height + 1px && space-scroll.content-y > space-scroll.visible-height - space-scroll.content-height + 1px: Rectangle {
+                    x: 0;
+                    y: -space-scroll.content-y + space-scroll.visible-height - self.height;
+                    width: space-scroll.visible-width;
+                    height: 36px;
+                    // Solid for the last third, so a row the panel cuts is hidden,
+                    // not drawn as faint half glyphs.
+                    background: @linear-gradient(180deg, Palette.background.transparentize(100%) 0%, Palette.background.transparentize(35%) 40%, Palette.background 65%);
                 }
             }
         }
         Line { }
 
         // Footer: settings and the buttons, or the run in progress.
+        // Tight enough that a minimum-size window still shows the tree and
+        // the whole space panel above it.
         if root.task.phase == Phase.idle: VerticalLayout {
             padding: Theme.gutter;
-            padding-top: 14px;
-            spacing: 12px;
+            padding-top: 12px;
+            spacing: 8px;
 
             if root.mode == Mode.resume || root.mode == Mode.orphan: Text {
                 text: root.mode == Mode.resume ? @tr("This archive is partially extracted to {}.", root.output) + (root.kept-run ? @tr(" The archive is kept.") : "") : @tr("All entries have been extracted to {}. Select Finish to remove the remaining temporary files.", root.output);
@@ -491,9 +607,9 @@ export component MainWindow inherits Window {
                     vertical-alignment: center;
                     width: 112px;
                 }
-                LineEdit {
+                PathLine {
                     text: root.output;
-                    read-only: true;
+                    label: @tr("Extract to");
                     horizontal-stretch: 1;
                 }
                 Button {
@@ -537,7 +653,7 @@ export component MainWindow inherits Window {
                     width: 112px;
                 }
                 VerticalLayout {
-                    spacing: 12px;
+                    spacing: 6px;
                     horizontal-stretch: 1;
                     CheckBox {
                         text: @tr("Verify archive before extracting");
@@ -557,14 +673,25 @@ export component MainWindow inherits Window {
             }
 
             HorizontalLayout {
-                spacing: 8px;
+                // Room between the hint and the buttons, without a wrapper:
+                // padding inside the Text's box clipped Devanagari vowel signs.
+                spacing: 12px;
                 Text {
-                    text: root.mode != Mode.fresh ? "" : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
+                    text: root.mode != Mode.fresh ? "" : (root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.")) + (root.selection-count > 0 ? " " + root.selection-text : "");
                     color: Theme.muted;
                     font-size: Theme.small-size;
                     wrap: word-wrap;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
+                }
+                // Only what is chosen, into a folder picked now, and the
+                // archive is kept whatever the Remove setting says.
+                if root.mode == Mode.fresh && root.selection-count > 0: Button {
+                    text: @tr("Extract selected…");
+                    enabled: root.keep-free-valid;
+                    clicked => {
+                        root.extract-selected();
+                    }
                 }
                 if root.mode == Mode.fresh: Button {
                     text: @tr("Test");
@@ -580,7 +707,8 @@ export component MainWindow inherits Window {
                     }
                 }
                 Button {
-                    text: root.mode == Mode.fresh ? @tr("Extract") : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
+                    // With rows chosen, say that this one still takes everything.
+                    text: root.mode == Mode.fresh ? (root.selection-count > 0 ? @tr("Extract all") : @tr("Extract")) : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
                     primary: true;
                     enabled: root.mode == Mode.orphan || (root.plan.ready && root.plan.fits && root.keep-free-valid);
                     clicked => {
@@ -592,7 +720,7 @@ export component MainWindow inherits Window {
 
         if root.task.phase != Phase.idle: VerticalLayout {
             padding: Theme.gutter;
-            padding-top: 14px;
+            padding-top: 12px;
             spacing: 10px;
             Text {
                 text: root.task.heading;
@@ -610,34 +738,41 @@ export component MainWindow inherits Window {
                 Outcome {
                     task: root.task;
                     horizontal-stretch: 1;
-                    vertical-alignment: center;
                 }
                 // The archive is gone after a successful run, so Back has
                 // nothing to reopen; offer the same way out as the error
                 // screen instead of leaving only the folder.
-                if root.task.phase == Phase.done && root.task.can-open-folder: Button {
-                    text: @tr("Open another archive…");
-                    clicked => {
-                        root.open-archive();
+                // Centred on the message at their own height: a message
+                // that wraps to three lines must not stretch the buttons.
+                if root.task.phase == Phase.done && root.task.can-open-folder: VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: @tr("Open another archive…");
+                        clicked => {
+                            root.open-archive();
+                        }
                     }
                 }
-                TaskButtons {
-                    task: root.task;
-                    closable: false;
-                    pause => {
-                        root.pause();
-                    }
-                    resume => {
-                        root.resume();
-                    }
-                    open-folder => {
-                        root.open-folder();
-                    }
-                    back => {
-                        root.back();
-                    }
-                    give-back => {
-                        root.give-back();
+                VerticalLayout {
+                    alignment: center;
+                    TaskButtons {
+                        task: root.task;
+                        closable: false;
+                        pause => {
+                            root.pause();
+                        }
+                        resume => {
+                            root.resume();
+                        }
+                        open-folder => {
+                            root.open-folder();
+                        }
+                        back => {
+                            root.back();
+                        }
+                        give-back => {
+                            root.give-back();
+                        }
                     }
                 }
             }

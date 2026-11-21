@@ -51,6 +51,8 @@ HatchZip shows whether the files will fit before it changes anything. The archiv
 
 **Extract here** puts an archive with one folder or one file at its top next to the archive. An archive with several files or folders at its top goes into a new folder named after it, so its files never mix with what is already there. The progress window closes when the extraction completes; to keep it open, clear **Close the progress window when extraction completes** in the app's [settings](#settings).
 
+To take only some files or folders out, select them in the app's contents list (Ctrl+click or Cmd+click adds a row, Shift+click a range, Space the row under the cursor), then choose **Extract selected…** and the destination folder. Only those are extracted, and the archive is always kept.
+
 To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's [settings](#settings); every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
 
 ### Settings
@@ -216,6 +218,7 @@ HatchZip prints the same space plan, asks for confirmation, then extracts. When 
 |---|---|
 | `-o, --output <dir>` | Output folder. Defaults to a folder named after the archive, next to it. It may hold other files, but none where the archive's files go, unless `--replace` is given. |
 | `--keep-archive` | Keep the archive: a normal extraction that removes nothing. Space is required for all extracted files. No confirmation is asked. |
+| `--only <path>` | Extract only this entry, or everything in this folder, and keep the archive. Repeat it for several. See [Extract some entries](#extract-some-entries). |
 | `--replace` | Replace files that already exist in the output folder. See [Extract over existing files](#extract-over-existing-files). |
 | `--skip-existing` | Keep files that already exist in the output folder instead of the archive's copies. |
 | `--keep-free <size>` | Free space HatchZip never uses, such as `500MB` or `10GB`. Default `2GB`, so the disk never fills to zero. |
@@ -233,6 +236,17 @@ hatchzip extract game.zip --keep-archive
 When the disk has room for the archive and all its files, `--keep-archive` extracts like any other tool and leaves the archive byte for byte as it was, for when it is needed again. The space check, path and collision checks, checksums and password handling are the same as for an extraction in place. If keeping the archive does not fit, HatchZip says so, by how much, and what extracting in place would require instead.
 
 An interrupted run resumes like any other, and goes on keeping the archive even when resumed without `--keep-archive`. An extraction that started in place cannot switch to keeping the archive, since part of it is already removed. `hatchzip restore` on an archive being kept only discards the progress: the archive was never changed.
+
+### Extract some entries
+
+```sh
+hatchzip list game.zip
+hatchzip extract game.zip --only docs --only bin/tool.exe
+```
+
+`--only` takes a path as `list` shows it: a file, or a folder with everything inside it. Only those entries are extracted, with the folders above them; nothing else is written. `--only` implies `--keep-archive`, since the entries left out stay in the archive, so the archive is left byte for byte as it was and the space check counts only the selected files. A path that is not in the archive is refused before anything is written.
+
+A hard link brings its target along, since the link is made from the extracted target. A symbolic link is extracted as it is, even when what it points to is left out. An interrupted run resumes with the same entries, with or without `--only`; resuming with entries that are not part of the selection is refused. It takes one archive at a time.
 
 ### Extract over existing files
 

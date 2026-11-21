@@ -3,10 +3,14 @@
 
 use std::process::Command;
 
-fn gui() -> Command {
+/// The app with no display, and its config folders inside `home`, so a test
+/// never reads or writes the real user's Thunar actions.
+fn gui(home: &std::path::Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_hatchzip-gui"));
     // No display to open a window on, so any attempt would fail the run.
     cmd.env_remove("DISPLAY").env_remove("WAYLAND_DISPLAY");
+    cmd.env("XDG_CONFIG_HOME", home.join("config"))
+        .env("XDG_CONFIG_DIRS", home.join("system-config"));
     cmd
 }
 
@@ -20,7 +24,7 @@ fn register_and_unregister_without_a_window() {
     let data = tempfile::tempdir().unwrap();
     let menu = data.path().join("kio/servicemenus/hatchzip.desktop");
 
-    let out = gui()
+    let out = gui(data.path())
         .arg("--register-shell")
         .env("XDG_DATA_HOME", data.path())
         .env_remove("APPIMAGE")
@@ -35,7 +39,7 @@ fn register_and_unregister_without_a_window() {
         "{entry}"
     );
 
-    let out = gui()
+    let out = gui(data.path())
         .arg("--unregister-shell")
         .env("XDG_DATA_HOME", data.path())
         .output()
@@ -50,7 +54,7 @@ fn an_appimage_registers_itself_not_its_mount() {
         return;
     }
     let data = tempfile::tempdir().unwrap();
-    let out = gui()
+    let out = gui(data.path())
         .arg("--register-shell")
         .env("XDG_DATA_HOME", data.path())
         .env("APPIMAGE", "/home/sam/Apps/HatchZip-x86_64.AppImage")

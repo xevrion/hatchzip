@@ -534,6 +534,118 @@ fn keep_flow(scheme: ColorScheme, tag: &str) {
     ui.hide().unwrap();
 }
 
+/// Two rows chosen in the tree, one with a click and one with Space,
+/// extract through "Extract selected…" into the folder picked, and only
+/// those, while the archive stays as it was although "Remove the archive
+/// during extraction" is on.
+fn selection_flow(scheme: ColorScheme, tag: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = make_zip(dir.path());
+    let before = std::fs::read(&archive).unwrap();
+    let drops = Drops::default();
+    let ui = main_window::build(
+        Some(archive.clone()),
+        &drops,
+        Settings {
+            keep_free: 0,
+            ..Settings::default()
+        },
+        None,
+    )
+    .unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.window().set_size(LogicalSize::new(980.0, 660.0));
+    let w = ui.as_weak();
+    wait_until("the archive to open", move || {
+        let ui = w.unwrap();
+        ui.get_screen() == Screen::Opened && ui.get_plan().ready
+    });
+    assert!(ui.get_remove_archive());
+    assert_eq!(ui.get_selection_count(), 0);
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Extract selected…")
+            .next()
+            .is_none(),
+        "nothing chosen, nothing to offer"
+    );
+
+    // The single root opens by itself: Northwind, bin, data, README.txt.
+    // A plain click only moves the cursor; Space chooses the row under it.
+    click_control(&ui, "Northwind/README.txt");
+    assert_eq!(ui.get_selection_count(), 0, "a plain click chooses nothing");
+    let key = |key: Key| {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    };
+    let chosen = |path: &str| inside_window(&ui, path).accessible_checked();
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 1);
+    key(Key::UpArrow);
+    key(Key::Space);
+    assert_eq!(chosen("Northwind/data"), Some(true));
+    key(Key::Space);
+    assert_eq!(
+        chosen("Northwind/data"),
+        Some(false),
+        "Space again takes the row out, although the cursor is on it"
+    );
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_item_selected(),
+        Some(true),
+        "the cursor is the selected item"
+    );
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 2);
+    for path in ["Northwind/README.txt", "Northwind/data"] {
+        assert_eq!(chosen(path), Some(true), "{path} is chosen");
+    }
+    assert_eq!(chosen("Northwind/bin"), Some(false));
+    // Extract still removes the archive, and the footer still says so.
+    let removed = "The archive is removed progressively during extraction. An interrupted \
+                   extraction can be resumed. 2 items selected. Extracting the selection keeps \
+                   the archive unchanged.";
+    inside_window(&ui, removed);
+    key(Key::Escape);
+    assert_eq!(ui.get_selection_count(), 0, "Escape empties the selection");
+    assert_eq!(chosen("Northwind/README.txt"), Some(false));
+    key(Key::Space);
+    key(Key::DownArrow);
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 2);
+    inside_window(&ui, "Extract selected…");
+    // With rows chosen the main button says it still takes everything.
+    inside_window(&ui, "Extract all");
+    shot(ui.window(), &format!("{tag}-21-selection"));
+
+    let picked = dir.path().join("picked");
+    let answer = picked.clone();
+    main_window::answer_folder_picker(move || Some(answer.clone()));
+    ui.invoke_extract_selected();
+    let w = ui.as_weak();
+    wait_until("the extraction of the selection", move || {
+        w.unwrap().get_task().phase == Phase::Done
+    });
+    assert_eq!(
+        ui.get_task().message,
+        "The selected entries were extracted. The archive was kept."
+    );
+    assert_eq!(std::fs::read(&archive).unwrap(), before);
+    assert_eq!(
+        std::fs::read(picked.join("Northwind/README.txt")).unwrap(),
+        b"Northwind demo build.\n"
+    );
+    for i in 0..30u8 {
+        assert_eq!(
+            std::fs::read(picked.join(format!("Northwind/data/level{i:02}.pak"))).unwrap(),
+            vec![i; 40_000 + usize::from(i) * 1000]
+        );
+    }
+    assert!(!picked.join("Northwind/bin").exists(), "bin was not chosen");
+    assert!(!session::locate(&archive).unwrap().1.exists());
+    shot(ui.window(), &format!("{tag}-22-selection-done"));
+    ui.hide().unwrap();
+}
+
 /// "Extract here (keep archive)" from the right-click menu.
 fn keep_task_flow(scheme: ColorScheme, tag: &str) {
     let dir = tempfile::tempdir().unwrap();
@@ -834,7 +946,8 @@ fn give_back_flow(scheme: ColorScheme, tag: &str) {
     // exists, so the archive is half extracted.
     let (primary, paths) = session::locate(&archive).unwrap();
     let reads = Default::default();
-    let State::Fresh(job, out) = session::open(&primary, &paths, None, true, None, &reads).unwrap()
+    let State::Fresh(job, out) =
+        session::open(&primary, &paths, None, None, true, None, &reads).unwrap()
     else {
         panic!("a new archive opens fresh");
     };
@@ -1296,7 +1409,12 @@ fn windows_end_to_end() {
     let linux = std::env::consts::OS == "linux";
     if linux {
         // SAFETY: no other thread exists yet in this one-test binary.
-        unsafe { std::env::set_var("XDG_DATA_HOME", data.path()) };
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", data.path());
+            // The Thunar actions too, never the real user's.
+            std::env::set_var("XDG_CONFIG_HOME", data.path().join("config"));
+            std::env::set_var("XDG_CONFIG_DIRS", data.path().join("system-config"));
+        }
     }
     slint::platform::set_platform(Box::new(TestingBackend::new(TestingBackendOptions {
         mock_time: false,
@@ -1315,6 +1433,7 @@ fn windows_end_to_end() {
         main_window_flow(scheme, tag);
         tree_accessibility_edges(scheme);
         keep_flow(scheme, tag);
+        selection_flow(scheme, tag);
         task_window_flow(scheme, tag);
         reserve_offer_flow(scheme, tag);
         replace_flow(scheme, tag);

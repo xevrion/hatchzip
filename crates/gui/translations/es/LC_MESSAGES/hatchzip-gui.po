@@ -252,6 +252,9 @@ msgstr "Reservado"
 msgid "Available after extraction"
 msgstr "Disponible tras la extracción"
 
+msgid "Not enough"
+msgstr "Insuficiente"
+
 msgid "Restore complete"
 msgstr "Restauración completada"
 
@@ -380,8 +383,8 @@ msgstr[1] "{} ficheros reemplazados permanecen en {}, porque los ficheros extra�
 msgid "link"
 msgstr "enlace"
 
-msgid "{} Progress is saved; the extraction can be resumed."
-msgstr "{} El progreso está guardado; la extracción se puede reanudar."
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "El progreso está guardado; la extracción se puede reanudar."
 
 msgid "Folder"
 msgstr "Carpeta"
@@ -533,9 +536,6 @@ msgstr "Mostrar en el Finder"
 msgid "Show in the file manager"
 msgstr "Mostrar en el gestor de ficheros"
 
-msgid "Reset all settings"
-msgstr "Restablecer todos los ajustes"
-
 msgid "Every setting returns to its default, including the language and the appearance."
 msgstr "Todos los ajustes vuelven a su valor predeterminado, incluidos el idioma y la apariencia."
 
@@ -579,3 +579,17 @@ msgstr "{} {}"
 
 msgid "{} {}."
 msgstr "{} {}."
+
+msgid "Extract selected…"
+msgstr "Extraer selección…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "{} elemento seleccionado. Al extraer la selección, el archivo se conserva sin cambios."
+msgstr[1] "{} elementos seleccionados. Al extraer la selección, el archivo se conserva sin cambios."
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "Las entradas seleccionadas se extrajeron. El archivo se conservó."
+
+msgid "Extract all"
+msgstr "Extraer todo"

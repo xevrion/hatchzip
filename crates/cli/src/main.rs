@@ -72,6 +72,7 @@ fn fail(e: &anyhow::Error) -> u8 {
 fn open(
     archive: &Path,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     secret: Secret,
 ) -> Result<(State, Paths)> {
@@ -83,6 +84,7 @@ fn open(
         &primary,
         &paths,
         output,
+        only,
         writable,
         secret.password,
         &reads,
@@ -189,9 +191,13 @@ fn run(command: Command) -> Result<u8> {
             space,
             yes,
             nested,
+            only,
         } => {
             let opts = Options {
-                keep: keep.keep_archive,
+                // The entries left out stay in the archive, so it is kept.
+                keep: keep.keep_archive || !only.is_empty(),
+                implied_keep: !keep.keep_archive && !only.is_empty(),
+                only: (!only.is_empty()).then_some(only),
                 replace: replace.replace,
                 skip_existing: replace.skip_existing,
                 verify_first,
@@ -394,7 +400,7 @@ fn check(
     (keep, replace): (bool, bool),
     space: &Space,
 ) -> Result<u8> {
-    let (state, _) = open(archive, output, false, secret)?;
+    let (state, _) = open(archive, output, None, false, secret)?;
     let fits = match state {
         State::Fresh(job, out) => {
             in_place_possible(&job, keep)?;
@@ -442,7 +448,7 @@ fn in_place_possible(job: &Job, keep: bool) -> Result<()> {
 }
 
 fn list(archive: &Path, secret: Secret) -> Result<u8> {
-    let job = match open(archive, None, false, secret)?.0 {
+    let job = match open(archive, None, None, false, secret)?.0 {
         State::Fresh(job, _) | State::Resume(job, _) => job,
         State::Orphan(_) => bail!("no entries remain in this archive"),
     };
@@ -469,7 +475,7 @@ fn list(archive: &Path, secret: Secret) -> Result<u8> {
 }
 
 fn test_command(archive: &Path, secret: Secret) -> Result<u8> {
-    let job = match open(archive, None, false, secret)?.0 {
+    let job = match open(archive, None, None, false, secret)?.0 {
         State::Fresh(job, _) => job,
         _ => bail!(
             "this archive is partially extracted and cannot be tested. Run extract to resume it, or restore to undo it"
@@ -601,6 +607,10 @@ enum Ended {
 #[derive(Clone)]
 struct Options {
     keep: bool,
+    /// The archive is kept because of `--only`, not `--keep-archive`.
+    implied_keep: bool,
+    /// Only these entries, and the folders among them, are extracted.
+    only: Option<Vec<PathBuf>>,
     replace: bool,
     skip_existing: bool,
     verify_first: bool,
@@ -615,6 +625,9 @@ struct Options {
 fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
     let archives = distinct(&target.archives)?;
     opts.several = archives.len() > 1;
+    if opts.several && opts.only.is_some() {
+        bail!("--only selects entries of one archive; give a single archive with it");
+    }
     // A mistyped name is cheap to catch before the first archive is
     // removed, rather than halfway through.
     if opts.several {
@@ -860,17 +873,29 @@ fn extract(
     if opts.keep {
         let (_, paths) = locate(archive)?;
         if paths.exists() {
-            session::keeps_archive(&Journal::load(&paths)?.0, true)?;
+            let journal = Journal::load(&paths)?.0;
+            // --only keeps the archive without --keep-archive being typed,
+            // so the advice is about --only.
+            if opts.implied_keep && !journal.keep {
+                bail!(
+                    "this archive is partially extracted in place with every entry, and --only \
+                     needs the archive kept. Resume without --only, or run restore first. \
+                     Nothing was modified"
+                );
+            }
+            session::keeps_archive(&journal, true)?;
         }
     }
-    let (state, paths) = open(archive, output, true, secret)?;
+    let (state, paths) = open(archive, output, opts.only.as_deref(), true, secret)?;
     let mut kept: Vec<PathBuf> = Vec::new();
     let (job, journal) = match state {
         State::Orphan(mut journal) => {
             if let Some(warning) = engine::finish_orphaned(&mut journal, &paths)? {
                 eprintln!("warning: {warning}");
             }
-            if journal.keep {
+            if journal.only.is_some() {
+                say!("This extraction was started with --only; the archive is kept.");
+            } else if journal.keep {
                 say!("This extraction was started with --keep-archive; the archive is kept.");
             }
             say!(
@@ -884,7 +909,12 @@ fn extract(
         }
         State::Resume(job, journal) => {
             let keep = session::keeps_archive(&journal, opts.keep)?;
-            if keep && !opts.keep {
+            if journal.only.is_some() && opts.only.is_none() {
+                say!(
+                    "This extraction was started with --only; only the selected entries are \
+                     extracted, and the archive is kept."
+                );
+            } else if keep && !opts.keep {
                 say!("This extraction was started with --keep-archive; the archive is kept.");
             }
             if !report(&job, &journal.output, Some(&journal), keep_free, keep)? {
@@ -898,6 +928,11 @@ fn extract(
         }
         State::Fresh(job, out) => {
             in_place_possible(&job, opts.keep)?;
+            if opts.implied_keep {
+                say!(
+                    "Only the selected entries are extracted, so the archive is kept (--only implies --keep-archive)."
+                );
+            }
             let found = session::existing(&job, &out)?;
             if opts.skip_existing {
                 kept.clone_from(&found);
