@@ -460,8 +460,12 @@ pub fn volume_path(primary: &Path, index: usize) -> Option<PathBuf> {
 
 /// [`volume_path`] for a set of `count` volumes. Only a native split ZIP
 /// needs the count: its last segment is `<stem>.zip`, not the next number.
+/// A set of one is never split, whatever its name: an earlier build may have
+/// extracted a lone `data.z01` as the one file it is.
 pub fn volume_path_in(primary: &Path, index: usize, count: usize) -> Option<PathBuf> {
-    if let Some(zip) = split_zip_naming(primary) {
+    if count > 1
+        && let Some(zip) = split_zip_naming(primary)
+    {
         return Some(if index + 1 == count {
             zip.last()
         } else {
@@ -867,6 +871,11 @@ mod tests {
             "the last of three is the .zip"
         );
         assert_eq!(volume_path_in(&first, 1, 3), Some(dir.join("game.z02")));
+        assert_eq!(
+            volume_path_in(&first, 0, 1),
+            Some(first.clone()),
+            "a set of one is the file itself"
+        );
         assert!(zip_naming(&dir.join("game.z1")).is_none());
         assert!(zip_naming(&dir.join("game.z001")).is_none());
         assert!(zip_naming(&dir.join("game.z00")).is_none());

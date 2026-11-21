@@ -295,20 +295,33 @@ fn check_records(reader: Reader, dir_start: u64) -> Result<()> {
         let mut name = vec![0; len(28)];
         r.read_exact(&mut name)
             .context("reading the ZIP central directory")?;
-        r.seek_relative((len(30) + len(32)) as i64)?;
+        let mut extra = vec![0; len(30)];
+        r.read_exact(&mut extra)
+            .context("reading the ZIP central directory")?;
+        r.seek_relative(len(32) as i64)?;
         if !seen.insert(name.clone()) {
             bail!(
                 "'{}' appears more than once in the archive; extraction refused",
                 String::from_utf8_lossy(&name)
             );
         }
-        if len(34) != 0 {
+        // A ZIP64 writer may saturate the disk to 0xFFFF and keep the real
+        // one in the ZIP64 extra field.
+        let disk = if len(34) == 0xFFFF {
+            let mut record = fixed.to_vec();
+            record.extend_from_slice(&name);
+            record.extend_from_slice(&extra);
+            record_values(&record).map_or(0xFFFF, |v| v.disk)
+        } else {
+            len(34) as u64
+        };
+        if disk != 0 {
             bail!(
                 "'{}' is recorded on part {} of a split ZIP, but this archive is one file. Put \
                  every part of the split ZIP next to it and open its .z01 part. Nothing was \
                  modified",
                 String::from_utf8_lossy(&name),
-                len(34) + 1
+                disk + 1
             );
         }
     }
@@ -326,12 +339,42 @@ fn refuse_lone_segment(storage: &Storage) -> Result<()> {
     let Some(at) = find_eocd(&t) else {
         return Ok(());
     };
-    let this = u16_at(&t, at + 4).unwrap_or(0);
-    let cd = u16_at(&t, at + 6).unwrap_or(0);
-    let disks = (at >= 20 && u32_at(&t, at - 20) == Some(ZIP64_LOCATOR))
-        .then(|| u32_at(&t, at - 4))
-        .flatten()
-        .unwrap_or(1);
+    let mut this = u32::from(u16_at(&t, at + 4).unwrap_or(0));
+    let mut cd = u32::from(u16_at(&t, at + 6).unwrap_or(0));
+    let locator = (at >= 20 && u32_at(&t, at - 20) == Some(ZIP64_LOCATOR)).then(|| at - 20);
+    let disks = locator.and_then(|l| u32_at(&t, l + 16)).unwrap_or(1);
+    // A ZIP64 writer may saturate both to 0xFFFF and keep the real numbers
+    // in the ZIP64 end record. One that cannot be found stays saturated,
+    // and is refused.
+    if let Some(l) = locator
+        && (this == 0xFFFF || cd == 0xFFFF)
+    {
+        // Searched for in what was read, so a self-extractor's offsets do
+        // not matter; else where the locator says, if it ends there.
+        let found = match zip64_end_in(&t, l) {
+            Some(i) => Some(t[i..i + 56].to_vec()),
+            None => {
+                let loc_at = len - want + l as u64;
+                u64_at(&t, l + 8)
+                    .filter(|&o| o.checked_add(56).is_some_and(|e| e <= loc_at))
+                    .and_then(|o| Some((o, read_at(&mut r, o, 56).ok()?)))
+                    .filter(|(o, b)| {
+                        u32_at(b, 0) == Some(ZIP64_EOCD)
+                            && u64_at(b, 4).and_then(|n| o.checked_add(12)?.checked_add(n))
+                                == Some(loc_at)
+                    })
+                    .map(|(_, b)| b)
+            }
+        };
+        if let Some(rec) = found {
+            if this == 0xFFFF {
+                this = u32_at(&rec, 16).unwrap_or(0xFFFF);
+            }
+            if cd == 0xFFFF {
+                cd = u32_at(&rec, 20).unwrap_or(0xFFFF);
+            }
+        }
+    }
     if this != 0 || cd != 0 || disks > 1 {
         let path = storage.primary();
         bail!(
@@ -363,6 +406,15 @@ fn find_eocd(t: &[u8]) -> Option<usize> {
     (0..t.len().saturating_sub(21)).rev().find(|&i| {
         u32_at(t, i) == Some(EOCD)
             && u16_at(t, i + 20).is_some_and(|n| i + 22 + n as usize <= t.len())
+    })
+}
+
+/// The ZIP64 end record in `t` that ends where the locator at `locator`
+/// starts, searched for from the end.
+fn zip64_end_in(t: &[u8], locator: usize) -> Option<usize> {
+    (0..locator.saturating_sub(55)).rev().find(|&i| {
+        u32_at(t, i) == Some(ZIP64_EOCD)
+            && u64_at(t, i + 4).is_some_and(|n| i as u64 + 12 + n == locator as u64)
     })
 }
 
@@ -400,14 +452,7 @@ pub fn rebuild_index(tail: &Tail, keep: u64) -> Result<Vec<u8>> {
 
     let zip64 = eocd >= 20 && u32_at(t, eocd - 20) == Some(ZIP64_LOCATOR);
     let (cd_end, cd_size, cd_offset) = if zip64 {
-        let locator = eocd - 20;
-        let record = (0..locator.saturating_sub(55))
-            .rev()
-            .find(|&i| {
-                u32_at(t, i) == Some(ZIP64_EOCD)
-                    && u64_at(t, i + 4).is_some_and(|n| i as u64 + 12 + n == locator as u64)
-            })
-            .ok_or_else(damaged)?;
+        let record = zip64_end_in(t, eocd - 20).ok_or_else(damaged)?;
         let size = u64_at(t, record + 40).ok_or_else(damaged)?;
         let offset = u64_at(t, record + 48).ok_or_else(damaged)?;
         (record, size, offset)

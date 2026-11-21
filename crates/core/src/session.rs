@@ -111,6 +111,9 @@ pub fn open(
         return Ok(State::Resume(job, journal));
     }
     let job = Job::open(primary, writable, password, reads.clone())?;
+    if writable && job.format_name == crate::archive::SPLIT_ZIP {
+        paths.check_stub()?;
+    }
     let output = match output {
         Some(o) => std::path::absolute(o)?,
         None => {
