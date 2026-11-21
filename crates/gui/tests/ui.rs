@@ -613,7 +613,8 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
     key(Key::Space);
     assert_eq!(ui.get_selection_count(), 2);
     inside_window(&ui, "Extract selected…");
-    inside_window(&ui, "Extract");
+    // With rows chosen the main button says it still takes everything.
+    inside_window(&ui, "Extract all");
     shot(ui.window(), &format!("{tag}-21-selection"));
 
     let picked = dir.path().join("picked");
