@@ -33,10 +33,10 @@
 {"@type":"FAQPage","@id":"https://hatchzip.dev/#faq","mainEntity":[
 {"@type":"Question","name":"HatchZip 安全吗？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 会在开始解压前检查解压后能否放得下。每个文件都会先写入并刷新到磁盘，然后才截掉压缩包中存放它的部分，因此即使崩溃，每个文件要么已经解压出来，要么仍在压缩包中。每个文件的 CRC-32 都会经过校验，遇到损坏的文件会停止解压。如需确认下载的文件是否为官方原版，请参阅“校验下载文件”页面（英文）。"}},
 {"@type":"Question","name":"HatchZip 需要联网吗？","acceptedAnswer":{"@type":"Answer","text":"不需要。HatchZip 没有任何网络代码和网络库，没有遥测，也没有账户，从不自行检查更新。它读取磁盘上的压缩包，并把文件写到压缩包旁边。如果依赖项中引入了 HTTP、TLS 或 socket 库，它的 CI 就会失败。桌面应用中只有两个链接，分别指向源代码和最新版本（位于“帮助”菜单的“检查更新”），都会在你的浏览器中打开。"}},
-{"@type":"Question","name":"HatchZip 能解压哪些压缩格式？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 .exe 文件）、7z、RAR 5 和 RAR 4、普通 tar、.tar.gz 和 .tgz、.tar.xz 和 .txz、ZIP 或 7z 的 .001 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压。暂不支持 .tar.zst。"}},
+{"@type":"Question","name":"HatchZip 能解压哪些压缩格式？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 .exe 文件）、7z、RAR 5 和 RAR 4、普通 tar、.tar.gz 和 .tgz、.tar.bz2、.tbz2 和 .tbz、.tar.xz 和 .txz、.tar.zst 和 .tzst、ZIP 或 7z 的 .001 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压；以单个帧创建的 .tar.zst 也是如此，而 zstd 命令默认生成的就是这种文件。"}},
 {"@type":"Question","name":"HatchZip 需要多少可用空间？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 所需的空间约等于解压出的文件大小，再加上它一次能释放的最大部分：ZIP、tar 和 RAR 为一个文件，7z 为一个固实块。一个 180 GB、解压后为 200 GB 的压缩包，只需略多于 200 GB，而不是 380 GB。它默认还会预留 2 GB 可用空间。hatchzip check 会显示确切数字，且不做任何改动。"}},
 {"@type":"Question","name":"HatchZip 崩溃或被中止会怎样？","acceptedAnswer":{"@type":"Answer","text":"HatchZip 会把进度保存在压缩包旁边的几个小文件中。遇到崩溃、断电或按下 Ctrl+C 后，在应用中打开同一个压缩包，或再次运行同一条命令，它就会从中断处继续。如果想放弃解压，hatchzip restore 会把剩下的部分恢复为普通压缩包，其中包含尚未解压的文件。"}},
-{"@type":"Question","name":"HatchZip 能在 FAT32 和 exFAT 磁盘上使用吗？","acceptedAnswer":{"@type":"Answer","text":"可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。.tar.gz 只有在文件系统支持释放文件部分空间时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。"}}
+{"@type":"Question","name":"HatchZip 能在 FAT32 和 exFAT 磁盘上使用吗？","acceptedAnswer":{"@type":"Answer","text":"可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。压缩的 tar 包（.tar.gz、.tar.bz2、.tar.xz 或 .tar.zst）只有在文件系统支持释放文件部分空间时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。"}}
 ]}
 ]}
 </script>
@@ -157,14 +157,17 @@
 <section aria-labelledby="features">
 <h2 id="features">功能</h2>
 <ul>
-<li>解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、普通 tar、<code>.tar.gz</code>、<code>.tgz</code>、<code>.tar.xz</code> 和 <code>.txz</code>，以及 ZIP 或 7z 的分卷压缩包（<code>.001</code>、<code>.002</code>、...）。</li>
+<li>解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、普通 tar、<code>.tar.gz</code>、<code>.tgz</code>、<code>.tar.bz2</code>、<code>.tbz2</code>、<code>.tbz</code>、<code>.tar.xz</code>、<code>.txz</code>、<code>.tar.zst</code> 和 <code>.tzst</code>，以及 ZIP 或 7z 的分卷压缩包（<code>.001</code>、<code>.002</code>、...）。</li>
 <li>解压 RAR 5 和 RAR 4，包括单个文件和分卷（<code>.part1.rar</code>、... 或 <code>.rar</code>、<code>.r00</code>、...），逐个文件释放压缩包占用的空间，每个分卷清空后即删除，也支持用“加密文件名”选项创建的压缩包。固实 RAR 只能在保留压缩包的情况下解压。RAR 支持包含在本网站和发布页面提供的下载文件中，通过 <code>cargo install hatchzip</code> 安装的版本不包含 RAR 支持。</li>
-<li><code>.tar.gz</code> 或 <code>.tar.xz</code> 会在开始解压前从头到尾完整读取一遍，因此损坏的压缩包会被拒绝，且保持原样。之后，在 NTFS（Windows）、APFS（macOS）、ext4、XFS、btrfs 以及其他支持释放文件部分空间的文件系统上，它会边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，中断后也能继续，但需要能同时容纳压缩包和文件的空间。</li>
+<li>压缩的 tar 包（<code>.tar.gz</code>、<code>.tar.bz2</code>、<code>.tar.xz</code> 或 <code>.tar.zst</code>）会在开始解压前从头到尾完整读取一遍，因此损坏的压缩包会被拒绝，且保持原样。之后，在 NTFS（Windows）、APFS（macOS）、ext4、XFS、btrfs 以及其他支持释放文件部分空间的文件系统上，它会边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，中断后也能继续，但需要能同时容纳压缩包和文件的空间。</li>
 <li>在开始解压前，先检查解压后能否放得下。</li>
 <li>在开始解压前，在应用中以文件夹树的形式显示压缩包内容，并显示各文件夹的大小。</li>
+<li>桌面应用提供英语、西班牙语、印地语和简体中文界面，默认跟随系统语言，也可以在“设置”的“语言”中选择其他语言。</li>
+<li>桌面应用的所有选项都集中在一个“设置”窗口中，可以从“文件”菜单、窗口右上角的齿轮图标或 Ctrl+,（Mac 上为 Command+,）打开。其中包括语言和外观、解压完成后的操作、是否在解压时删除压缩包、预留空间、默认目标位置、文件已存在时的处理方式，以及右键菜单。</li>
 <li>空间足够同时容纳两者时，也可以常规解压并保留压缩包：使用 <code>--keep-archive</code>、应用中的选项，或右键菜单中的 Extract here (keep archive)。如果保留压缩包放不下，它会告诉你改用就地解压需要多少空间。</li>
 <li>可以依次解压多个压缩包，每个开始前都会检查所需空间。一旦某个压缩包未能完成，整个任务就会停止，并列出哪些已解压、哪些未解压。</li>
-<li>默认预留 2 GB 可用空间，确保磁盘不会被完全占满。可以用 <code>--keep-free</code> 修改。</li>
+<li>使用 <code>hatchzip extract --nested</code> 时，还会解压它写出的文件中的压缩包，只深入一层，每个都解压到其旁边的文件夹中。只有扩展名和文件内容都表明是压缩包的文件才会被当作压缩包，因此 <code>.jar</code> 或 <code>.docx</code> 文件不会被处理。它会先列出这些压缩包，并在解压前只询问一次；<code>--yes</code> 可跳过询问。此功能仅在命令行工具中提供。</li>
+<li>默认预留 2 GB 可用空间，确保磁盘不会被完全占满。可以用 <code>--keep-free</code> 修改，也可以在应用设置的“预留空间”中修改。</li>
 <li>随时可以用 Ctrl+C 停止，即使中途崩溃也不要紧。再次运行同一条命令，它会从中断处继续。</li>
 <li>解压时逐个检查文件的 CRC-32。遇到损坏的文件会停止解压，该文件仍保留在压缩包中。</li>
 <li>如果压缩包旁边有与其同名的 <code>.sfv</code> 文件，会在开始解压前用它校验每个分卷。</li>
@@ -197,7 +200,7 @@
 <h2 id="limits">限制</h2>
 <ul>
 <li>用 7-Zip 默认设置创建的 7z 可能只有一个固实块。HatchZip 只有在这个块全部解压出来后才能释放它，因此需要能容纳整个块的可用空间。<code>hatchzip check</code> 会在开始解压前告诉你。</li>
-<li>暂不支持 <code>.tar.zst</code>，会在解压前拒绝。</li>
+<li>以单个帧创建的 <code>.tar.zst</code>（即使使用 <code>-T0</code>，<code>zstd</code> 命令生成的也是这种文件），或者帧中没有校验和的 <code>.tar.zst</code>，只能在保留压缩包的情况下解压：使用 <code>--keep-archive</code>，或在应用中关闭“解压时逐步删除压缩包”。用 <code>pzstd</code> 创建、采用可寻址（seekable）格式或由多个文件拼接而成的 <code>.tar.zst</code> 包含多个帧，会边解压边释放空间。</li>
 <li>以单个块创建（<code>xz -T1</code> 生成的就是这种）或没有完整性校验的 <code>.tar.xz</code>，只能在保留压缩包的情况下解压。</li>
 <li>固实 RAR 只能从头到尾一次性解码，因此无法边解压边释放空间；只能在保留压缩包的情况下解压。包含符号链接或硬链接的 RAR 压缩包会在解压前被拒绝；加密了文件名的 RAR 压缩包在部分解压后无法恢复，只能继续完成解压。</li>
 <li>压缩包会在解压过程中逐步删除。如果下载的文件本身已损坏，损坏位置之前的文件会被解压出来，而压缩包已被部分删除。如果无法重新下载，请使用 <code>--verify-first</code>。</li>
@@ -211,13 +214,13 @@
 <h3>HatchZip 需要联网吗？</h3>
 <p>不需要。HatchZip 没有任何网络代码和网络库，没有遥测，也没有账户，从不自行检查更新。它读取磁盘上的压缩包，并把文件写到压缩包旁边。如果依赖项中引入了 HTTP、TLS 或 socket 库，它的 CI 就会失败。桌面应用中只有两个链接，分别指向源代码和最新版本（位于“帮助”菜单的“检查更新”），都会在你的浏览器中打开。</p>
 <h3>HatchZip 能解压哪些压缩格式？</h3>
-<p>HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、RAR 5 和 RAR 4、普通 tar、<code>.tar.gz</code> 和 <code>.tgz</code>、<code>.tar.xz</code> 和 <code>.txz</code>、ZIP 或 7z 的 <code>.001</code> 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压。暂不支持 <code>.tar.zst</code>。</p>
+<p>HatchZip 可以解压 ZIP（包括 ZIP64 和自解压 <code>.exe</code> 文件）、7z、RAR 5 和 RAR 4、普通 tar、<code>.tar.gz</code> 和 <code>.tgz</code>、<code>.tar.bz2</code>、<code>.tbz2</code> 和 <code>.tbz</code>、<code>.tar.xz</code> 和 <code>.txz</code>、<code>.tar.zst</code> 和 <code>.tzst</code>、ZIP 或 7z 的 <code>.001</code> 分卷压缩包，以及 RAR 分卷。它可以打开有密码保护的 ZIP、7z 和 RAR 压缩包。固实 RAR 只能在保留压缩包的情况下解压；以单个帧创建的 <code>.tar.zst</code> 也是如此，而 <code>zstd</code> 命令默认生成的就是这种文件。</p>
 <h3>HatchZip 需要多少可用空间？</h3>
 <p>HatchZip 所需的空间约等于解压出的文件大小，再加上它一次能释放的最大部分：ZIP、tar 和 RAR 为一个文件，7z 为一个固实块。一个 180 GB、解压后为 200 GB 的压缩包，只需略多于 200 GB，而不是 380 GB。它默认还会预留 2 GB 可用空间。<code>hatchzip check</code> 会显示确切数字，且不做任何改动。</p>
 <h3>HatchZip 崩溃或被中止会怎样？</h3>
 <p>HatchZip 会把进度保存在压缩包旁边的几个小文件中。遇到崩溃、断电或按下 Ctrl+C 后，在应用中打开同一个压缩包，或再次运行同一条命令，它就会从中断处继续。如果想放弃解压，<code>hatchzip restore</code> 会把剩下的部分恢复为普通压缩包，其中包含尚未解压的文件。</p>
 <h3>HatchZip 能在 FAT32 和 exFAT 磁盘上使用吗？</h3>
-<p>可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。<code>.tar.gz</code> 只有在文件系统支持释放文件部分空间时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。</p>
+<p>可以。ZIP、7z、tar 和 RAR 压缩包通过缩短压缩包文件来释放空间，这在所有文件系统上都可行，包括 FAT32 和 exFAT 格式的 U 盘。压缩的 tar 包（<code>.tar.gz</code>、<code>.tar.bz2</code>、<code>.tar.xz</code> 或 <code>.tar.zst</code>）只有在文件系统支持释放文件部分空间时（例如 NTFS、APFS、ext4、XFS 和 btrfs），才能边解压边释放空间。在 FAT32 和 exFAT 上它仍然可以解压，但需要能同时容纳压缩包和文件的空间。</p>
 </section>
 
 <section aria-labelledby="guides">

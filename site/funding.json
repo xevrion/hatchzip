@@ -15,7 +15,7 @@
     {
       "guid": "hatchzip",
       "name": "HatchZip",
-      "description": "HatchZip is a free, open-source archive extractor for Windows, macOS and Linux that extracts in place: it frees the archive's space as the files come out, so a 100 GB archive needs room for about 100 GB of files instead of 200 GB. It handles ZIP (including ZIP64 and self-extracting files), 7z, RAR, tar, tar.gz, tar.xz and split archives. It checks that the extraction fits before it changes anything, verifies every file's checksum, refuses hostile archives before a byte is freed, and resumes after a crash or power loss from a journal written in a crash-safe order. It ships as a desktop app, a command line tool and a Rust library (hatchzip-core) that other programs can embed. First released on 21 October 2026.",
+      "description": "HatchZip is a free, open-source archive extractor for Windows, macOS and Linux that extracts in place: it frees the archive's space as the files come out, so a 100 GB archive needs room for about 100 GB of files instead of 200 GB. It handles ZIP (including ZIP64 and self-extracting files), 7z, RAR, tar, tar.gz, tar.bz2, tar.xz, tar.zst and split archives. It checks that the extraction fits before it changes anything, verifies every file's checksum, refuses hostile archives before a byte is freed, and resumes after a crash or power loss from a journal written in a crash-safe order. It ships as a desktop app, a command line tool and a Rust library (hatchzip-core) that other programs can embed. First released on 21 October 2026.",
       "webpageUrl": {
         "url": "https://hatchzip.dev"
       },

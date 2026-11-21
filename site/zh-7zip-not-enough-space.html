@@ -24,7 +24,7 @@
 <meta property="article:modified_time" content="2026-11-20">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"7-Zip 提示磁盘空间不足的原因","description":"拖放解压经过临时文件夹、FAT32 的 4 GiB 单文件上限，或者压缩包和解压出的文件放不下：如何判断是哪一种，以及各自的解决方法。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-20","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-7zip-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"7-Zip 提示磁盘空间不足","item":"https://hatchzip.dev/zh-7zip-not-enough-space.html"}]}]}
+{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"7-Zip 提示磁盘空间不足的原因","description":"拖放解压经过临时文件夹、FAT32 的 4 GiB 单文件上限，或者压缩包和解压出的文件放不下：如何判断是哪一种，以及各自的解决方法。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-22","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-7zip-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"7-Zip 提示磁盘空间不足","item":"https://hatchzip.dev/zh-7zip-not-enough-space.html"}]}]}
 </script>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css?v=6">
@@ -69,7 +69,7 @@
 </header>
 <main>
 <p class="answer">如果 7-Zip 提示“There is not enough space on the disk”（中文版 Windows 显示为“磁盘空间不足”），而你选的驱动器明明还有空间，请检查三点：从 7-Zip 文件管理器把文件拖到文件资源管理器时，文件会先解压到 Windows 临时文件夹，通常位于 C: 盘；FAT32 驱动器无法存放 4 GiB 及以上的文件；压缩包和解压出的文件可能无法同时放下。</p>
-<p class="note">作者：<a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a> 开发者。更新于 <time class="nw" datetime="2026-11-20">2026-11-20</time>。</p>
+<p class="note">作者：<a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a> 开发者。更新于 <time class="nw" datetime="2026-11-22">2026-11-22</time>。</p>
 
 <section aria-labelledby="message">
 <h2 id="message">7-Zip 提示“磁盘空间不足”是什么意思？</h2>
@@ -111,7 +111,7 @@
 <li>FAT32。HatchZip 同样无法向 FAT32 驱动器写入 4 GiB 及以上的文件。</li>
 <li>驱动器连解压出的文件本身都放不下。</li>
 <li>需要保留压缩包。就地解压会把压缩包消耗掉。</li>
-<li><code>.tar.zst</code>：7-Zip 可以打开，但 HatchZip 目前还不支持读取。</li>
+<li>用 <code>zstd</code> 命令创建的 <code>.tar.zst</code>：这种文件只有一个帧，HatchZip 只能在保留压缩包的情况下解压。用 <code>pzstd</code> 创建的文件包含多个帧，可以边解压边释放空间。</li>
 </ul>
 </section>
 
