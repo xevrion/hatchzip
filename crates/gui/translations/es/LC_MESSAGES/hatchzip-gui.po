@@ -579,3 +579,14 @@ msgstr "{} {}"
 
 msgid "{} {}."
 msgstr "{} {}."
+
+msgid "Extract selected…"
+msgstr "Extraer selección…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "{} elemento seleccionado. Al extraer la selección, el archivo se conserva sin cambios."
+msgstr[1] "{} elementos seleccionados. Al extraer la selección, el archivo se conserva sin cambios."
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "Las entradas seleccionadas se extrajeron. El archivo se conservó."

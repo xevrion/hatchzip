@@ -570,3 +570,13 @@ msgstr "{}{}"
 
 msgid "{} {}."
 msgstr "{}{}。"
+
+msgid "Extract selected…"
+msgstr "解压所选项…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "已选择 {} 项。解压所选项时压缩包保持不变。"
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "所选条目均已解压。压缩包已保留。"

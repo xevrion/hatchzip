@@ -90,6 +90,7 @@ fn job_for(
                 password: None,
                 here: *kind == TaskKind::ExtractHere,
                 existing: settings.existing_files,
+                only: None,
             },
         ),
         None => (

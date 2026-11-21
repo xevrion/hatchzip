@@ -1,6 +1,7 @@
 //! The contents tree. An archive can hold a million entries, so the list view
 //! builds rows on demand for what is visible instead of keeping a model per row.
-//! The tree changes only the display, not the extraction plan.
+//! The tree changes only the display, not the extraction plan. Rows can be
+//! chosen for "Extract selected…", which extracts only those.
 
 use crate::EntryRow;
 use hatchzip_core::{archive::Kind, engine::Job, human};
@@ -35,12 +36,16 @@ struct Node {
     dir: bool,
     link: bool,
     expanded: bool,
+    /// Chosen for "Extract selected…". A folder brings everything inside.
+    selected: bool,
     children: Vec<usize>,
 }
 
 pub struct Entries {
     nodes: Vec<Node>,
     visible: Vec<(usize, i32)>,
+    /// The row a Shift-click selects from: the last one clicked.
+    anchor: Option<usize>,
 }
 
 impl Entries {
@@ -51,6 +56,7 @@ impl Entries {
                 ..Default::default()
             }],
             visible: Vec::new(),
+            anchor: None,
         };
         let mut folders: HashMap<(usize, String), usize> = HashMap::new();
         for entry in entries {
@@ -182,6 +188,80 @@ impl Entries {
         }
     }
 
+    /// Changes the selection with the row at `row`: `mode` 0 selects only
+    /// it, 1 adds it or takes it out, and 2 selects every row from the last
+    /// one chosen to it. Returns the visible rows whose look changed.
+    pub fn choose(&mut self, row: usize, mode: i32) -> Vec<usize> {
+        let Some(&(node, _)) = self.visible.get(row) else {
+            return Vec::new();
+        };
+        let before: Vec<bool> = self
+            .visible
+            .iter()
+            .map(|&(n, _)| self.nodes[n].selected)
+            .collect();
+        match mode {
+            1 => {
+                self.nodes[node].selected = !self.nodes[node].selected;
+                self.anchor = Some(node);
+            }
+            2 => {
+                // The anchor may be inside a folder closed since; the range
+                // then starts here.
+                let from = self
+                    .anchor
+                    .and_then(|a| self.visible.iter().position(|&(n, _)| n == a))
+                    .unwrap_or(row);
+                self.clear_selection();
+                for i in from.min(row)..=from.max(row) {
+                    let n = self.visible[i].0;
+                    self.nodes[n].selected = true;
+                }
+            }
+            _ => {
+                self.clear_selection();
+                self.nodes[node].selected = true;
+                self.anchor = Some(node);
+            }
+        }
+        before
+            .iter()
+            .enumerate()
+            .filter(|&(i, was)| self.nodes[self.visible[i].0].selected != *was)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn clear_selection(&mut self) {
+        for n in &mut self.nodes {
+            n.selected = false;
+        }
+    }
+
+    /// How many rows are chosen, shown or inside a closed folder.
+    pub fn chosen_count(&self) -> usize {
+        self.nodes.iter().filter(|n| n.selected).count()
+    }
+
+    /// The paths to extract: every chosen row, except those inside a chosen
+    /// folder, which comes with everything in it anyway.
+    pub fn chosen(&self) -> Vec<String> {
+        (1..self.nodes.len())
+            .filter(|&i| self.nodes[i].selected && !self.inside_chosen(i))
+            .map(|i| self.path(i))
+            .collect()
+    }
+
+    fn inside_chosen(&self, mut node: usize) -> bool {
+        while node != 0 {
+            node = self.nodes[node].parent;
+            if self.nodes[node].selected {
+                return true;
+            }
+        }
+        false
+    }
+
     // Only rows requested by ListView allocate a full path for accessibility.
     fn path(&self, mut node: usize) -> String {
         let mut parts = Vec::new();
@@ -211,6 +291,7 @@ impl Entries {
                     link: n.link,
                     expanded: n.expanded,
                     depth,
+                    selected: n.selected,
                 }
             })
             .collect()
@@ -254,6 +335,19 @@ impl EntriesModel {
         }
     }
 
+    /// See [`Entries::choose`]. Returns how many rows are chosen now.
+    pub fn choose(&self, row: usize, mode: i32) -> usize {
+        let changed = self.tree.borrow_mut().choose(row, mode);
+        for r in changed {
+            self.notify.row_changed(r);
+        }
+        self.tree.borrow().chosen_count()
+    }
+
+    pub fn chosen(&self) -> Vec<String> {
+        self.tree.borrow().chosen()
+    }
+
     pub fn toggle(&self, row: usize, expand: Option<bool>) {
         let change = self.tree.borrow_mut().toggle(row, expand);
         if let Some((added, count)) = change {
@@ -292,6 +386,7 @@ impl Model for EntriesModel {
             link: n.link,
             expanded: n.expanded,
             depth,
+            selected: n.selected,
         })
     }
 
@@ -441,6 +536,41 @@ mod tests {
         assert!(!model.row_data(0).unwrap().link);
         assert!(!model.row_data(1).unwrap().link);
         assert!(model.row_data(2).unwrap().link);
+    }
+
+    #[test]
+    fn rows_are_chosen_alone_added_and_by_range() {
+        let model = EntriesModel::new(Entries::new(vec![
+            file("a.txt", 1),
+            file("b.txt", 1),
+            file("c.txt", 1),
+            file("d/e.txt", 1),
+        ]));
+        let names = || {
+            (0..model.row_count())
+                .filter(|&r| model.row_data(r).unwrap().selected)
+                .map(|r| model.row_data(r).unwrap().path.to_string())
+                .collect::<Vec<_>>()
+        };
+        // The folder sorts first: d, a.txt, b.txt, c.txt.
+        assert_eq!(model.choose(1, 0), 1);
+        assert_eq!(model.choose(3, 1), 2);
+        assert_eq!(names(), ["a.txt", "c.txt"]);
+        assert_eq!(model.choose(3, 1), 1, "a second Ctrl-click takes it out");
+        assert_eq!(model.choose(1, 0), 1);
+        assert_eq!(model.choose(3, 2), 3);
+        assert_eq!(names(), ["a.txt", "b.txt", "c.txt"]);
+        assert_eq!(model.choose(0, 0), 1);
+        assert_eq!(names(), ["d"]);
+        // Inside a chosen folder, a chosen file adds nothing to extract.
+        model.toggle(0, Some(true));
+        assert_eq!(model.choose(1, 1), 2);
+        assert_eq!(model.chosen(), ["d"]);
+        // A closed folder keeps what was chosen inside it.
+        model.choose(1, 0);
+        model.toggle(0, Some(false));
+        assert_eq!(model.chosen(), ["d/e.txt"]);
+        assert!(names().is_empty());
     }
 
     #[test]
