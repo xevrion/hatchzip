@@ -532,7 +532,9 @@ export component MainWindow inherits Window {
                     y: -space-scroll.content-y + space-scroll.visible-height - self.height;
                     width: space-scroll.visible-width;
                     height: 36px;
-                    background: @linear-gradient(180deg, Palette.background.transparentize(100%) 0%, Palette.background.transparentize(30%) 55%, Palette.background 100%);
+                    // Solid for the last third, so a row the panel cuts is hidden,
+                    // not drawn as faint half glyphs.
+                    background: @linear-gradient(180deg, Palette.background.transparentize(100%) 0%, Palette.background.transparentize(35%) 40%, Palette.background 65%);
                 }
             }
         }
@@ -625,20 +627,16 @@ export component MainWindow inherits Window {
             }
 
             HorizontalLayout {
-                spacing: 8px;
-                // 4px more than the buttons' spacing: a wrapped line can run
-                // to the edge, and Devanagari's vowel signs reach past it.
-                HorizontalLayout {
-                    padding-right: 4px;
+                // Room between the hint and the buttons, without a wrapper:
+                // padding inside the Text's box clipped Devanagari vowel signs.
+                spacing: 12px;
+                Text {
+                    text: root.mode != Mode.fresh ? "" : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
+                    color: Theme.muted;
+                    font-size: Theme.small-size;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
                     horizontal-stretch: 1;
-                    Text {
-                        text: root.mode != Mode.fresh ? "" : root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
-                        color: Theme.muted;
-                        font-size: Theme.small-size;
-                        wrap: word-wrap;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
                 }
                 if root.mode == Mode.fresh: Button {
                     text: @tr("Test");
