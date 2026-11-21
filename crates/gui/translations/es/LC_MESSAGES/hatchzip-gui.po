@@ -590,3 +590,6 @@ msgstr[1] "{} elementos seleccionados. Al extraer la selección, el archivo se c
 
 msgid "The selected entries were extracted. The archive was kept."
 msgstr "Las entradas seleccionadas se extrajeron. El archivo se conservó."
+
+msgid "Extract all"
+msgstr "Extraer todo"

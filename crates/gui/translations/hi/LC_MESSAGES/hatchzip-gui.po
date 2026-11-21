@@ -590,3 +590,6 @@ msgstr[1] "{} आइटम चुने गए। चयन को एक्स�
 
 msgid "The selected entries were extracted. The archive was kept."
 msgstr "चयनित प्रविष्टियाँ एक्सट्रैक्ट हो गईं। आर्काइव रखा गया है।"
+
+msgid "Extract all"
+msgstr "सब एक्सट्रैक्ट करें"

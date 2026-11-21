@@ -580,3 +580,6 @@ msgstr[0] "已选择 {} 项。解压所选项时压缩包保持不变。"
 
 msgid "The selected entries were extracted. The archive was kept."
 msgstr "所选条目均已解压。压缩包已保留。"
+
+msgid "Extract all"
+msgstr "全部解压"

@@ -707,7 +707,8 @@ export component MainWindow inherits Window {
                     }
                 }
                 Button {
-                    text: root.mode == Mode.fresh ? @tr("Extract") : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
+                    // With rows chosen, say that this one still takes everything.
+                    text: root.mode == Mode.fresh ? (root.selection-count > 0 ? @tr("Extract all") : @tr("Extract")) : (root.mode == Mode.resume ? @tr("Resume extraction") : @tr("Finish"));
                     primary: true;
                     enabled: root.mode == Mode.orphan || (root.plan.ready && root.plan.fits && root.keep-free-valid);
                     clicked => {
