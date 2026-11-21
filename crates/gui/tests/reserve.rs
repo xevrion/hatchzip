@@ -12,9 +12,10 @@ use std::time::{Duration, Instant};
 
 use hatchzip_gui::args::{TaskArgs, TaskKind};
 use hatchzip_gui::settings::Settings;
-use hatchzip_gui::{Phase, task_window};
-use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
-use slint::ComponentHandle;
+use hatchzip_gui::{MainWindow, Messages, Palette, Phase, task_window};
+use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
+use slint::language::ColorScheme;
+use slint::{ComponentHandle, LogicalSize};
 use slint::{Timer, TimerMode};
 use std::cell::Cell;
 
@@ -61,48 +62,78 @@ fn the_offer_lowers_the_reserve_and_finishes() {
     })))
     .unwrap();
 
-    let dir = tempfile::tempdir().unwrap();
-    let archive = make_zip(dir.path());
-    let args = TaskArgs {
-        kind: TaskKind::ExtractTo,
-        archives: vec![archive.clone()],
-        keep_archive: false,
-    };
-    // The 2 GB default reserve is tripled over against 1 GB of free space;
-    // the zip itself needs a few MB.
-    let settings = Settings {
-        keep_free: 2_000_000_000,
-        close_when_done: false,
-        ..Settings::default()
-    };
-    let (ui, start) = task_window::build(args, settings).unwrap();
-    ui.window().set_size(slint::LogicalSize::new(480.0, 270.0));
-    start();
+    // Register the catalogs before selecting the language for each window.
+    drop(MainWindow::new().unwrap());
+    for language in ["en", "hi"] {
+        slint::select_bundled_translation(language).unwrap();
+        for scheme in [ColorScheme::Light, ColorScheme::Dark] {
+            let dir = tempfile::tempdir().unwrap();
+            let archive = make_zip(dir.path());
+            let original = std::fs::read(&archive).unwrap();
+            let args = TaskArgs {
+                kind: TaskKind::ExtractTo,
+                archives: vec![archive.clone()],
+                keep_archive: false,
+            };
+            // The 2 GB reserve exceeds the 1 GB of free space; the ZIP
+            // itself needs only a few MB.
+            let settings = Settings {
+                keep_free: 2_000_000_000,
+                close_when_done: false,
+                ..Settings::default()
+            };
+            let (ui, start) = task_window::build(args, settings).unwrap();
+            ui.global::<Palette>().set_color_scheme(scheme);
+            ui.window().set_size(LogicalSize::new(420.0, 270.0));
+            start();
 
-    let w = ui.as_weak();
-    wait_until("the space check to stop for the reserve", move || {
-        w.unwrap().get_task().phase == Phase::NoSpace
-    });
-    assert!(ui.get_task().lower_reserve);
-    let amount = ui.get_task().reserve_amount.to_string();
-    assert!(amount.ends_with(" MB"), "{amount}");
+            let w = ui.as_weak();
+            wait_until("the space check to stop for the reserve", move || {
+                w.unwrap().get_task().phase == Phase::NoSpace
+            });
+            assert!(ui.get_task().lower_reserve);
+            let amount = ui.get_task().reserve_amount.to_string();
+            assert!(amount.ends_with(" MB"), "{amount}");
+            let message = ui.get_task().message;
+            assert_eq!(
+                message,
+                ui.global::<Messages>()
+                    .invoke_task_no_space(ui.get_plan().short)
+            );
+            let _ = ui.window().take_snapshot().unwrap();
+            assert_eq!(
+                ElementHandle::find_by_accessible_label(&ui, &message).count(),
+                1,
+                "the shortfall must appear once ({language}, {scheme:?}): {message}"
+            );
+            assert_eq!(std::fs::read(&archive).unwrap(), original);
 
-    ui.invoke_lower_reserve();
-    let w = ui.as_weak();
-    wait_until("the extraction to finish", move || {
-        let phase = w.unwrap().get_task().phase;
-        phase == Phase::Done || phase == Phase::Failed
-    });
-    assert_eq!(
-        ui.get_task().phase,
-        Phase::Done,
-        "{}",
-        ui.get_task().message
-    );
-    assert!(!archive.exists(), "the archive was removed");
-    assert!(
-        dir.path().join("game/data/one.bin").exists(),
-        "the file was extracted"
-    );
-    ui.hide().unwrap();
+            ui.invoke_lower_reserve();
+            let w = ui.as_weak();
+            wait_until("the extraction to finish", move || {
+                let phase = w.unwrap().get_task().phase;
+                phase == Phase::Done || phase == Phase::Failed
+            });
+            assert_eq!(
+                ui.get_task().phase,
+                Phase::Done,
+                "{}",
+                ui.get_task().message
+            );
+            assert!(!archive.exists(), "the archive was removed");
+            assert_eq!(
+                std::fs::read(dir.path().join("game/data/one.bin")).unwrap(),
+                vec![7u8; 200_000]
+            );
+            let message = ui.get_task().message;
+            assert!(!message.is_empty());
+            let _ = ui.window().take_snapshot().unwrap();
+            assert_eq!(
+                ElementHandle::find_by_accessible_label(&ui, &message).count(),
+                1,
+                "the completion message must remain visible ({language}, {scheme:?})"
+            );
+            ui.hide().unwrap();
+        }
+    }
 }

@@ -49,9 +49,29 @@ No coding needed. **[Download for Windows](https://github.com/xevrion/hatchzip/r
 
 HatchZip shows whether the files will fit before it changes anything. The archive is used up as the files come out, so when it finishes, only the extracted files are left.
 
-**Extract here** puts an archive with one folder or one file at its top next to the archive. An archive with several files or folders at its top goes into a new folder named after it, so its files never mix with what is already there. The progress window closes when the extraction completes; to keep it open, clear **Close the progress window when extraction completes** in the app's Settings menu.
+**Extract here** puts an archive with one folder or one file at its top next to the archive. An archive with several files or folders at its top goes into a new folder named after it, so its files never mix with what is already there. The progress window closes when the extraction completes; to keep it open, clear **Close the progress window when extraction completes** in the app's [settings](#settings).
 
-To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's Settings menu; every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
+To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's [settings](#settings); every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
+
+### Settings
+
+Open them with **File > Settings…** (Ctrl+, or Cmd+, on macOS), or the gear at the top right of the window. Every change applies at once and is saved; the main window's own controls and the right-click menu's windows use the same settings.
+
+| Section | Setting | Default |
+|---|---|---|
+| General | **Language**: the system's, or any of the app's translations | The system language |
+| General | **Appearance**: System, Light or Dark | System |
+| General | **After extracting**: do nothing, or open the destination folder | Do nothing |
+| General | **Close the progress window when extraction completes**, for the window the right-click menu opens | On |
+| Extraction | **Remove the archive during extraction** | On |
+| Extraction | **Verify archive before extracting** | Off |
+| Extraction | **Reserved space**: free space left untouched on the destination drive, in GB | 2 GB |
+| Extraction | **Default destination**: next to the archive, or always inside a chosen folder, each archive in a folder named after it. **Extract here** in the right-click menu still extracts next to the archive. A chosen folder that no longer exists, or is on a drive that is not connected, is not used: the archive is extracted next to itself | Next to the archive |
+| Extraction | **When a file already exists**: ask, replace (as `--replace`), or skip (as `--skip-existing`) | Ask |
+| Integration | **Show in the Explorer context menu** on Windows, **Show in the file manager's context menu** on Linux: the right-click menu entries | As installed |
+| Advanced | The settings file's location, and **Reset all settings** | |
+
+The settings file is `%APPDATA%\HatchZip\settings.json` on Windows, `~/Library/Application Support/HatchZip/settings.json` on macOS and `~/.config/hatchzip/settings.json` on Linux. A missing or damaged file, or a value the app does not recognize, means the default for that setting.
 
 ## When there is not enough disk space to extract
 
@@ -85,7 +105,7 @@ Download from the [latest release](https://github.com/xevrion/hatchzip/releases/
 |---|---|
 | Windows 10 and 11 (x64) | [`HatchZip-x64-setup.exe`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-setup.exe): installs per user, no admin rights, adds the right-click menu |
 | Windows 10 and 11 (x64), MSI | [`HatchZip-x64.msi`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64.msi): the same app and install as the setup, as a Windows Installer package for deployment tools and `msiexec /i HatchZip-x64.msi /qn`. Install one or the other |
-| Windows 10 and 11 (x64), portable | [`HatchZip-x64-portable.zip`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-portable.zip): the same app and command line tool with nothing to install. Unzip it anywhere and run `hatchzip-gui.exe`; Settings, "Show in the Explorer context menu" adds the right-click entries for that location |
+| Windows 10 and 11 (x64), portable | [`HatchZip-x64-portable.zip`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-portable.zip): the same app and command line tool with nothing to install. Unzip it anywhere and run `hatchzip-gui.exe`; Settings > Integration, "Show in the Explorer context menu" adds the right-click entries for that location |
 | macOS, Apple Silicon | [`HatchZip-aarch64.dmg`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-aarch64.dmg) |
 | macOS, Intel | [`HatchZip-x86_64.dmg`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.dmg) |
 | Debian, Ubuntu | [`hatchzip_amd64.deb`](https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip_amd64.deb) |

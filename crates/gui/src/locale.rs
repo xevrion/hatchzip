@@ -9,6 +9,32 @@
 /// below checks that they match.
 pub const LANGUAGES: &[&str] = &["es", "hi", "zh_CN"];
 
+/// Settings > Language lists these, each in its own language and script so
+/// a reader finds theirs whatever the app is showing. `en` is the source
+/// text; every other code is one of [`LANGUAGES`].
+pub const NAMES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("es", "Español"),
+    ("hi", "हिन्दी"),
+    ("zh_CN", "简体中文"),
+];
+
+/// The saved choice, if it still names a language this build has. One from
+/// a newer version, or a catalog since removed, means following the system.
+pub fn chosen(saved: Option<&str>) -> Option<&str> {
+    saved.filter(|code| NAMES.iter().any(|(c, _)| c == code))
+}
+
+/// The translation to show: the saved choice, else what `system` picks.
+/// `""` is English, as for [`pick`].
+pub fn resolve(saved: Option<&str>, system: impl FnOnce() -> String) -> String {
+    match chosen(saved) {
+        Some("en") => String::new(),
+        Some(code) => code.to_string(),
+        None => system(),
+    }
+}
+
 /// The translation for a list of preferred locales, most preferred first, as
 /// the system reports them (`zh-Hans-CN`, `zh-CN`, `zh_CN.UTF-8`, `hi-IN`).
 /// `""` is English: the first language with a translation wins, and English
@@ -59,14 +85,25 @@ pub fn follow_system() {
     FROM_SYSTEM.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Selects the translation for the system's preferred languages, when the
-/// app asked for that with [`follow_system`]. Called right after a window is
-/// created, before any text is filled in.
-pub fn apply() {
-    if !FROM_SYSTEM.load(std::sync::atomic::Ordering::Relaxed) {
-        return;
+/// Selects the saved language, or the one for the system's preferred
+/// languages, when the app asked for that with [`follow_system`]. Called
+/// right after a window is created, before any text is filled in.
+pub fn apply(saved: Option<&str>) {
+    if FROM_SYSTEM.load(std::sync::atomic::Ordering::Relaxed) {
+        select(saved);
     }
-    let language = pick(sys_locale::get_locales(), LANGUAGES);
+}
+
+/// Switches to `saved` now, or back to the system's language for `None`.
+/// Tests never follow the system, so for them that is English.
+pub fn select(saved: Option<&str>) {
+    let language = resolve(saved, || {
+        if FROM_SYSTEM.load(std::sync::atomic::Ordering::Relaxed) {
+            pick(sys_locale::get_locales(), LANGUAGES)
+        } else {
+            String::new()
+        }
+    });
     // Every name in LANGUAGES is bundled, so this only fails if the list and
     // the folders disagree, which `every_translation_folder_is_listed` catches.
     let _ = slint::select_bundled_translation(&language);
@@ -133,6 +170,34 @@ mod tests {
             .collect();
         folders.sort();
         assert_eq!(folders, LANGUAGES);
+    }
+
+    #[test]
+    fn every_language_has_a_name_in_the_menu() {
+        for language in LANGUAGES {
+            assert!(
+                NAMES.iter().any(|(code, _)| code == language),
+                "{language} is missing from NAMES"
+            );
+        }
+        for (code, name) in NAMES {
+            assert!(*code == "en" || LANGUAGES.contains(code), "{code}");
+            assert!(!name.is_empty(), "{code}");
+        }
+        assert_eq!(NAMES.len(), LANGUAGES.len() + 1);
+    }
+
+    #[test]
+    fn a_saved_language_wins_over_the_system() {
+        let system = || "hi".to_string();
+        assert_eq!(resolve(Some("en"), system), "");
+        assert_eq!(resolve(Some("zh_CN"), system), "zh_CN");
+        assert_eq!(resolve(None, system), "hi");
+        // Unknown, perhaps from a newer version: follow the system.
+        assert_eq!(resolve(Some("fr"), system), "hi");
+        assert_eq!(resolve(Some(""), system), "hi");
+        assert_eq!(chosen(Some("fr")), None);
+        assert_eq!(chosen(Some("es")), Some("es"));
     }
 
     #[test]

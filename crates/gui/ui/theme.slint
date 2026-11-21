@@ -1,9 +1,13 @@
 import { Palette } from "std-widgets.slint";
 
 // The few colors the style's palette doesn't have. Everything else comes from
-// `Palette`, so the app follows the system's light or dark setting.
+// `Palette`, so the app follows the system's light or dark setting, or the
+// one chosen in Settings.
 export global Theme {
-    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    // Choosing "System" again in Settings sets the scheme to `unknown`, which
+    // the palette resolves against the system without saying which it got,
+    // so its background tells.
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark || (Palette.color-scheme == ColorScheme.unknown && Palette.background.to-hsv().value < 0.5);
     out property <brush> line: dark ? #ffffff1f : #0000001a;
     out property <brush> muted: dark ? #ffffffa6 : #000000a0;
     out property <brush> faint: dark ? #ffffff66 : #00000066;
