@@ -132,21 +132,19 @@ component EntryList inherits VerticalLayout {
             accessible-item-selected: root.selected == index || row.selected;
             accessible-action-default => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 0); } }
             accessible-action-expand => { root.selected = index; scope.focus(); if row.dir { root.toggle(index, 1); } }
-<<<<<<< ours
-            background: row.selected ? Palette.selection-background : root.selected == index && scope.has-focus ? Palette.alternate-background : transparent;
-=======
             // The selection stays visible when the keyboard moves to the
             // footer, in gray, and shows the accent while the list has it.
-            background: root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
+            // Rows chosen for "Extract selected…" keep the selection colour,
+            // and the cursor bar is drawn on them too, in their text colour.
+            background: row.selected ? Palette.selection-background : root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
             if root.selected == index && scope.has-focus: Rectangle {
                 x: 4px;
                 y: (parent.height - self.height) / 2;
                 width: 3px;
                 height: 16px;
                 border-radius: 1.5px;
-                background: Palette.accent-background;
+                background: row.selected ? Palette.selection-foreground : Palette.accent-background;
             }
->>>>>>> theirs
             HorizontalLayout {
                 padding-left: Theme.gutter + row.depth * 16px;
                 padding-right: Theme.gutter;
