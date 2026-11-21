@@ -73,7 +73,7 @@
         "guid": "formats",
         "status": "active",
         "name": "More formats",
-        "description": "In-place extraction for native split ZIP (.z01), and for single-frame .tar.zst by saving the zstd decoder state, with crash tests and documentation.",
+        "description": "In-place extraction for single-frame .tar.zst by saving the zstd decoder state, with crash tests and documentation.",
         "amount": 5000,
         "currency": "USD",
         "frequency": "one-time",

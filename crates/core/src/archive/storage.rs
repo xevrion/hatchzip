@@ -1,5 +1,6 @@
-//! The archive's bytes, whether one file or a split set (`.001`, `.002`, ...),
-//! and the only code allowed to shrink them.
+//! The archive's bytes, whether one file or a split set (`.001`, `.002`, ...,
+//! RAR volumes, or a native split ZIP's `.z01`, ..., `.zip`), and the only
+//! code allowed to shrink them.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -389,12 +390,19 @@ impl Storage {
         Ok(())
     }
 
+    /// A reader of the joined archive. With a tail, the archive ends where
+    /// the tail does: a split ZIP's index is served rewritten, and can be
+    /// shorter or longer than the bytes it stands for. Every other tail ends
+    /// exactly at the archive's original end.
     pub fn reader(&self, tail: Option<Arc<Tail>>) -> Reader {
+        let len = tail
+            .as_ref()
+            .map_or(self.original_len(), |t| t.start + t.bytes.len() as u64);
         Reader {
             parts: self.parts.clone(),
             open: None,
             tail,
-            len: self.original_len(),
+            len,
             pos: 0,
             reads: self.reads.clone(),
         }
@@ -425,6 +433,9 @@ pub fn first_volume(path: &Path) -> PathBuf {
     if let Some(rar) = rar_volume(path) {
         return rar.first();
     }
+    if let Some(zip) = zip_volume(path) {
+        return zip.segment(0);
+    }
     match split_suffix(path) {
         Some((base, width, _)) => numbered(&base, width, 1),
         None => path.to_path_buf(),
@@ -447,7 +458,75 @@ pub fn volume_path(primary: &Path, index: usize) -> Option<PathBuf> {
     }
 }
 
+/// [`volume_path`] for a set of `count` volumes. Only a native split ZIP
+/// needs the count: its last segment is `<stem>.zip`, not the next number.
+/// A set of one is never split, whatever its name: an earlier build may have
+/// extracted a lone `data.z01` as the one file it is.
+pub fn volume_path_in(primary: &Path, index: usize, count: usize) -> Option<PathBuf> {
+    if count > 1
+        && let Some(zip) = split_zip_naming(primary)
+    {
+        return Some(if index + 1 == count {
+            zip.last()
+        } else {
+            zip.segment(index)
+        });
+    }
+    volume_path(primary, index)
+}
+
+/// Whether `primary` is the first segment of a native split ZIP by its name,
+/// `<stem>.z01`.
+pub fn is_split_zip(primary: &Path) -> bool {
+    split_zip_naming(primary).is_some()
+}
+
+/// Segment `disk` of the native split ZIP whose first segment is `primary`
+/// (`.z01` is disk 0), counting from `.z01` up and never `.zip`.
+pub fn split_zip_segment(primary: &Path, disk: usize) -> Option<PathBuf> {
+    split_zip_naming(primary).map(|z| z.segment(disk))
+}
+
+/// The last segment, `<stem>.zip`, of the native split ZIP whose first
+/// segment is `primary`.
+pub fn split_zip_last(primary: &Path) -> Option<PathBuf> {
+    split_zip_naming(primary).map(|z| z.last())
+}
+
+fn split_zip_naming(primary: &Path) -> Option<ZipSet> {
+    if rar_naming(primary).is_some() {
+        return None;
+    }
+    zip_naming(primary).filter(|z| z.disk == Some(0))
+}
+
 fn volume_set(path: &Path) -> Result<Vec<PathBuf>> {
+    if rar_volume(path).is_none()
+        && let Some(zip) = zip_volume(path)
+    {
+        if zip.disk != Some(0) {
+            bail!(
+                "{} is not the first part of a split ZIP. Open {} instead",
+                path.display(),
+                zip.segment(0).display()
+            );
+        }
+        let mut parts = vec![path.to_path_buf()];
+        while zip.segment(parts.len()).exists() {
+            parts.push(zip.segment(parts.len()));
+        }
+        let last = zip.last();
+        if !last.exists() {
+            bail!(
+                "{} is missing. It is the last part of this split ZIP and holds its index, so put \
+                 it next to {} and try again. Nothing was modified",
+                last.display(),
+                path.display()
+            );
+        }
+        parts.push(last);
+        return Ok(parts);
+    }
     if let Some(rar) = rar_volume(path) {
         if rar.index != 0 {
             bail!(
@@ -683,15 +762,179 @@ fn rar_naming(path: &Path) -> Option<RarSet> {
             upper,
         };
         // Other formats number their volumes the same way (`.z01` for a
-        // split ZIP), so it is a RAR volume only next to its first one.
-        return set.has_volume(0).then_some(set);
+        // split ZIP), so it is a RAR volume only next to its first one. RAR
+        // reaches `.z00` only after `.y99`, and volumes are deleted from the
+        // last, so `.y99` is there for as long as a `.z` volume is.
+        let past_y = bytes[0] == b'z';
+        return (set.has_volume(0) && (!past_y || set.has_volume(800))).then_some(set);
     }
     None
+}
+
+/// How the segments of a native split ZIP are named: `game.z01`, `game.z02`,
+/// ..., `game.z99`, `game.z100`, ..., and last `game.zip`, which holds the
+/// index. Info-ZIP `zip -s`, WinZip and WinRAR write them so.
+struct ZipSet {
+    /// The path without its extension.
+    stem: PathBuf,
+    /// The disk a `.zNN` segment is (`.z01` is 0), `None` for the `.zip`.
+    disk: Option<usize>,
+    /// Upper case extensions stay upper case.
+    upper: bool,
+}
+
+impl ZipSet {
+    fn named(&self, ext: String) -> PathBuf {
+        let mut name = self.stem.as_os_str().to_owned();
+        name.push(if self.upper { ext.to_uppercase() } else { ext });
+        PathBuf::from(name)
+    }
+
+    fn segment(&self, disk: usize) -> PathBuf {
+        self.named(format!(".z{:02}", disk + 1))
+    }
+
+    fn last(&self) -> PathBuf {
+        self.named(".zip".into())
+    }
+}
+
+/// A native split ZIP segment by its name alone: any `.zNN`, and any `.zip`.
+fn zip_naming(path: &Path) -> Option<ZipSet> {
+    let name = path.file_name()?.to_str()?;
+    let (stem, ext) = name.rsplit_once('.')?;
+    if stem.is_empty() {
+        return None;
+    }
+    let upper = !ext.chars().any(|c| c.is_ascii_lowercase());
+    let lower = ext.to_ascii_lowercase();
+    let disk = if lower == "zip" {
+        None
+    } else {
+        let digits = lower.strip_prefix('z')?;
+        // `.z01` to `.z99`, then `.z100` with no padding.
+        if digits.len() < 2
+            || !digits.bytes().all(|b| b.is_ascii_digit())
+            || (digits.len() > 2 && digits.starts_with('0'))
+        {
+            return None;
+        }
+        let n: usize = digits.parse().ok()?;
+        Some(n.checked_sub(1)?)
+    };
+    Some(ZipSet {
+        stem: path.with_file_name(stem),
+        disk,
+        upper,
+    })
+}
+
+/// The native split ZIP `path` is a segment of. Any `.zNN` is one; a `.zip`
+/// only when `<stem>.z01` is next to it, or the journal of an extraction
+/// that has already deleted `<stem>.z01`'s neighbours is. Callers ask
+/// [`rar_volume`] first, which takes a `.zNN` next to its RAR set.
+fn zip_volume(path: &Path) -> Option<ZipSet> {
+    let set = zip_naming(path)?;
+    if set.disk.is_none() {
+        let first = set.segment(0);
+        let mut journal = first.as_os_str().to_owned();
+        journal.push(".hatchzip");
+        if !first.exists() && !Path::new(&journal).exists() {
+            return None;
+        }
+    }
+    Some(set)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `.z01` up to `.z99`, then `.z100`; upper case stays; the `.zip` and
+    /// every segment find the first one, and only with it next to the
+    /// `.zip`.
+    #[test]
+    fn split_zip_segments_are_named_and_found() {
+        let dir = std::env::temp_dir().join(format!("hatchzip-zipset-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let first = dir.join("game.z01");
+        assert_eq!(split_zip_segment(&first, 98), Some(dir.join("game.z99")));
+        assert_eq!(split_zip_segment(&first, 99), Some(dir.join("game.z100")));
+        assert_eq!(split_zip_last(&first), Some(dir.join("game.zip")));
+        assert_eq!(
+            split_zip_segment(&dir.join("GAME.Z01"), 1),
+            Some(dir.join("GAME.Z02"))
+        );
+        assert_eq!(
+            volume_path_in(&first, 2, 3),
+            Some(dir.join("game.zip")),
+            "the last of three is the .zip"
+        );
+        assert_eq!(volume_path_in(&first, 1, 3), Some(dir.join("game.z02")));
+        assert_eq!(
+            volume_path_in(&first, 0, 1),
+            Some(first.clone()),
+            "a set of one is the file itself"
+        );
+        assert!(zip_naming(&dir.join("game.z1")).is_none());
+        assert!(zip_naming(&dir.join("game.z001")).is_none());
+        assert!(zip_naming(&dir.join("game.z00")).is_none());
+
+        // A lone .zip is not a set.
+        fs::write(dir.join("game.zip"), b"x").unwrap();
+        assert_eq!(first_volume(&dir.join("game.zip")), dir.join("game.zip"));
+        // With the first segment next to it, or its journal, it is.
+        fs::write(&first, b"x").unwrap();
+        assert_eq!(first_volume(&dir.join("game.zip")), first);
+        assert_eq!(first_volume(&dir.join("game.z07")), first);
+        fs::remove_file(&first).unwrap();
+        fs::write(dir.join("game.z01.hatchzip"), b"{}").unwrap();
+        assert_eq!(first_volume(&dir.join("game.zip")), first);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `.zNN` is a RAR volume only next to its `.rar` and `.y99`, which
+    /// RAR writes before it reaches `.z00`.
+    #[test]
+    fn a_z_volume_is_rar_only_past_y99() {
+        let dir = std::env::temp_dir().join(format!("hatchzip-rarz-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("game.rar"), b"x").unwrap();
+        fs::write(dir.join("game.r00"), b"x").unwrap();
+        fs::write(dir.join("game.z01"), b"x").unwrap();
+        assert_eq!(first_volume(&dir.join("game.z01")), dir.join("game.z01"));
+        assert!(is_split_zip(&dir.join("game.z01")));
+        fs::write(dir.join("game.y99"), b"x").unwrap();
+        assert_eq!(first_volume(&dir.join("game.z01")), dir.join("game.rar"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A tail longer or shorter than the bytes it stands for moves the end
+    /// the reader reports, so a search for end records from the end finds
+    /// them.
+    #[test]
+    fn a_reader_ends_where_its_tail_does() {
+        let dir = std::env::temp_dir().join(format!("hatchzip-tailend-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("game.bin");
+        fs::write(&path, vec![7u8; 100]).unwrap();
+        let storage = Storage::open(&path, false).unwrap();
+        for len in [10usize, 60] {
+            let tail = Arc::new(Tail {
+                start: 80,
+                bytes: vec![1; len],
+            });
+            let mut r = storage.reader(Some(tail));
+            assert_eq!(r.seek(SeekFrom::End(0)).unwrap(), 80 + len as u64);
+            let mut all = Vec::new();
+            r.seek(SeekFrom::Start(0)).unwrap();
+            r.read_to_end(&mut all).unwrap();
+            assert_eq!(all.len(), 80 + len);
+            assert!(all[80..].iter().all(|&b| b == 1));
+        }
+        drop(storage);
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     /// The letter of `.r00` counts up to `z`; a set that needs more names is
     /// not followed past `.z99`, where the letter would leave the alphabet.

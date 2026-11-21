@@ -20,9 +20,8 @@ How it works: it extracts from the end of the archive and cuts each finished par
 ## Formats
 
 - ZIP (including ZIP64 and self-extracting .exe), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, .tar.bz2, .tbz2 and .tbz, .tar.xz and .txz, .tar.zst and .tzst
-- Split archives: `.001` sets of ZIP or 7z, RAR volume sets (`.part1.rar`, or `.rar` with `.r00`)
+- Split archives: `.001` sets of ZIP or 7z, native split ZIP (`game.z01`, ..., `game.zip`, as Info-ZIP `zip -s` writes it), RAR volume sets (`.part1.rar`, or `.rar` with `.r00`)
 - Password-protected ZIP, 7z and RAR
-- Not supported yet: native split ZIP (`.z01`)
 
 ## Use
 

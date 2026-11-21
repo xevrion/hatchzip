@@ -31,16 +31,17 @@ use crate::{
 const REPO: &str = "https://github.com/xevrion/hatchzip";
 const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
 /// What the Open dialog offers. `.r00` is the second volume of an old-style
-/// RAR set; any volume opens the whole set.
+/// RAR set and `.z01` the first part of a split ZIP; any volume opens the
+/// whole set.
 const ARCHIVE_EXTENSIONS: &[&str] = if hatchzip_core::archive::RAR_SUPPORTED {
     &[
         "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "rar",
-        "r00", "exe", "001",
+        "r00", "z01", "exe", "001",
     ]
 } else {
     &[
         "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "exe",
-        "001",
+        "z01", "001",
     ]
 };
 

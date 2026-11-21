@@ -52,6 +52,13 @@ const FOLDERS_VERSION: u32 = 8;
 /// check looked at before the run began, and extract them over it.
 const SELECT_VERSION: u32 = 9;
 const READABLE: [u32; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
+/// What an extraction of a native split ZIP keeps at `<stem>.zip.hatchzip`
+/// while it runs. Builds before split ZIP support take `<stem>.zip` for a
+/// ZIP that is one file and look for its journal there, so they find this
+/// and refuse it as a newer journal, instead of extracting the last segment
+/// on its own and cutting away the index the rest of the set needs. Builds
+/// that know split ZIPs open the set from its `.z01` and never read it.
+const STUB_VERSION: u32 = 1000;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Link {
@@ -175,12 +182,27 @@ impl Replace {
     }
 }
 
+/// Whether `path` holds a stub journal; see [`STUB_VERSION`].
+fn is_stub(path: &Path) -> bool {
+    #[derive(Deserialize)]
+    struct Versioned {
+        version: u32,
+    }
+    fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Versioned>(&b).ok())
+        .is_some_and(|v| v.version == STUB_VERSION)
+}
+
 pub struct Paths {
     /// The first volume of the archive the side files belong to.
     pub archive: PathBuf,
     pub journal: PathBuf,
     pub tail: PathBuf,
     pub folders: PathBuf,
+    /// For a native split ZIP, where its stub journal goes, next to its
+    /// `.zip`; see [`STUB_VERSION`].
+    pub stub: Option<PathBuf>,
 }
 
 impl Paths {
@@ -190,12 +212,87 @@ impl Paths {
             s.push(suffix);
             PathBuf::from(s)
         };
+        let stub = storage::split_zip_last(archive).map(|last| {
+            let mut s = last.into_os_string();
+            s.push(".hatchzip");
+            PathBuf::from(s)
+        });
         Self {
             archive: archive.to_path_buf(),
             journal: with(".hatchzip"),
             tail: with(".hatchzip-tail"),
             folders: with(".hatchzip-folders"),
+            stub,
         }
+    }
+
+    /// Writes the stub journal of a native split ZIP's extraction. Only over
+    /// a stub an earlier run left: see [`Self::check_stub`].
+    fn write_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        self.check_stub()?;
+        let json = serde_json::to_vec(&serde_json::json!({
+            "version": STUB_VERSION,
+            "split_zip": self.archive,
+        }))?;
+        if is_stub(stub) {
+            return fsutil::write_atomic(stub, &json);
+        }
+        {
+            use std::io::Write;
+            let mut f = crate::platform::create_new_no_follow(stub)
+                .with_context(|| format!("creating {}", stub.display()))?;
+            f.write_all(&json)?;
+            f.sync_all()?;
+        }
+        fsutil::sync_dir(stub.parent().unwrap_or(Path::new(".")))
+    }
+
+    /// Refuses a native split ZIP whose stub name holds anything but a stub:
+    /// the journal of an extraction of its `.zip` opened on its own, before
+    /// the other parts were next to it. A stub written over it would lose
+    /// the only record of what that run extracted and freed.
+    pub fn check_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        match fs::symlink_metadata(stub) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", stub.display())),
+            Ok(_) if is_stub(stub) => Ok(()),
+            Ok(_) => {
+                let last = stub.with_extension("");
+                bail!(
+                    "{} already has an extraction in progress that opened it on its own, and {} \
+                     is its journal. To resume that one, move the other parts of the split ZIP \
+                     out of the folder and open {}; or delete {} if no extraction of it is in \
+                     progress. Nothing was modified",
+                    last.display(),
+                    stub.display(),
+                    last.display(),
+                    stub.display()
+                )
+            }
+        }
+    }
+
+    /// Removes the stub journal, if that is what is at its name: a journal
+    /// of a `.zip` of the same name extracted on its own stays.
+    pub fn remove_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        if is_stub(stub) {
+            match fs::remove_file(stub) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("removing {}", stub.display()));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub fn exists(&self) -> bool {
@@ -212,7 +309,9 @@ impl Paths {
                 _ => {}
             }
         }
-        Ok(())
+        // Last: until the journal is gone, an older build must not take the
+        // `.zip` for a whole archive.
+        self.remove_stub()
     }
 }
 
@@ -260,6 +359,11 @@ fn version_for(
 
 impl Journal {
     pub fn create(paths: &Paths, storage: &Storage, plan: Plan) -> Result<Self> {
+        // Before the journal, so no older build ever finds the journal of a
+        // run on a split ZIP without the stub next to its `.zip`.
+        if plan.format == crate::archive::SPLIT_ZIP {
+            paths.write_stub()?;
+        }
         let mut tail = Vec::new();
         let mut r = storage.reader(None);
         r.seek(SeekFrom::Start(plan.tail_start))?;
@@ -322,6 +426,16 @@ impl Journal {
         let version = serde_json::from_slice::<Versioned>(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?
             .version;
+        if version == STUB_VERSION {
+            bail!(
+                "{} marks {} as the last part of a split ZIP being extracted from its .z01 part. \
+                 Open the .z01 part to continue that extraction, or delete {} if no extraction \
+                 of it is in progress. Nothing was modified",
+                paths.journal.display(),
+                paths.archive.display(),
+                paths.journal.display()
+            );
+        }
         if !READABLE.contains(&version) {
             let which = if version > VERSION {
                 "a newer"
@@ -438,8 +552,16 @@ impl Journal {
         if self.parts.is_empty() {
             return Err(foreign());
         }
+        // A split ZIP's parts are read only through its own index; read as
+        // one file, its offsets would point at the wrong bytes.
+        let split = self.format == crate::archive::SPLIT_ZIP;
+        if split != (storage::is_split_zip(&paths.archive) && self.parts.len() > 1) {
+            return Err(foreign());
+        }
+        let count = self.parts.len();
         for (i, (part, _)) in self.parts.iter().enumerate() {
-            if !storage::volume_path(&paths.archive, i).is_some_and(|v| fsutil::same_path(&v, part))
+            if !storage::volume_path_in(&paths.archive, i, count)
+                .is_some_and(|v| fsutil::same_path(&v, part))
             {
                 return Err(foreign());
             }
@@ -498,6 +620,37 @@ mod tests {
         );
         fs::write(&paths.journal, json).unwrap();
         paths
+    }
+
+    /// The stub of a split ZIP's extraction never goes over the journal of
+    /// its `.zip` extracted on its own; a stub an earlier run left is
+    /// written over, and only a stub is removed.
+    #[test]
+    fn a_stub_never_replaces_a_journal() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-stub-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let lone = write(&dir, 3);
+        let before = fs::read(&lone.journal).unwrap();
+        let split = Paths::for_archive(&dir.join("game.z01"));
+        assert_eq!(split.stub.as_deref(), Some(lone.journal.as_path()));
+
+        let err = split.write_stub().unwrap_err().to_string();
+        assert!(
+            err.contains("already has an extraction in progress"),
+            "{err}"
+        );
+        assert!(split.check_stub().is_err());
+        split.remove_stub().unwrap();
+        assert_eq!(fs::read(&lone.journal).unwrap(), before);
+
+        fs::remove_file(&lone.journal).unwrap();
+        split.write_stub().unwrap();
+        split.check_stub().unwrap();
+        split.write_stub().unwrap();
+        split.remove_stub().unwrap();
+        assert!(!lone.journal.exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Only an extraction that keeps the archive writes version 4, so older

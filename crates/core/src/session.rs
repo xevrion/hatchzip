@@ -96,6 +96,7 @@ pub fn open(
             crate::restore::recover(&mut journal, paths)?;
         }
         if !journal.parts[0].0.exists() {
+            check_first_part_gone(&journal)?;
             if journal.keep {
                 // Only the person could have removed an archive this run
                 // promised to keep, and the rest of it is still to extract.
@@ -122,6 +123,9 @@ pub fn open(
         return Ok(State::Resume(job, journal));
     }
     let mut job = Job::open(primary, writable, password, reads.clone())?;
+    if writable && job.format_name == crate::archive::SPLIT_ZIP {
+        paths.check_stub()?;
+    }
     if let Some(given) = only {
         job.select(given)?;
     }
@@ -140,6 +144,31 @@ pub fn open(
         job.check_case(&output)?;
     }
     Ok(State::Fresh(job, output))
+}
+
+/// With the first part of a split archive gone, a run that never journaled
+/// its last commit has not deleted it: the first part is only ever shortened,
+/// and deleted with the rest once everything is out. So when a later part
+/// that still holds entries to extract is there, the first one was moved,
+/// and finishing the run as one whose archive is gone would delete the
+/// journal and the saved index the rest of the archive needs.
+pub(crate) fn check_first_part_gone(journal: &Journal) -> Result<()> {
+    if journal.done || journal.keep {
+        return Ok(());
+    }
+    let mut start = 0u64;
+    for (i, (part, len)) in journal.parts.iter().enumerate() {
+        if i > 0 && start < journal.committed_len && part.exists() {
+            bail!(
+                "{} was moved or deleted during the extraction, but {} and the rest of the \
+                 archive still need it. Put it back to resume. Nothing was modified",
+                journal.parts[0].0.display(),
+                part.display()
+            );
+        }
+        start = start.saturating_add(*len);
+    }
+    Ok(())
 }
 
 /// A resume goes on with what its journal records. Asking for entries now is
@@ -521,9 +550,8 @@ pub fn retarget(job: &Job, out: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-/// `game.zip`, `game.7z.001`, `game.tar.gz` and `game.part1.rar` all extract
-/// into `game`, next
-/// to them.
+/// `game.zip`, `game.7z.001`, `game.tar.gz`, `game.part1.rar` and `game.z01`
+/// all extract into `game`, next to them.
 pub fn default_output(primary: &Path) -> PathBuf {
     let file_name = primary
         .file_name()
@@ -534,6 +562,14 @@ pub fn default_output(primary: &Path) -> PathBuf {
     if let Some((stem, digits)) = name.rsplit_once('.')
         && digits.len() >= 3
         && digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        name = stem.to_string();
+    }
+    // `game.z01` is the first segment of the split ZIP `game.zip`.
+    if let Some((stem, ext)) = name.rsplit_once('.')
+        && ext.len() >= 3
+        && ext.as_bytes()[0].eq_ignore_ascii_case(&b'z')
+        && ext.bytes().skip(1).all(|b| b.is_ascii_digit())
     {
         name = stem.to_string();
     }
