@@ -132,8 +132,15 @@ fn parse_uca(xml: &str) -> Option<Uca> {
     let mut i = 0;
     while let Some(off) = xml[i..].find('<') {
         let at = i + off;
-        // Outside the root only whitespace is allowed.
-        if stack.is_empty() && !xml[i..at].trim().is_empty() {
+        // Outside the root only whitespace is allowed, and a leading BOM,
+        // which GMarkup skips.
+        let gap = &xml[i..at];
+        let gap = if i == 0 {
+            gap.strip_prefix('\u{feff}').unwrap_or(gap)
+        } else {
+            gap
+        };
+        if stack.is_empty() && !gap.trim().is_empty() {
             return None;
         }
         // Thunar's parser refuses a bare `&`, and would then drop the file.

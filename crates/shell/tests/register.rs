@@ -431,6 +431,16 @@ fn thunar_reads_the_file_as_xml_not_text() {
     unregister(&dirs).unwrap();
     assert_eq!(std::fs::read_to_string(&uca).unwrap(), own_empty);
 
+    // A UTF-8 BOM at the start is kept and doesn't stop the edit.
+    let bom = "\u{feff}<actions>\n</actions>\n";
+    std::fs::write(&uca, bom).unwrap();
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    assert!(text.starts_with('\u{feff}'));
+    assert_eq!(text.matches("<action>").count(), ACTIONS.len());
+    unregister(&dirs).unwrap();
+    assert_eq!(std::fs::read_to_string(&uca).unwrap(), bom);
+
     // A user action is judged by its own id, not by what a comment says.
     let user = "<actions><action><unique-id>user-preview</unique-id>\
                 <!-- <unique-id>hatchzip-test</unique-id> --></action></actions>\n";
