@@ -100,7 +100,7 @@ pub fn register(dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
 }
 
 /// Removes every entry [`register`] could have written.
-pub fn unregister(dirs: &Dirs) -> Result<()> {
+pub fn unregister(dirs: &Dirs) -> Result<Vec<String>> {
     platform::unregister(dirs)
 }
 

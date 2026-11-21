@@ -21,8 +21,8 @@ pub fn register(_dirs: &Dirs, _gui: &Path) -> Result<Vec<String>> {
     bail!("the Finder right-click menu is not available on macOS yet")
 }
 
-pub fn unregister(_dirs: &Dirs) -> Result<()> {
-    Ok(())
+pub fn unregister(_dirs: &Dirs) -> Result<Vec<String>> {
+    Ok(Vec::new())
 }
 
 pub fn is_registered(_dirs: &Dirs) -> bool {

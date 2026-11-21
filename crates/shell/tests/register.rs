@@ -83,7 +83,7 @@ fn linux_menus_point_at_the_gui_and_go_away_cleanly() {
          <command>'/opt/Hatch Zip/it'\\''s/hatchzip-gui' --keep-archive --extract-here %F</command>"
     ));
     assert!(thunar.contains("<patterns>*.zip;*.ZIP;*.7z;*.7Z;*.tar;*.TAR;"));
-    assert!(thunar.contains(";*.XZ;*.001"));
+    assert!(thunar.contains(";*.XZ;*.zst;*.ZST;*.tzst;*.TZST;*.001"));
     assert_eq!(
         thunar.matches("*.001").count(),
         ACTIONS.len(),
@@ -188,6 +188,29 @@ fn thunar_keeps_every_action_that_is_not_hatchzips() {
     );
     assert!(!dirs.config.join("hatchzip/thunar-uca-created").exists());
 
+    // Thunar rewrites the copy when it loads it, in its own layout and with
+    // ids and empty elements of its own. Nothing the user did, so it goes too.
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    let rewritten = text
+        .replacen(
+            "<!DOCTYPE actions [\n<!ELEMENT actions (action)+>\n]>\n",
+            "",
+            1,
+        )
+        .replacen(
+            "  <action>\n    <name>Open Terminal Here</name>\n    \
+             <unique-id>terminal</unique-id>\n  </action>",
+            "<action>\n\t<icon></icon>\n\t<name>Open Terminal Here</name>\n\t\
+             <submenu></submenu>\n\t<unique-id>1700000000-1</unique-id>\n</action>",
+            1,
+        );
+    assert_ne!(rewritten, text);
+    std::fs::write(&uca, &rewritten).unwrap();
+    unregister(&dirs).unwrap();
+    assert!(!uca.exists(), "Thunar's rewrite of an untouched copy goes");
+    assert!(!dirs.config.join("hatchzip/thunar-uca-created").exists());
+
     // Once the user adds an action to the copy, it is theirs to keep.
     register(&dirs, gui).unwrap();
     let text = std::fs::read_to_string(&uca).unwrap();
@@ -276,7 +299,11 @@ fn thunar_skips_what_it_cannot_edit() {
     assert!(line.contains(&uca.display().to_string()), "{line}");
     assert_eq!(std::fs::read(&uca).unwrap(), latin1);
     assert!(dirs.data.join("kio/servicemenus/hatchzip.desktop").exists());
-    unregister(&dirs).unwrap_err();
+    // Unregister skips it too, and still removes the other menus.
+    let line = skipped(unregister(&dirs).unwrap());
+    assert!(line.contains(&uca.display().to_string()), "{line}");
+    assert_eq!(std::fs::read(&uca).unwrap(), latin1);
+    assert!(!dirs.data.join("kio/servicemenus/hatchzip.desktop").exists());
     std::fs::remove_file(&uca).unwrap();
 
     // A system file that can't be copied names the system file.

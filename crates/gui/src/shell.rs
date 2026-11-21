@@ -21,7 +21,8 @@ pub fn register() -> Result<Vec<String>> {
     hatchzip_shell::register(&dirs, &launcher()?)
 }
 
-pub fn unregister() -> Result<()> {
+/// Returns a line for each menu that was skipped.
+pub fn unregister() -> Result<Vec<String>> {
     hatchzip_shell::unregister(&hatchzip_shell::Dirs::current()?)
 }
 
@@ -36,6 +37,6 @@ pub fn set_menu(on: bool) -> Result<Vec<String>> {
                 .collect()
         })
     } else {
-        unregister().map(|()| Vec::new())
+        unregister()
     }
 }

@@ -931,7 +931,8 @@ impl App {
             post(move |app| {
                 let (text, bad) = match result {
                     Ok(skipped) => {
-                        let messages = app.ui().global::<Messages>();
+                        let ui = app.ui();
+                        let messages = ui.global::<Messages>();
                         let mut text = if on {
                             messages.invoke_menu_added()
                         } else {

@@ -7,6 +7,7 @@ use std::io;
 use std::ops::Range;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -368,7 +369,11 @@ fn write_atomic(path: &Path, contents: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let mut name = target.file_name().unwrap_or_default().to_owned();
-    name.push(".hatchzip-tmp");
+    // Unique per call, so two HatchZips registering at once never write
+    // into the same temporary file.
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    name.push(format!(".{}-{n}.hatchzip-tmp", std::process::id()));
     let tmp = target.with_file_name(name);
     let written = (|| {
         let mut file = fs::File::create(&tmp)?;
@@ -429,13 +434,93 @@ fn thunar_unregister(dirs: &Dirs) -> Result<()> {
     // A file HatchZip created goes away with its last action when nothing
     // else in it changed, so Thunar falls back to what it read before.
     let made_from = fs::read_to_string(&mark).ok();
-    if made_from.is_some_and(|h| h == content_hash(&left)) {
+    let unchanged =
+        made_from.is_some_and(|h| h == content_hash(&left) || same_as_system(dirs, &left));
+    if unchanged {
         fs::remove_file(thunar_file(dirs))
             .with_context(|| format!("removing {}", thunar_file(dirs).display()))?;
     } else {
         write_atomic(&thunar_file(dirs), &left)?;
     }
     remove_mark(&mark)
+}
+
+/// Whether `left` holds the same actions as the system file it was copied
+/// from. Thunar rewrites the copy when it loads it (its own layout, and an id
+/// for any action that lacked one), so the bytes no longer match even though
+/// the user changed nothing.
+fn same_as_system(dirs: &Dirs, left: &str) -> bool {
+    let system = dirs
+        .system_config
+        .iter()
+        .find_map(|d| fs::read_to_string(d.join("Thunar/uca.xml")).ok());
+    let (Some(system), Some(a)) = (system, parse_uca(left)) else {
+        return false;
+    };
+    let Some(b) = parse_uca(&system) else {
+        return false;
+    };
+    action_set(left, &a) == action_set(&system, &b)
+}
+
+/// Every action that isn't HatchZip's, as sorted [`action_fingerprint`]s.
+fn action_set(xml: &str, uca: &Uca) -> Vec<Vec<(String, String)>> {
+    let mut set: Vec<_> = uca
+        .actions
+        .iter()
+        .filter(|(_, ours)| !*ours)
+        .map(|(r, _)| action_fingerprint(&xml[r.clone()]))
+        .collect();
+    set.sort();
+    set
+}
+
+/// An action's child elements and their text, sorted, leaving out what
+/// Thunar fills in on its own: the `<unique-id>` and empty elements. Flags
+/// such as `<directories/>` are kept.
+fn action_fingerprint(action: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut open: Option<(String, usize)> = None;
+    let mut i = 0;
+    while let Some(off) = action[i..].find('<') {
+        let at = i + off;
+        let rest = &action[at..];
+        if rest.starts_with("<!--") {
+            i = at + rest.find("-->").map_or(rest.len(), |e| e + 3);
+            continue;
+        }
+        let Some(len) = tag_len(rest) else { break };
+        let tag = &action[at + 1..at + len - 1];
+        let key = tag
+            .trim_end_matches('/')
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if tag.starts_with('/') {
+            depth -= 1;
+            if depth == 1
+                && let Some((name, from)) = open.take()
+            {
+                let text = action[from..at].trim();
+                if !text.is_empty() && !name.starts_with("unique-id") {
+                    out.push((name, text.to_owned()));
+                }
+            }
+        } else if tag.ends_with('/') {
+            if depth == 1 {
+                out.push((key, String::new()));
+            }
+        } else {
+            depth += 1;
+            if depth == 2 {
+                open = Some((key, at + len));
+            }
+        }
+        i = at + len;
+    }
+    out.sort();
+    out
 }
 
 fn remove_mark(mark: &Path) -> Result<()> {
@@ -535,7 +620,9 @@ pub fn register(dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
     ])
 }
 
-pub fn unregister(dirs: &Dirs) -> Result<()> {
+/// Returns a line for each menu that was skipped, such as a Thunar file
+/// HatchZip can't edit; the others are still removed.
+pub fn unregister(dirs: &Dirs) -> Result<Vec<String>> {
     let mut paths = vec![kde_file(dirs)];
     for a in ACTIONS {
         paths.push(nautilus_file(dirs, a.label));
@@ -549,7 +636,10 @@ pub fn unregister(dirs: &Dirs) -> Result<()> {
             _ => {}
         }
     }
-    thunar_unregister(dirs)
+    Ok(match thunar_unregister(dirs) {
+        Ok(()) => Vec::new(),
+        Err(e) => vec![format!("Thunar: skipped, {e:#}")],
+    })
 }
 
 pub fn is_registered(dirs: &Dirs) -> bool {
