@@ -252,6 +252,9 @@ msgstr "आरक्षित"
 msgid "Available after extraction"
 msgstr "एक्सट्रैक्शन के बाद उपलब्ध"
 
+msgid "Not enough"
+msgstr "पर्याप्त नहीं"
+
 msgid "Restore complete"
 msgstr "पुनर्स्थापन पूरा हुआ"
 
@@ -380,8 +383,8 @@ msgstr[1] "{} बदली हुई फ़ाइलें {} में बन�
 msgid "link"
 msgstr "लिंक"
 
-msgid "{} Progress is saved; the extraction can be resumed."
-msgstr "{} प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
 
 msgid "Folder"
 msgstr "फ़ोल्डर"
@@ -532,9 +535,6 @@ msgstr "Finder में दिखाएँ"
 
 msgid "Show in the file manager"
 msgstr "फ़ाइल प्रबंधक में दिखाएँ"
-
-msgid "Reset all settings"
-msgstr "सभी सेटिंग्स रीसेट करें"
 
 msgid "Every setting returns to its default, including the language and the appearance."
 msgstr "हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है, भाषा और रूप भी।"

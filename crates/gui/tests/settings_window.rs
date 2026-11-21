@@ -121,7 +121,7 @@ fn every_setting_applies_at_once_and_is_saved() {
     again.set_section(1);
     assert_eq!(settings.get_section(), 1);
     // Closed and opened again: still that one, as it was left.
-    settings.invoke_close();
+    settings.invoke_close_requested();
     assert!(!settings.window().is_visible());
     ui.invoke_open_settings();
     assert!(settings.window().is_visible());

@@ -1,5 +1,5 @@
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Switch } from "std-widgets.slint";
-import { Theme, Line, VLine } from "theme.slint";
+import { Theme, Line, VLine, PathBlock } from "theme.slint";
 
 // Which file manager the right-click menu belongs to, so the labels can
 // name it and still follow a language change.
@@ -9,15 +9,16 @@ export enum FileManager { explorer, finder, files }
 component SectionItem inherits Rectangle {
     in property <string> text;
     in property <bool> selected;
-    // The sidebar has the keyboard, so the selected entry shows a ring.
+    // The sidebar has the keyboard and it got there by the keyboard, so the
+    // selected entry shows a ring. A click or opening the window doesn't.
     in property <bool> focused;
     callback clicked();
 
+    // The fill and the bar are the selection, focused or not; the ring is
+    // only the keyboard's.
     height: 32px;
     border-radius: 6px;
     background: root.selected ? Theme.track : touch.has-hover ? Theme.panel : transparent;
-    border-width: root.selected && root.focused ? 2px : 0px;
-    border-color: Palette.accent-background;
     accessible-role: list-item;
     accessible-label: root.text;
     accessible-item-selectable: true;
@@ -34,6 +35,16 @@ component SectionItem inherits Rectangle {
         border-radius: 1.5px;
         background: Palette.accent-background;
     }
+    // Inset, so it never covers the bar.
+    if root.selected && root.focused: Rectangle {
+        x: 2px;
+        y: 2px;
+        width: parent.width - 4px;
+        height: parent.height - 4px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Palette.accent-background;
+    }
     Text {
         x: 12px;
         width: parent.width - 20px;
@@ -41,7 +52,6 @@ component SectionItem inherits Rectangle {
         text: root.text;
         vertical-alignment: center;
         overflow: elide;
-        font-weight: root.selected ? 600 : 400;
     }
     touch := TouchArea {
         clicked => {
@@ -55,10 +65,13 @@ component Field inherits VerticalLayout {
     in property <string> label;
     in property <string> note;
     spacing: 6px;
+    // Wrapped text needs its height bound, or the page counts it as one
+    // line and the pane can't scroll to the last setting.
     if root.label != "": Text {
         text: root.label;
         font-weight: 600;
         wrap: word-wrap;
+        height: self.preferred-height;
     }
     @children
     if root.note != "": Text {
@@ -66,6 +79,7 @@ component Field inherits VerticalLayout {
         color: Theme.muted;
         font-size: Theme.small-size;
         wrap: word-wrap;
+        height: self.preferred-height;
     }
 }
 
@@ -92,6 +106,7 @@ component SwitchRow inherits HorizontalLayout {
             Text {
                 text: root.text;
                 wrap: word-wrap;
+                height: self.preferred-height;
                 // The switch already carries this as its name.
                 accessible-role: none;
             }
@@ -138,12 +153,15 @@ component ResetPrompt inherits Rectangle {
             width: min(400px, root.width - 32px);
             height: card.preferred-height;
             background: Palette.background;
-            border-radius: 8px;
+            border-radius: Theme.card-radius;
             border-width: 1px;
             border-color: Theme.line;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: Theme.shadow;
 
             card := VerticalLayout {
-                padding: Theme.gutter;
+                padding: 24px;
                 spacing: 10px;
                 Text {
                     text: @tr("Reset all settings?");
@@ -154,6 +172,11 @@ component ResetPrompt inherits Rectangle {
                     text: @tr("The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed.");
                     color: Theme.muted;
                     wrap: word-wrap;
+                    height: self.preferred-height;
+                }
+                // Room between the question and the answers.
+                Rectangle {
+                    height: 8px;
                 }
                 HorizontalLayout {
                     alignment: end;
@@ -220,6 +243,8 @@ export component SettingsWindow inherits Window {
     // Empty when settings are kept in memory only, as in tests.
     in property <string> settings-path;
     property <bool> confirm-reset;
+    // The keyboard last moved around the window, so focus is shown.
+    property <bool> keyboard-nav;
 
     public function system-language() -> string { return @tr("Use the system language"); }
     public function destination-title() -> string { return @tr("Select the default destination folder"); }
@@ -237,7 +262,7 @@ export component SettingsWindow inherits Window {
     callback shell-menu-toggled();
     callback show-settings-file();
     callback reset();
-    callback close();
+    callback close-requested();
 
     function step-section(delta: int) {
         let next = root.section + delta;
@@ -247,10 +272,11 @@ export component SettingsWindow inherits Window {
 
     title: @tr("Settings");
     preferred-width: 760px;
-    preferred-height: 540px;
+    preferred-height: 580px;
     min-width: 600px;
     min-height: 420px;
     background: Palette.background;
+    default-font-family: Theme.font-family;
 
     init => {
         sidebar.focus();
@@ -262,8 +288,12 @@ export component SettingsWindow inherits Window {
         focus-on-tab-navigation: false;
         key-pressed(event) => {
             if event.text == Key.Escape {
-                root.close();
+                root.close-requested();
                 return accept;
+            }
+            // Tab moving the focus, from the controls that turn it down.
+            if event.text == Key.Tab || event.text == Key.Backtab {
+                root.keyboard-nav = true;
             }
             reject
         }
@@ -272,6 +302,7 @@ export component SettingsWindow inherits Window {
             sidebar := FocusScope {
                 width: 200px;
                 key-pressed(event) => {
+                    root.keyboard-nav = true;
                     if event.text == Key.UpArrow {
                         root.step-section(-1);
                         return accept;
@@ -292,8 +323,9 @@ export component SettingsWindow inherits Window {
                         SectionItem {
                             text: @tr("General");
                             selected: root.section == 0;
-                            focused: sidebar.has-focus;
+                            focused: sidebar.has-focus && root.keyboard-nav;
                             clicked => {
+                                root.keyboard-nav = false;
                                 root.section = 0;
                                 sidebar.focus();
                             }
@@ -301,8 +333,9 @@ export component SettingsWindow inherits Window {
                         SectionItem {
                             text: @tr("Extraction");
                             selected: root.section == 1;
-                            focused: sidebar.has-focus;
+                            focused: sidebar.has-focus && root.keyboard-nav;
                             clicked => {
+                                root.keyboard-nav = false;
                                 root.section = 1;
                                 sidebar.focus();
                             }
@@ -310,8 +343,9 @@ export component SettingsWindow inherits Window {
                         if root.shell-menu-available: SectionItem {
                             text: @tr("Integration");
                             selected: root.section == 2;
-                            focused: sidebar.has-focus;
+                            focused: sidebar.has-focus && root.keyboard-nav;
                             clicked => {
+                                root.keyboard-nav = false;
                                 root.section = 2;
                                 sidebar.focus();
                             }
@@ -319,8 +353,9 @@ export component SettingsWindow inherits Window {
                         SectionItem {
                             text: @tr("Advanced");
                             selected: root.section == 3;
-                            focused: sidebar.has-focus;
+                            focused: sidebar.has-focus && root.keyboard-nav;
                             clicked => {
+                                root.keyboard-nav = false;
                                 root.section = 3;
                                 sidebar.focus();
                             }
@@ -339,6 +374,7 @@ export component SettingsWindow inherits Window {
                 page := VerticalLayout {
                     width: pane.visible-width;
                     padding: 24px;
+                    padding-bottom: 32px;
                     spacing: 20px;
                     alignment: start;
 
@@ -469,19 +505,22 @@ export component SettingsWindow inherits Window {
                                     }
                                 }
                             }
+                            // The whole path wraps in view; the button keeps
+                            // its own height beside it.
                             if root.destination-index == 1: HorizontalLayout {
                                 spacing: 8px;
-                                LineEdit {
-                                    text: root.destination-folder;
-                                    placeholder-text: @tr("No folder chosen");
-                                    accessible-label: @tr("Default destination");
-                                    read-only: true;
+                                PathBlock {
+                                    text: root.destination-folder != "" ? root.destination-folder : @tr("No folder chosen");
+                                    label: @tr("Default destination");
                                     horizontal-stretch: 1;
                                 }
-                                Button {
-                                    text: @tr("Browse…");
-                                    clicked => {
-                                        root.browse-destination();
+                                VerticalLayout {
+                                    alignment: start;
+                                    Button {
+                                        text: @tr("Browse…");
+                                        clicked => {
+                                            root.browse-destination();
+                                        }
                                     }
                                 }
                             }
@@ -530,23 +569,26 @@ export component SettingsWindow inherits Window {
                             note: @tr("Settings are saved here as soon as they change.");
                             HorizontalLayout {
                                 spacing: 8px;
-                                LineEdit {
+                                PathBlock {
                                     text: root.settings-path;
-                                    accessible-label: @tr("Settings file");
-                                    read-only: true;
+                                    label: @tr("Settings file");
                                     horizontal-stretch: 1;
                                 }
-                                Button {
-                                    text: root.file-manager == FileManager.explorer ? @tr("Show in Explorer") : root.file-manager == FileManager.finder ? @tr("Show in Finder") : @tr("Show in the file manager");
-                                    enabled: root.settings-path != "";
-                                    clicked => {
-                                        root.show-settings-file();
+                                VerticalLayout {
+                                    alignment: start;
+                                    Button {
+                                        text: root.file-manager == FileManager.explorer ? @tr("Show in Explorer") : root.file-manager == FileManager.finder ? @tr("Show in Finder") : @tr("Show in the file manager");
+                                        enabled: root.settings-path != "";
+                                        clicked => {
+                                            root.show-settings-file();
+                                        }
                                     }
                                 }
                             }
                         }
+                        // The button names it; a heading saying the same
+                        // was one bold line too many.
                         Field {
-                            label: @tr("Reset all settings");
                             note: @tr("Every setting returns to its default, including the language and the appearance.");
                             HorizontalLayout {
                                 alignment: start;

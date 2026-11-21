@@ -65,7 +65,8 @@ export global Messages {
     public function restore-result(kept: bool, held: string, path: string) -> string { return kept ? @tr("Extraction progress discarded. The archive was not modified. Extracted files remain in {}.", path) : @tr("Archive restored. It contains {} not yet extracted. Extracted files remain in {}.", held, path); }
     public function restore-aside(n: int, number: string, path: string) -> string { return @tr("1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive." | "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive." % n, number, path); }
 
-    public function task-resumable-error(reason: string) -> string { return @tr("{} Progress is saved; the extraction can be resumed.", reason); }
+    // The engine's reason goes in TaskView.reason, under this.
+    public function task-resumable-error() -> string { return @tr("Progress is saved; the extraction can be resumed."); }
 
     public function queue-of(at: int, of: int) -> string { return @tr("Archive {} of {}", at, of); }
     public function queue-all(of: int) -> string { return @tr("All {} archives completed.", of); }

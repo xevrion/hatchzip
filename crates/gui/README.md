@@ -41,3 +41,13 @@ Files dropped on the window open on Windows, macOS and X11. winit 0.30 doesn't r
 ## Tests
 
 `cargo test -p hatchzip-gui` runs the unit tests, `tests/cli.rs` for the shell flags, and `tests/ui.rs`, which drives the real windows headlessly through Slint's testing backend. `tests/ui_space.rs` does the same on a disk faked to have room for extracting in place but not for keeping the archive. Set `HATCHZIP_GUI_SHOTS=<dir>` to also save every state they pass through as a PNG, in light and dark.
+
+## Screenshots
+
+`examples/screenshots.rs` opens every window through the real window system and saves each state as a PNG: the main window (start, an open archive with its contents and the disk space plan, a plan that does not fit, running, done, failed), every Settings section and the Reset prompt, About, and the right-click window running and done. Each is drawn in light and dark and in every bundled language, at the default size, and the main and Settings windows also at their minimum size, as `<scene>-<language>-<theme>[-min].png`.
+
+```sh
+SLINT_BACKEND=winit-software cargo run --example screenshots -p hatchzip-gui -- shots
+```
+
+The `screenshots` workflow runs it on Linux (under Xvfb), macOS and Windows for every pull request that changes `crates/gui`, and on demand from the Actions tab. The images are in the run's `screenshots-<os>` artifacts, kept for 14 days. It is not a required check.

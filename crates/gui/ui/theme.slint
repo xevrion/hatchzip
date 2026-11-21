@@ -13,12 +13,44 @@ export global Theme {
     out property <brush> faint: dark ? #ffffff66 : #00000066;
     out property <brush> danger: dark ? #ff99a4 : #c42b1c;
     out property <brush> panel: dark ? #ffffff08 : #00000005;
+    // Read-only path fields: a text field's white fill, so they don't read
+    // as disabled the way a gray one did in light, and an even edge without
+    // the editable field's darker bottom stroke or focus ring, so they don't
+    // invite typing. Not the palette's control background: on macOS that
+    // is gray in light and a bright gray in dark.
+    out property <brush> field: dark ? #ffffff0f : #ffffff;
+    out property <brush> field-edge: dark ? #ffffff1f : #00000024;
     out property <brush> track: dark ? #ffffff1f : #00000014;
+    // Line icons that are controls, such as the gear: stronger than muted
+    // text, so a thin outline still reads at 1x.
+    out property <brush> icon: dark ? #ffffffcc : #000000b8;
+    out property <brush> success: dark ? #6ccb5f : #0f7b0f;
+    // The selected tree row: a tint of the accent while the list has the
+    // keyboard, the track's gray once it doesn't.
+    out property <brush> selected: dark ? #60cdff29 : #005fb81f;
+    // Under the cards of prompts, so they lift off the dimmed window.
+    out property <color> shadow: dark ? #00000080 : #00000040;
+    out property <length> card-radius: 10px;
     // Behind a prompt, so the window reads as paused.
     out property <brush> scrim: dark ? #000000a0 : #00000059;
     out property <length> gutter: 20px;
     out property <length> title-size: 18px;
-    out property <length> small-size: 12px;
+    // Set from Rust for the language on screen (`locale::style`). A family
+    // the system has for the script, since the fallback some systems pick
+    // lacks glyphs (Simplified Chinese on Windows) or a bold weight. Empty
+    // keeps the style's own font.
+    in property <string> font-family;
+    // Devanagari draws smaller than Latin at the same size and its vowel
+    // signs crowd wrapped lines, so small text is a size up for it.
+    in property <length> script-boost;
+    // Chinese wraps at any character, so a capped paragraph can end on a
+    // line of two or three characters; set for it so such paragraphs are
+    // narrowed to lines of even length. Latin keeps its familiar breaks.
+    in property <bool> even-lines;
+    // The menu bar is drawn inside the window, not by the system, so it
+    // needs an edge between it and the content.
+    in property <bool> menu-edge;
+    out property <length> small-size: 12px + script-boost;
 }
 
 export component Line inherits Rectangle {
@@ -35,7 +67,10 @@ export component VLine inherits Rectangle {
 export component Meter inherits Rectangle {
     in property <float> value;
     in property <bool> bad;
+    // A Rectangle stretches by default; a layout holding the bar would then
+    // take spare height from the window and spread it under the bar.
     height: 6px;
+    vertical-stretch: 0;
     border-radius: 3px;
     background: Theme.track;
     Rectangle {
@@ -44,6 +79,74 @@ export component Meter inherits Rectangle {
         width: root.value > 0 ? max(root.height, parent.width * clamp(root.value, 0, 1)) : 0;
         border-radius: 3px;
         background: root.bad ? Theme.danger : Palette.accent-background;
+    }
+}
+
+// A path that can't be edited, in a field's frame. One line shows the end
+// of the path, the part that names the file or folder, behind an ellipsis
+// when it is too long; a cut-off start is easier to do without.
+export component PathLine inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    property <bool> long: line.preferred-width > self.width - 16px;
+    min-width: 120px;
+    min-height: line.preferred-height + 8px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Theme.field-edge;
+    background: Theme.field;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.label;
+    accessible-value: root.text;
+
+    if root.long: Text {
+        x: 8px;
+        height: parent.height;
+        text: "…";
+        color: Theme.muted;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    Rectangle {
+        x: root.long ? 20px : 8px;
+        y: 0;
+        width: parent.width - self.x - 8px;
+        height: parent.height;
+        clip: true;
+        line := Text {
+            x: min(0px, parent.width - self.width);
+            width: self.preferred-width;
+            height: parent.height;
+            text: root.text;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+}
+
+// The same frame for a path that wraps, so all of it shows however narrow
+// the window is.
+export component PathBlock inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    min-width: 120px;
+    min-height: max(28px, body.preferred-height + 12px);
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Theme.field-edge;
+    background: Theme.field;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.label;
+    accessible-value: root.text;
+
+    body := Text {
+        x: 10px;
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 20px;
+        height: self.preferred-height;
+        text: root.text;
+        wrap: char-wrap;
+        accessible-role: none;
     }
 }
 
