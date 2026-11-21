@@ -22,7 +22,7 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - ZIP (including ZIP64 and self-extracting .exe), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, .tar.xz and .txz
 - Split archives: `.001` sets of ZIP or 7z, RAR volume sets (`.part1.rar`, or `.rar` with `.r00`)
 - Password-protected ZIP, 7z and RAR
-- Not supported yet: .tar.zst, native split ZIP (`.z01`)
+- Not supported yet: .tar.zst; native split ZIP (`game.z01`, ..., `game.zip`) is in the next release
 
 ## Use
 
