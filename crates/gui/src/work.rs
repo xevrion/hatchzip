@@ -4,13 +4,14 @@
 //! Byte counts go through atomics that the UI samples on a timer, so a fast
 //! extraction never floods the event loop with one message per write.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use anyhow::{Context, Result, bail};
 use hatchzip_core::archive::storage::Reads;
-use hatchzip_core::archive::{PasswordNeeded, WrongPassword};
+use hatchzip_core::archive::{Kind, PasswordNeeded, WrongPassword};
 use hatchzip_core::engine::{self, Job, Outcome, Progress, Run};
 use hatchzip_core::journal::{Journal, Paths};
 use hatchzip_core::session::{self, SpacePlan, State};
@@ -61,6 +62,9 @@ pub enum Request {
         /// Only these entries, and everything inside the folders among them,
         /// which keeps the archive. `None` extracts every entry.
         only: Option<Vec<PathBuf>>,
+        /// This run is itself one of the archives found inside another; its
+        /// output is not scanned again, one level only.
+        nested: bool,
     },
     Test {
         archive: PathBuf,
@@ -141,6 +145,13 @@ pub enum Update {
         /// whichever way it was resumed.
         selected: bool,
         warning: Option<String>,
+        /// Archives among the files this run wrote, to offer extracting
+        /// next. Only what the run itself produced, never a file that was
+        /// already in the destination.
+        nested: Vec<PathBuf>,
+        /// The run resumed, so its entry list held only what was left: the
+        /// offer does not cover files an earlier run extracted.
+        nested_partial: bool,
     },
     Tested(usize),
     /// The archive is whole again, holding this many entries; the ones
@@ -186,6 +197,7 @@ pub fn run(
             here,
             existing,
             only,
+            nested,
         } => extract(
             archive,
             output.clone(),
@@ -197,6 +209,7 @@ pub fn run(
                 here: *here,
                 existing: *existing,
                 only: only.clone(),
+                nested: *nested,
             },
             Secret {
                 password: password.clone(),
@@ -285,6 +298,7 @@ struct Choices {
     here: bool,
     existing: Existing,
     only: Option<Vec<PathBuf>>,
+    nested: bool,
 }
 
 fn extract(
@@ -303,6 +317,7 @@ fn extract(
         here,
         existing,
         only,
+        nested: nested_run,
     } = choices;
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
@@ -314,6 +329,8 @@ fn extract(
     // "Extract here" opens for the folder named after the archive, the safe
     // choice, and moves next to the archive once its contents allow.
     let output = if here { None } else { output };
+    let kept: Vec<PathBuf>;
+    let mut resumed = false;
     let opened = open(
         &primary,
         &paths,
@@ -332,10 +349,20 @@ fn extract(
                 output: journal.output,
                 keep: journal.keep,
                 warning,
+                nested: Vec::new(),
+                nested_partial: false,
             });
             return Ok(());
         }
         State::Resume(job, journal) => {
+            resumed = true;
+            // The journal remembers the files the person kept or asked to
+            // see beside the archive's copy; neither is the run's.
+            kept = journal
+                .replace
+                .as_ref()
+                .map(|r| r.keep.iter().chain(r.both.iter()).cloned().collect())
+                .unwrap_or_default();
             let keep = session::keeps_archive(&journal, keep_archive)?;
             let plan = session::plan(&job, &journal.output, true, keep_free, keep)?;
             if !plan.fits {
@@ -384,6 +411,10 @@ fn extract(
                     }),
                 }
             };
+            kept = choices
+                .as_ref()
+                .map(|c| c.keep.iter().chain(c.both.iter()).cloned().collect())
+                .unwrap_or_default();
             let plan = session::plan(&job, &out, false, keep_free, keep_archive)?;
             if !plan.fits {
                 send(Update::NoSpace(plan));
@@ -409,6 +440,19 @@ fn extract(
         }
     };
 
+    // Every file this run may write, before the job moves into the run. A
+    // nested archive is one of these: a folder scan would also find archives
+    // the person already had there.
+    let candidates: Vec<PathBuf> = if nested_run {
+        Vec::new()
+    } else {
+        job.units
+            .iter()
+            .flat_map(|u| &u.items)
+            .filter(|i| i.kind == Kind::File)
+            .map(|i| i.path.clone())
+            .collect()
+    };
     let output = journal.output.clone();
     let keep = journal.keep;
     let selected = journal.only.is_some();
@@ -445,11 +489,30 @@ fn extract(
     match run.execute()? {
         Outcome::Finished(warning) => {
             counters.archive.store(0, Ordering::Relaxed);
+            let parent_primary = session::locate(archive).ok().map(|(p, _)| p);
+            let mut seen = HashSet::new();
+            let nested: Vec<PathBuf> = candidates
+                .into_iter()
+                .filter(|path| !kept.contains(path))
+                .filter_map(|path| {
+                    let path = output.join(path);
+                    hatchzip_core::archive::nested_kind(&path)?;
+                    // A split set is one archive, named by its first volume;
+                    // the parent archive is never offered back.
+                    let (primary, _) = session::locate(&path).ok()?;
+                    if parent_primary.as_ref() == Some(&primary) || !seen.insert(primary.clone()) {
+                        return None;
+                    }
+                    Some(primary)
+                })
+                .collect();
             send(Update::Extracted {
                 output,
                 keep,
                 selected,
                 warning,
+                nested_partial: resumed && !nested.is_empty(),
+                nested,
             });
         }
         Outcome::Paused => send(Update::Paused),
@@ -538,6 +601,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
+            nested: false,
         };
         assert!(extract.set_keep_free(500_000_000));
         match extract {
@@ -593,6 +657,256 @@ mod tests {
             "Pick another folder; or not."
         );
         assert_eq!(sentence(""), "");
+    }
+
+    fn zip_with(dir: &Path, name: &str, files: &[(&str, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        for (file, data) in files {
+            w.start_file(*file, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            w.write_all(data).unwrap();
+        }
+        w.finish().unwrap();
+        path
+    }
+
+    fn inner_zip() -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        w.start_file("inside.txt", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(b"inside").unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    fn person_zip() -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        w.start_file("mine.txt", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(b"mine").unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Only what this run wrote, and only a real archive with an archive
+    /// name: a text file called `.zip` and a real ZIP called `.dat` are not
+    /// offers.
+    #[test]
+    fn a_finished_extraction_reports_the_archives_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(
+            dir.path(),
+            "game.zip",
+            &[
+                ("inner.zip", &inner),
+                ("notes.zip", b"not an archive"),
+                ("patch.dat", &inner),
+            ],
+        );
+        let out = dir.path().join("out");
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        let seen = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| seen.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |_, _, _| panic!("nothing is replaced in a fresh folder"),
+        );
+        let nested = seen
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted { nested, .. } => Some(nested),
+                _ => None,
+            })
+            .expect("the extraction finished");
+        assert_eq!(nested, [out.join("inner.zip")]);
+    }
+
+    /// Keep both leaves the person's file at the entry path and renames the
+    /// run's copy beside it. The offer must follow the run's copy, not the
+    /// person's file, so the entry path is not offered.
+    #[test]
+    fn a_kept_both_file_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(dir.path(), "game.zip", &[("inner.zip", &inner)]);
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let person = person_zip();
+        std::fs::write(out.join("inner.zip"), &person).unwrap();
+
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        let seen = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| seen.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |found, _, _| {
+                Some(hatchzip_core::replace::Choices {
+                    both: found.to_vec(),
+                    ..Default::default()
+                })
+            },
+        );
+        let nested = seen
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted { nested, .. } => Some(nested),
+                _ => None,
+            })
+            .expect("the extraction finished");
+        assert!(nested.is_empty(), "the person's file is not offered");
+        assert_eq!(std::fs::read(out.join("inner.zip")).unwrap(), person);
+    }
+
+    /// A resumed run only knows the entries it still had, so the offer is
+    /// marked partial; the archive left in the output is still offered.
+    #[test]
+    fn a_resumed_run_offers_the_remaining_archives_as_partial() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(
+            dir.path(),
+            "game.zip",
+            &[("inner.zip", &inner), ("data/big.bin", &vec![7u8; 200_000])],
+        );
+        let out = dir.path().join("out");
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        counters.stop.store(true, Ordering::Relaxed);
+        run(
+            &request,
+            &counters,
+            &|_| {},
+            &mut |_| None,
+            &mut |_, _, _| panic!("nothing is replaced in a fresh folder"),
+        );
+
+        counters.reset();
+        let updates = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| updates.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |_, _, _| panic!("nothing is replaced in a fresh folder"),
+        );
+        let (nested, partial) = updates
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted {
+                    nested,
+                    nested_partial,
+                    ..
+                } => Some((nested, nested_partial)),
+                _ => None,
+            })
+            .expect("the resumed extraction finished");
+        assert_eq!(nested, [out.join("inner.zip")]);
+        assert!(partial, "an earlier run may have left more");
+    }
+
+    /// A resume reads the replace choices from the journal: the person's
+    /// kept file at a nested archive's path is still not the run's.
+    #[test]
+    fn a_resumed_run_remembers_the_file_it_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(
+            dir.path(),
+            "game.zip",
+            &[("inner.zip", &inner), ("data/big.bin", &vec![7u8; 200_000])],
+        );
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let person = person_zip();
+        std::fs::write(out.join("inner.zip"), &person).unwrap();
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        counters.stop.store(true, Ordering::Relaxed);
+        run(
+            &request,
+            &counters,
+            &|_| {},
+            &mut |_| None,
+            &mut |found, _, _| {
+                Some(hatchzip_core::replace::Choices {
+                    keep: found.to_vec(),
+                    ..Default::default()
+                })
+            },
+        );
+
+        counters.reset();
+        let updates = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| updates.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |_, _, _| panic!("the journal decides"),
+        );
+        let nested = updates
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted { nested, .. } => Some(nested),
+                _ => None,
+            })
+            .expect("the resumed extraction finished");
+        assert!(nested.is_empty(), "the person's file is not offered");
+        assert_eq!(std::fs::read(out.join("inner.zip")).unwrap(), person);
+    }
+
+    /// The person's own file at a nested archive's path is not this run's,
+    /// so replacing it with Skip must not offer it as if it were.
+    #[test]
+    fn a_skipped_file_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(dir.path(), "game.zip", &[("inner.zip", &inner)]);
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let person = person_zip();
+        std::fs::write(out.join("inner.zip"), &person).unwrap();
+
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        let seen = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| seen.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |found, _, _| {
+                Some(hatchzip_core::replace::Choices {
+                    keep: found.to_vec(),
+                    ..Default::default()
+                })
+            },
+        );
+        let nested = seen
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted { nested, .. } => Some(nested),
+                _ => None,
+            })
+            .expect("the extraction finished");
+        assert!(nested.is_empty(), "the person's file is not offered");
+        assert_eq!(std::fs::read(out.join("inner.zip")).unwrap(), person);
     }
 
     fn make_zip(dir: &Path, password: Option<&str>) -> PathBuf {
@@ -734,6 +1048,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
+            nested: false,
         }
     }
 
@@ -748,6 +1063,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
+            nested: false,
         }
     }
 
@@ -1001,6 +1317,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
+            nested: false,
         };
         assert_eq!(collect(&request, &counters), ["checking", "no space"]);
         assert!(!session::locate(&archive).unwrap().1.exists());

@@ -18,6 +18,7 @@ export component TaskWindow inherits Window {
     callback pause();
     callback resume();
     callback open-folder();
+    callback extract-inside();
     callback dismiss();
     callback give-back();
     callback lower-reserve();
@@ -106,6 +107,9 @@ export component TaskWindow inherits Window {
             }
             open-folder => {
                 root.open-folder();
+            }
+            extract-inside => {
+                root.extract-inside();
             }
             close => {
                 root.dismiss();

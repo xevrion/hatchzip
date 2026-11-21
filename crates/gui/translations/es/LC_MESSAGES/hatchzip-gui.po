@@ -593,3 +593,16 @@ msgstr "Las entradas seleccionadas se extrajeron. El archivo se conservó."
 
 msgid "Extract all"
 msgstr "Extraer todo"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "Extraer el {} archivo que contiene"
+msgstr[1] "Extraer los {} archivos que contiene"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "Extraer y eliminar el {} archivo que contiene"
+msgstr[1] "Extraer y eliminar los {} archivos que contiene"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "Solo se comprobaron los archivos que escribió esta ejecución."

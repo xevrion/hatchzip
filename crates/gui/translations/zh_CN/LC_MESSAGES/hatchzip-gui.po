@@ -583,3 +583,14 @@ msgstr "所选条目均已解压。压缩包已保留。"
 
 msgid "Extract all"
 msgstr "全部解压"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "解压里面的 {} 个压缩包"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "解压并删除里面的 {} 个压缩包"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "只检查了本次运行写出的文件。"
