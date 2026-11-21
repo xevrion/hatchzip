@@ -16,7 +16,9 @@ use tempfile::TempDir;
 type Build = fn(&Path, &Files) -> PathBuf;
 
 /// Every format family: one entry per unit, a solid block holding entries
-/// chosen and left out, a compressed stream, and a split set.
+/// chosen and left out, a compressed stream, and split sets, a native split
+/// ZIP among them: kept, it is never cut, so a selection works as for any
+/// other set.
 fn cases() -> Vec<(&'static str, Build)> {
     vec![
         ("zip", |d, f| zip_of(d, "game.zip", f)),
@@ -26,6 +28,9 @@ fn cases() -> Vec<(&'static str, Build)> {
         ("tar.gz", |d, f| targz_of(d, "game.tar.gz", f)),
         ("tar.xz", |d, f| tarxz_of(d, "game.tar.xz", f)),
         ("split zip", |d, f| split_up(&zip_of(d, "game.zip", f), 3)),
+        ("native split zip", |d, f| {
+            split_zip_of(d, f, &Split::default())
+        }),
         ("split solid 7z", |d, f| {
             split_up(&sevenz_of(d, "game.7z", f, true), 3)
         }),
@@ -115,6 +120,12 @@ fn walk_files(root: &Path, dir: &Path, found: &mut Vec<String>) {
     }
 }
 
+/// Where a native split ZIP's stub journal goes, next to its `.zip`; for
+/// any other archive, a name nothing uses.
+fn stub(archive: &Path) -> PathBuf {
+    archive.with_extension("zip.hatchzip")
+}
+
 fn journal(archive: &Path) -> serde_json::Value {
     let [journal, _] = side_files(archive);
     serde_json::from_slice(&fs::read(journal).unwrap()).unwrap()
@@ -144,6 +155,7 @@ fn every_format_extracts_only_the_selection_and_keeps_the_archive() {
         assert!(!out.join("game/data").exists(), "{name}: game/data");
         assert_unchanged(&before);
         assert_no_side_files(&archive);
+        assert!(!stub(&archive).exists(), "{name}: the stub was left");
     }
 }
 
@@ -198,6 +210,7 @@ fn a_path_not_in_the_archive_is_refused_before_anything() {
             assert!(!out.exists(), "{name}: {wrong:?} created the output");
             assert_unchanged(&before);
             assert_no_side_files(&archive);
+            assert!(!stub(&archive).exists(), "{name}: {wrong:?} left a stub");
         }
     }
 }
@@ -267,6 +280,10 @@ fn a_crashed_selection_resumes_with_the_same_entries() {
             let j = journal(&archive);
             assert_eq!(j["version"], 9, "{what}");
             assert_eq!(j["keep"], true, "{what}");
+            if name == "native split zip" {
+                assert_eq!(j["format"], "split-zip", "{what}");
+                assert!(stub(&archive).exists(), "{what}: no stub");
+            }
             assert!(
                 j["only"].as_array().is_some_and(|o| o.len() == 4),
                 "{what}: {j}"
@@ -304,6 +321,7 @@ fn a_crashed_selection_resumes_with_the_same_entries() {
             assert_selected(&out, &files, CHOSEN);
             assert_unchanged(&before);
             assert_no_side_files(&archive);
+            assert!(!stub(&archive).exists(), "{what}: the stub was left");
         }
     }
 }

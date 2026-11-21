@@ -32,6 +32,9 @@ fn cases() -> Vec<(&'static str, Build)> {
         ("tar", |d, f| tar_of(d, "game.tar", f)),
         ("tar.gz", |d, f| targz_of(d, "game.tar.gz", f)),
         ("split zip", |d, f| split_up(&zip_of(d, "game.zip", f), 3)),
+        ("native split zip", |d, f| {
+            split_zip_of(d, f, &Split::default())
+        }),
         ("split solid 7z", |d, f| {
             split_up(&sevenz_of(d, "game.7z", f, true), 3)
         }),
@@ -116,6 +119,12 @@ fn an_interrupted_run_resumes_and_still_keeps_the_archive() {
         (
             "split solid 7z",
             |d, f| split_up(&sevenz_of(d, "game.7z", f, true), 3),
+            &batches,
+            &["0", "2"],
+        ),
+        (
+            "native split zip",
+            |d, f| split_zip_of(d, f, &Split::default()),
             &batches,
             &["0", "2"],
         ),

@@ -320,6 +320,9 @@ pub fn split_up(archive: &Path, parts: usize) -> PathBuf {
 /// Every volume of the archive `first` names, as it is now.
 pub fn snapshot(first: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let name = first.to_string_lossy();
+    if name.ends_with(".z01") || name.ends_with(".Z01") {
+        return split_zip_snapshot(first);
+    }
     let Some(base) = name.strip_suffix(".001") else {
         return vec![(first.to_path_buf(), fs::read(first).unwrap())];
     };
@@ -362,6 +365,207 @@ pub fn split(bytes: &[u8], base: &Path, parts: usize) -> Vec<PathBuf> {
             let p = PathBuf::from(name);
             fs::write(&p, chunk).unwrap();
             p
+        })
+        .collect()
+}
+
+/// How [`split_zip_segments`] cuts a ZIP into a native split ZIP.
+#[derive(Clone, Copy, Debug)]
+pub struct Split {
+    /// Bytes per segment; the last one takes what is left, and always holds
+    /// the whole end record.
+    pub size: usize,
+    /// What the first segment starts with: the split marker `PK\x07\x08`
+    /// that `zip -s` writes, `PK00`, or nothing.
+    pub marker: &'static [u8],
+    /// Every record's offset and disk only in its ZIP64 extra field, and
+    /// ZIP64 end records with every 16- and 32-bit value saturated.
+    pub zip64: bool,
+    /// A new segment at every local header and at the central directory,
+    /// instead of every `size` bytes, so every cut lands on a boundary.
+    pub at_headers: bool,
+    /// `GAME.Z01`, ..., `GAME.ZIP`.
+    pub upper: bool,
+}
+
+impl Default for Split {
+    fn default() -> Self {
+        Self {
+            size: 200_000,
+            marker: b"PK\x07\x08",
+            zip64: false,
+            at_headers: false,
+            upper: false,
+        }
+    }
+}
+
+/// The segments of a native split ZIP holding what `zip`, a ZIP that is one
+/// file without a comment or ZIP64 records, holds: `.z01`, `.z02`, ..., and
+/// the `.zip` last, as `zip -s` writes them. Every offset in the index
+/// becomes a disk and an offset from the start of that segment file, the
+/// marker included, and entries, local headers and the central directory
+/// run across segment boundaries wherever the cuts fall.
+pub fn split_zip_segments(zip: &[u8], s: &Split) -> Vec<Vec<u8>> {
+    let u16_at = |b: &[u8], i: usize| usize::from(u16::from_le_bytes([b[i], b[i + 1]]));
+    let u32_at = |b: &[u8], i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap()) as usize;
+    let eocd = zip.len() - 22;
+    assert_eq!(u32_at(zip, eocd), 0x0605_4b50, "a ZIP without a comment");
+    let (count, cd_len, cd_at) = (
+        u16_at(zip, eocd + 10),
+        u32_at(zip, eocd + 12),
+        u32_at(zip, eocd + 16),
+    );
+    let shift = s.marker.len();
+    let mut joined = s.marker.to_vec();
+    joined.extend_from_slice(&zip[..cd_at]);
+    let mut records = Vec::new();
+    let mut at = cd_at;
+    for _ in 0..count {
+        let len = 46 + u16_at(zip, at + 28) + u16_at(zip, at + 30) + u16_at(zip, at + 32);
+        records.push((zip[at..at + len].to_vec(), u32_at(zip, at + 42) + shift));
+        at += len;
+    }
+    assert_eq!(at, cd_at + cd_len);
+    let grow = if s.zip64 { 16 } else { 0 };
+    let cd_size: usize = records.iter().map(|(r, _)| r.len() + grow).sum();
+    let cd_start = joined.len();
+    let total = cd_start + cd_size + if s.zip64 { 56 + 20 } else { 0 } + 22;
+    let starts: Vec<usize> = if s.at_headers {
+        let mut v: Vec<usize> = records.iter().map(|(_, h)| *h).collect();
+        v.push(cd_start);
+        v.sort_unstable();
+        v[0] = 0;
+        v.dedup();
+        v
+    } else {
+        (0..)
+            .map(|i| i * s.size)
+            .take_while(|&p| p + 22 <= total)
+            .collect()
+    };
+    let place = |p: usize| {
+        let d = starts.partition_point(|&x| x <= p) - 1;
+        (d, p - starts[d])
+    };
+    for (record, header) in &records {
+        let (disk, off) = place(*header);
+        let mut r = record.clone();
+        if s.zip64 {
+            r[34..36].copy_from_slice(&0xFFFFu16.to_le_bytes());
+            r[42..46].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+            let name_end = 46 + u16_at(&r, 28);
+            let extra = u16_at(&r, 30) + 16;
+            r[30..32].copy_from_slice(&(extra as u16).to_le_bytes());
+            let mut field = vec![1, 0, 12, 0];
+            field.extend((off as u64).to_le_bytes());
+            field.extend((disk as u32).to_le_bytes());
+            r.splice(name_end..name_end, field);
+        } else {
+            r[34..36].copy_from_slice(&(disk as u16).to_le_bytes());
+            r[42..46].copy_from_slice(&(off as u32).to_le_bytes());
+        }
+        joined.extend(r);
+    }
+    let (cd_disk, cd_off) = place(cd_start);
+    let last = starts.len() - 1;
+    if s.zip64 {
+        let (rec_disk, rec_off) = place(joined.len());
+        joined.extend(0x0606_4b50u32.to_le_bytes());
+        joined.extend(44u64.to_le_bytes());
+        joined.extend(45u16.to_le_bytes());
+        joined.extend(45u16.to_le_bytes());
+        joined.extend((last as u32).to_le_bytes());
+        joined.extend((cd_disk as u32).to_le_bytes());
+        joined.extend((count as u64).to_le_bytes());
+        joined.extend((count as u64).to_le_bytes());
+        joined.extend((cd_size as u64).to_le_bytes());
+        joined.extend((cd_off as u64).to_le_bytes());
+        joined.extend(0x0706_4b50u32.to_le_bytes());
+        joined.extend((rec_disk as u32).to_le_bytes());
+        joined.extend((rec_off as u64).to_le_bytes());
+        joined.extend((last as u32 + 1).to_le_bytes());
+        joined.extend(0x0605_4b50u32.to_le_bytes());
+        for _ in 0..4 {
+            joined.extend(0xFFFFu16.to_le_bytes());
+        }
+        joined.extend(0xFFFF_FFFFu32.to_le_bytes());
+        joined.extend(0xFFFF_FFFFu32.to_le_bytes());
+    } else {
+        joined.extend(0x0605_4b50u32.to_le_bytes());
+        joined.extend((last as u16).to_le_bytes());
+        joined.extend((cd_disk as u16).to_le_bytes());
+        joined.extend((count as u16).to_le_bytes());
+        joined.extend((count as u16).to_le_bytes());
+        joined.extend((cd_size as u32).to_le_bytes());
+        joined.extend((cd_off as u32).to_le_bytes());
+    }
+    joined.extend(0u16.to_le_bytes());
+    assert_eq!(joined.len(), total);
+    starts
+        .iter()
+        .enumerate()
+        .map(|(i, &a)| joined[a..starts.get(i + 1).copied().unwrap_or(total)].to_vec())
+        .collect()
+}
+
+/// The name of segment `i` of `n` of the split ZIP `<dir>/<stem>`.
+pub fn split_zip_name(dir: &Path, stem: &str, i: usize, n: usize, upper: bool) -> PathBuf {
+    let ext = if i + 1 == n {
+        "zip".to_string()
+    } else {
+        format!("z{:02}", i + 1)
+    };
+    let ext = if upper { ext.to_uppercase() } else { ext };
+    dir.join(format!("{stem}.{ext}"))
+}
+
+/// Writes `segments` as the split ZIP `<dir>/<stem>.z01`, ..., `.zip`, and
+/// returns the `.z01`.
+pub fn write_split_zip(dir: &Path, stem: &str, segments: &[Vec<u8>], upper: bool) -> PathBuf {
+    let n = segments.len();
+    assert!(n > 1, "a split ZIP needs two segments or more");
+    for (i, seg) in segments.iter().enumerate() {
+        fs::write(split_zip_name(dir, stem, i, n, upper), seg).unwrap();
+    }
+    split_zip_name(dir, stem, 0, n, upper)
+}
+
+/// A native split ZIP of `files` and `EMPTY_DIR`, as [`zip_of`] makes it,
+/// at `<dir>/game.z01`, ..., `game.zip`. Returns the `.z01`.
+pub fn split_zip_of(dir: &Path, files: &Files, s: &Split) -> PathBuf {
+    let whole = zip_of(dir, "whole.zip", files);
+    let bytes = fs::read(&whole).unwrap();
+    fs::remove_file(&whole).unwrap();
+    write_split_zip(dir, "game", &split_zip_segments(&bytes, s), s.upper)
+}
+
+/// Every segment of the split ZIP whose `.z01` is `first` that is there now:
+/// `.z01` upwards until one is missing, then the `.zip`.
+pub fn split_zip_parts(first: &Path) -> Vec<PathBuf> {
+    let name = first.file_name().unwrap().to_str().unwrap();
+    let upper = name.ends_with(".Z01");
+    let stem = &name[..name.len() - 4];
+    let dir = first.parent().unwrap();
+    let ext = |e: String| if upper { e.to_uppercase() } else { e };
+    let mut parts: Vec<PathBuf> = (1..)
+        .map(|i| dir.join(format!("{stem}.{}", ext(format!("z{i:02}")))))
+        .take_while(|p| p.exists())
+        .collect();
+    let last = dir.join(format!("{stem}.{}", ext("zip".into())));
+    if last.exists() {
+        parts.push(last);
+    }
+    parts
+}
+
+/// Every segment of the split ZIP `first` starts, as it is now.
+pub fn split_zip_snapshot(first: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    split_zip_parts(first)
+        .into_iter()
+        .map(|p| {
+            let bytes = fs::read(&p).unwrap();
+            (p, bytes)
         })
         .collect()
 }

@@ -250,11 +250,30 @@ fn run(command: Command) -> Result<u8> {
 }
 
 /// The archives as given, minus repeats. Volumes of one split set count
-/// once, so `game.7z.*` from a shell glob means the one archive.
+/// once, so `game.7z.*` from a shell glob means the one archive. The glob
+/// also matches the progress files next to the first volume
+/// (`game.z01.hatchzip`, ...), which are left out when their archive is
+/// given too.
 fn distinct(archives: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let owner = |a: &Path| {
+        let name = a.to_str()?;
+        [".hatchzip", ".hatchzip-tail", ".hatchzip-folders"]
+            .iter()
+            .find_map(|s| name.strip_suffix(s))
+            .map(PathBuf::from)
+    };
+    let mut given = std::collections::HashSet::new();
+    for a in archives.iter().filter(|a| owner(a.as_path()).is_none()) {
+        given.insert(locate(a)?.0);
+    }
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for a in archives {
+        if let Some(of) = owner(a.as_path())
+            && given.contains(&locate(&of)?.0)
+        {
+            continue;
+        }
         if seen.insert(locate(a)?.0) {
             out.push(a.clone());
         }

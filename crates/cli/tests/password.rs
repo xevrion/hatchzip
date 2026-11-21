@@ -97,6 +97,36 @@ fn aes_zip_extracts_with_the_right_password() {
     assert_consumed(&archive);
 }
 
+/// A native split ZIP of AES entries: their 0x9901 fields and AE-2 CRCs of
+/// 0 pass the checks against the local headers, and a run killed after
+/// some commits resumes with the password given again.
+#[test]
+fn aes_native_split_zip_extracts_and_resumes() {
+    let tmp = TempDir::new().unwrap();
+    let files = sample_files();
+    let whole = build_zip(tmp.path(), &files, Crypto::Aes);
+    let bytes = fs::read(&whole).unwrap();
+    fs::remove_file(&whole).unwrap();
+    let segments = split_zip_segments(&bytes, &Split::default());
+    let first = write_split_zip(tmp.path(), "locked", &segments, false);
+    let out = tmp.path().join("out");
+
+    let crashed = extract_with(
+        &first,
+        &out,
+        Some(PW),
+        &[
+            ("HATCHZIP_BATCH_ENTRIES", "1"),
+            ("HATCHZIP_CRASH_AT", "after-journal"),
+            ("HATCHZIP_CRASH_AFTER", "8"),
+        ],
+    );
+    assert!(!crashed.status.success(), "should have crashed");
+    assert_ok(&extract_with(&first, &out, Some(PW), &[]));
+    assert_tree(&out, &files);
+    assert!(split_zip_parts(&first).is_empty(), "segments left");
+}
+
 #[test]
 fn zipcrypto_zip_extracts_with_the_password_from_the_environment() {
     let tmp = TempDir::new().unwrap();
