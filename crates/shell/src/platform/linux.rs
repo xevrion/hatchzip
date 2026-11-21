@@ -1,10 +1,13 @@
-//! Dolphin (KDE) service menu, GNOME Files scripts and Nemo actions. Thunar
-//! keeps its actions in one shared XML file, which is not edited here.
+//! Dolphin (KDE) service menu, GNOME Files scripts, Nemo actions and Thunar
+//! custom actions. Thunar keeps every custom action in one file the user
+//! edits too, so only HatchZip's own `<action>` blocks are ever touched there.
 
 use std::fs;
 use std::io;
+use std::ops::Range;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -32,7 +35,21 @@ pub fn current_dirs() -> Result<Dirs> {
             .ok_or_else(|| anyhow!("no home folder to install the menu into"))?
             .join(".local/share"),
     };
-    Ok(Dirs { data })
+    let config = match std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => std::env::home_dir()
+            .ok_or_else(|| anyhow!("no home folder to install the menu into"))?
+            .join(".config"),
+    };
+    let system_config = std::env::var_os("XDG_CONFIG_DIRS")
+        .filter(|v| !v.is_empty())
+        .map(|v| std::env::split_paths(&v).collect())
+        .unwrap_or_else(|| vec![PathBuf::from("/etc/xdg")]);
+    Ok(Dirs {
+        data,
+        config,
+        system_config,
+    })
 }
 
 fn kde_file(dirs: &Dirs) -> PathBuf {
@@ -49,6 +66,477 @@ fn nemo_file(dirs: &Dirs, id: &str) -> PathBuf {
     dirs.data
         .join("nemo/actions")
         .join(format!("hatchzip-{id}.nemo_action"))
+}
+
+fn thunar_file(dirs: &Dirs) -> PathBuf {
+    dirs.config.join("Thunar/uca.xml")
+}
+
+const THUNAR_ID_PREFIX: &str = "hatchzip-";
+const THUNAR_EMPTY: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n</actions>\n";
+
+/// What Thunar reads today. It reads only the first `uca.xml` it finds, the
+/// user's before the system's, so a user file holding only HatchZip's actions
+/// would hide the defaults such as "Open Terminal Here". They are copied in.
+/// The `bool` says whether the user had a file of their own, and the path is
+/// the file the text came from.
+fn thunar_current(dirs: &Dirs) -> Result<(String, bool, PathBuf)> {
+    let own = thunar_file(dirs);
+    if let Some(text) = read_if_there(&own)? {
+        return Ok((text, true, own));
+    }
+    for d in &dirs.system_config {
+        let system = d.join("Thunar/uca.xml");
+        if let Some(text) = read_if_there(&system)? {
+            return Ok((text, false, system));
+        }
+    }
+    Ok((THUNAR_EMPTY.to_owned(), false, own))
+}
+
+/// The file's text, `None` when there is no such file. Any other failure,
+/// such as a file that isn't UTF-8, is an error naming the file.
+fn read_if_there(path: &Path) -> Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) if e.kind() == io::ErrorKind::InvalidData => Err(not_an_actions_file(path)),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+/// Where the parts HatchZip edits sit in a Thunar actions file.
+struct Uca {
+    /// The root's start tag.
+    root_open: Range<usize>,
+    /// `<actions/>`, with no end tag to add to.
+    self_closing: bool,
+    /// Where `</actions>` starts.
+    root_close: usize,
+    /// Each element directly under the root named `action`, start to end, and
+    /// whether its own `<unique-id>` child names it as HatchZip's.
+    actions: Vec<(Range<usize>, bool)>,
+}
+
+/// Reads just enough XML to know where the root and its actions are. Comments,
+/// processing instructions, CDATA and the doctype are skipped, so a
+/// `</actions>` inside a comment is not mistaken for the real one. `None` for
+/// anything that isn't a well formed `<actions>` document, since writing into
+/// a broken file would only break it further.
+fn parse_uca(xml: &str) -> Option<Uca> {
+    let mut stack: Vec<(&str, usize, usize)> = Vec::new();
+    let mut root: Option<(Range<usize>, bool)> = None;
+    let mut root_close = None;
+    let mut actions = Vec::new();
+    let mut ours = false;
+    let mut i = 0;
+    while let Some(off) = xml[i..].find('<') {
+        let at = i + off;
+        // Outside the root only whitespace is allowed, and a leading BOM,
+        // which GMarkup skips.
+        let gap = &xml[i..at];
+        let gap = if i == 0 {
+            gap.strip_prefix('\u{feff}').unwrap_or(gap)
+        } else {
+            gap
+        };
+        if stack.is_empty() && !gap.trim().is_empty() {
+            return None;
+        }
+        // Thunar's parser refuses a bare `&`, and would then drop the file.
+        if !entities_ok(&xml[i..at]) {
+            return None;
+        }
+        let rest = &xml[at..];
+        // Markup that holds no elements.
+        if rest.starts_with("<!--") {
+            i = at + rest.find("-->")? + 3;
+            continue;
+        }
+        if rest.starts_with("<![CDATA[") {
+            if stack.is_empty() {
+                return None;
+            }
+            i = at + rest.find("]]>")? + 3;
+            continue;
+        }
+        if rest.starts_with("<?") {
+            i = at + rest.find("?>")? + 2;
+            continue;
+        }
+        if rest.starts_with("<!DOCTYPE") {
+            if root.is_some() {
+                return None;
+            }
+            i = at + doctype_len(rest)?;
+            continue;
+        }
+        // An element's start or end tag.
+        let end = at + tag_len(rest)?;
+        let tag = &xml[at + 1..end - 1];
+        if !entities_ok(tag) {
+            return None;
+        }
+        if let Some(name) = tag.strip_prefix('/') {
+            let (open, start, content) = stack.pop()?;
+            if open != name.trim_end() {
+                return None;
+            }
+            match stack.len() {
+                0 => root_close = Some(at),
+                1 if open == "action" => actions.push((start..end, ours)),
+                // Only the action's own id counts, not text elsewhere in it.
+                2 if open == "unique-id" && stack[1].0 == "action" => {
+                    ours = xml[content..at].trim().starts_with(THUNAR_ID_PREFIX);
+                }
+                _ => {}
+            }
+        } else {
+            let self_closing = tag.ends_with('/');
+            let name = tag
+                .trim_end_matches('/')
+                .split(|c: char| c.is_whitespace())
+                .next()
+                .unwrap_or("");
+            if name.is_empty() {
+                return None;
+            }
+            if stack.is_empty() {
+                if root.is_some() || name != "actions" {
+                    return None;
+                }
+                root = Some((at..end, self_closing));
+                if self_closing {
+                    root_close = Some(end);
+                }
+            }
+            if stack.len() == 1 && name == "action" {
+                ours = false;
+            }
+            if !self_closing {
+                stack.push((name, at, end));
+            } else if stack.len() == 1 && name == "action" {
+                actions.push((at..end, false));
+            }
+        }
+        i = end;
+    }
+    if !stack.is_empty() || !xml[i..].trim().is_empty() {
+        return None;
+    }
+    let (root_open, self_closing) = root?;
+    Some(Uca {
+        root_open,
+        self_closing,
+        root_close: root_close?,
+        actions,
+    })
+}
+
+/// Whether every `&` starts a reference like `&amp;` or `&#38;`. Thunar's
+/// file has no doctype entities of its own, so only XML's five are known.
+fn entities_ok(text: &str) -> bool {
+    text.split('&').skip(1).all(|after| {
+        let Some(semi) = after.find(';') else {
+            return false;
+        };
+        let name = &after[..semi];
+        match name.strip_prefix('#') {
+            Some(n) => match n.strip_prefix('x') {
+                Some(h) => !h.is_empty() && h.chars().all(|c| c.is_ascii_hexdigit()),
+                None => !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()),
+            },
+            None => matches!(name, "amp" | "lt" | "gt" | "quot" | "apos"),
+        }
+    })
+}
+
+/// Length of a tag up to and including its `>`, which may sit in a quoted
+/// attribute value.
+fn tag_len(rest: &str) -> Option<usize> {
+    let mut quote = None;
+    for (i, c) in rest.char_indices() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '>') => return Some(i + 1),
+            (None, '<') if i > 0 => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Length of `<!DOCTYPE ...>`, whose internal subset holds `>` of its own.
+fn doctype_len(rest: &str) -> Option<usize> {
+    let gt = rest.find('>')?;
+    match rest.find('[') {
+        Some(lb) if lb < gt => {
+            let rb = lb + rest[lb..].find(']')?;
+            Some(rb + rest[rb..].find('>')? + 1)
+        }
+        _ => Some(gt + 1),
+    }
+}
+
+/// The file with HatchZip's `<action>` blocks taken out, together with the
+/// whitespace they sat on. Everything else stays byte for byte, including
+/// actions the user wrote and whatever Thunar added when it saved the file.
+fn thunar_without_ours(xml: &str, uca: &Uca) -> String {
+    let mut out = String::with_capacity(xml.len());
+    let mut from = 0;
+    for (r, _) in uca.actions.iter().filter(|(_, ours)| *ours) {
+        let line = xml[..r.start].rfind('\n').map_or(0, |i| i + 1).max(from);
+        let indent_only = xml[line..r.start].trim().is_empty();
+        out.push_str(&xml[from..if indent_only { line } else { r.start }]);
+        from = r.end;
+        if indent_only && xml[from..].starts_with('\n') {
+            from += 1;
+        }
+    }
+    out.push_str(&xml[from..]);
+    out
+}
+
+fn not_an_actions_file(path: &Path) -> anyhow::Error {
+    anyhow!(
+        "{} is not a Thunar actions file HatchZip can edit; it was left as it is. \
+         Fix it or move it away, then try again",
+        path.display()
+    )
+}
+
+/// Left by a register that created the user's `uca.xml`, so unregister knows
+/// the file is HatchZip's to remove. Its content alone can't tell: the user
+/// may keep an empty file on purpose, to hide the system's actions. It holds
+/// [`content_hash`] of what the file was made from, so a file the user has
+/// changed since is kept.
+fn thunar_created_mark(dirs: &Dirs) -> PathBuf {
+    dirs.config.join("hatchzip/thunar-uca-created")
+}
+
+/// FNV-1a, which stays the same across Rust releases, unlike the standard
+/// library's hasher.
+fn content_hash(text: &str) -> String {
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("{hash:016x}\n")
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn thunar_actions(gui: &Path) -> String {
+    // Thunar expands `%` codes in the command and then splits it the way a
+    // shell would, so the program is shell quoted and a literal `%` doubled.
+    let program = sh_quote(gui).replace('%', "%%");
+    // Thunar matches patterns case-sensitively, and cameras and old Windows
+    // tools write `.ZIP`.
+    let patterns = EXTENSIONS
+        .iter()
+        .flat_map(|e| {
+            let upper = e.to_uppercase();
+            let both = [format!("*.{e}"), format!("*.{upper}")];
+            both.into_iter().take(if upper == *e { 1 } else { 2 })
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    let mut out = String::new();
+    for a in ACTIONS {
+        out.push_str(&format!(
+            "  <action>\n    <icon>archive-extract</icon>\n    <name>{}</name>\n    \
+             <submenu>HatchZip</submenu>\n    <unique-id>hatchzip-{}</unique-id>\n    \
+             <command>{}</command>\n    <description>{} with HatchZip</description>\n    \
+             <patterns>{patterns}</patterns>\n    <other-files/>\n  </action>\n",
+            xml_escape(a.label),
+            a.id,
+            xml_escape(&format!("{program} {} %F", a.flag)),
+            xml_escape(a.label),
+        ));
+    }
+    out
+}
+
+/// Writes through a temporary file, so Thunar or a crash never sees half of
+/// the user's actions. A symlinked `uca.xml`, as dotfile managers make, stays
+/// a link and its target is written, keeping the file's permissions.
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    let is_link = fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink());
+    let target = if is_link {
+        fs::canonicalize(path).with_context(|| format!("following {}", path.display()))?
+    } else {
+        path.to_owned()
+    };
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut name = target.file_name().unwrap_or_default().to_owned();
+    // Unique per call, so two HatchZips registering at once never write
+    // into the same temporary file.
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    name.push(format!(".{}-{n}.hatchzip-tmp", std::process::id()));
+    let tmp = target.with_file_name(name);
+    let written = (|| {
+        let mut file = fs::File::create(&tmp)?;
+        io::Write::write_all(&mut file, contents.as_bytes())?;
+        if let Ok(meta) = fs::metadata(&target) {
+            file.set_permissions(meta.permissions())?;
+        }
+        // On disk before the rename, or a crash could leave an empty file.
+        file.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(e).with_context(|| format!("writing {}", tmp.display()));
+    }
+    fs::rename(&tmp, &target).with_context(|| format!("writing {}", target.display()))
+}
+
+fn thunar_register(dirs: &Dirs, gui: &Path) -> Result<()> {
+    let (current, own, source) = thunar_current(dirs)?;
+    let uca = parse_uca(&current).ok_or_else(|| not_an_actions_file(&source))?;
+    let current_had_ours = uca.actions.iter().any(|(_, ours)| *ours);
+    let mut xml = thunar_without_ours(&current, &uca);
+    let uca = parse_uca(&xml).ok_or_else(|| not_an_actions_file(&source))?;
+    let ours = thunar_actions(gui);
+    if uca.self_closing {
+        let open = &xml[uca.root_open.clone()];
+        let open = open[..open.len() - 1].trim_end_matches('/').trim_end();
+        let replaced = format!("{open}>\n{ours}</actions>");
+        xml.replace_range(uca.root_open, &replaced);
+    } else {
+        xml.insert_str(uca.root_close, &ours);
+    }
+    write_atomic(&thunar_file(dirs), &xml)?;
+    let mark = thunar_created_mark(dirs);
+    if !own {
+        write(&mark, &content_hash(&current), false)?;
+    } else if !current_had_ours {
+        // A file HatchZip made would still hold its actions, so a mark next to
+        // one without them is left from a file the user deleted since.
+        remove_mark(&mark)?;
+    }
+    Ok(())
+}
+
+fn thunar_unregister(dirs: &Dirs) -> Result<()> {
+    // Only the user's own file can hold HatchZip's actions.
+    let own = thunar_file(dirs);
+    let mark = thunar_created_mark(dirs);
+    let current = match read_if_there(&own)? {
+        Some(text) if text.contains(THUNAR_ID_PREFIX) => text,
+        _ => return remove_mark(&mark),
+    };
+    let uca = parse_uca(&current).ok_or_else(|| not_an_actions_file(&own))?;
+    if !uca.actions.iter().any(|(_, ours)| *ours) {
+        return remove_mark(&mark);
+    }
+    let left = thunar_without_ours(&current, &uca);
+    // A file HatchZip created goes away with its last action when nothing
+    // else in it changed, so Thunar falls back to what it read before.
+    let made_from = fs::read_to_string(&mark).ok();
+    let unchanged =
+        made_from.is_some_and(|h| h == content_hash(&left) || same_as_system(dirs, &left));
+    if unchanged {
+        fs::remove_file(thunar_file(dirs))
+            .with_context(|| format!("removing {}", thunar_file(dirs).display()))?;
+    } else {
+        write_atomic(&thunar_file(dirs), &left)?;
+    }
+    remove_mark(&mark)
+}
+
+/// Whether `left` holds the same actions as the system file it was copied
+/// from. Thunar rewrites the copy when it loads it (its own layout, and an id
+/// for any action that lacked one), so the bytes no longer match even though
+/// the user changed nothing.
+fn same_as_system(dirs: &Dirs, left: &str) -> bool {
+    let system = dirs
+        .system_config
+        .iter()
+        .find_map(|d| fs::read_to_string(d.join("Thunar/uca.xml")).ok());
+    let (Some(system), Some(a)) = (system, parse_uca(left)) else {
+        return false;
+    };
+    let Some(b) = parse_uca(&system) else {
+        return false;
+    };
+    action_set(left, &a) == action_set(&system, &b)
+}
+
+/// Every action that isn't HatchZip's, as sorted [`action_fingerprint`]s.
+fn action_set(xml: &str, uca: &Uca) -> Vec<Vec<(String, String)>> {
+    let mut set: Vec<_> = uca
+        .actions
+        .iter()
+        .filter(|(_, ours)| !*ours)
+        .map(|(r, _)| action_fingerprint(&xml[r.clone()]))
+        .collect();
+    set.sort();
+    set
+}
+
+/// An action's child elements and their text, sorted, leaving out what
+/// Thunar fills in on its own: the `<unique-id>` and empty elements. Flags
+/// such as `<directories/>` are kept.
+fn action_fingerprint(action: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut open: Option<(String, usize)> = None;
+    let mut i = 0;
+    while let Some(off) = action[i..].find('<') {
+        let at = i + off;
+        let rest = &action[at..];
+        if rest.starts_with("<!--") {
+            i = at + rest.find("-->").map_or(rest.len(), |e| e + 3);
+            continue;
+        }
+        let Some(len) = tag_len(rest) else { break };
+        let tag = &action[at + 1..at + len - 1];
+        let key = tag
+            .trim_end_matches('/')
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if tag.starts_with('/') {
+            depth -= 1;
+            if depth == 1
+                && let Some((name, from)) = open.take()
+            {
+                let text = action[from..at].trim();
+                if !text.is_empty() && !name.starts_with("unique-id") {
+                    out.push((name, text.to_owned()));
+                }
+            }
+        } else if tag.ends_with('/') {
+            if depth == 1 {
+                out.push((key, String::new()));
+            }
+        } else {
+            depth += 1;
+            if depth == 2 {
+                open = Some((key, at + len));
+            }
+        }
+        i = at + len;
+    }
+    out.sort();
+    out
+}
+
+fn remove_mark(mark: &Path) -> Result<()> {
+    match fs::remove_file(mark) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => {
+            Err(e).with_context(|| format!("removing {}", mark.display()))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Desktop entry `Exec` keys want the program quoted, with `"`, `` ` ``, `$`
@@ -128,10 +616,20 @@ pub fn register(dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
             dirs.data.join("nautilus/scripts").display()
         ),
         format!("Nemo: {}", dirs.data.join("nemo/actions").display()),
+        // A Thunar file HatchZip can't edit costs only the Thunar menu.
+        match thunar_register(dirs, gui) {
+            Ok(()) => format!(
+                "Thunar: {} (run `thunar -q` so a running Thunar reads it)",
+                thunar_file(dirs).display()
+            ),
+            Err(e) => format!("Thunar: skipped, {e:#}"),
+        },
     ])
 }
 
-pub fn unregister(dirs: &Dirs) -> Result<()> {
+/// Returns a line for each menu that was skipped, such as a Thunar file
+/// HatchZip can't edit; the others are still removed.
+pub fn unregister(dirs: &Dirs) -> Result<Vec<String>> {
     let mut paths = vec![kde_file(dirs)];
     for a in ACTIONS {
         paths.push(nautilus_file(dirs, a.label));
@@ -145,9 +643,19 @@ pub fn unregister(dirs: &Dirs) -> Result<()> {
             _ => {}
         }
     }
-    Ok(())
+    Ok(match thunar_unregister(dirs) {
+        Ok(()) => Vec::new(),
+        Err(e) => vec![format!("Thunar: skipped, {e:#}")],
+    })
 }
 
 pub fn is_registered(dirs: &Dirs) -> bool {
-    kde_file(dirs).exists()
+    kde_file(dirs).exists() || thunar_registered(dirs)
+}
+
+fn thunar_registered(dirs: &Dirs) -> bool {
+    fs::read_to_string(thunar_file(dirs))
+        .ok()
+        .and_then(|xml| parse_uca(&xml))
+        .is_some_and(|uca| uca.actions.iter().any(|(_, ours)| *ours))
 }

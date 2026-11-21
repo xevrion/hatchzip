@@ -930,20 +930,22 @@ impl App {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (
-                        app.ui()
-                            .global::<Messages>()
-                            .invoke_menu_added()
-                            .to_string(),
-                        false,
-                    ),
-                    Ok(()) => (
-                        app.ui()
-                            .global::<Messages>()
-                            .invoke_menu_removed()
-                            .to_string(),
-                        false,
-                    ),
+                    Ok(skipped) => {
+                        let ui = app.ui();
+                        let messages = ui.global::<Messages>();
+                        let mut text = if on {
+                            messages.invoke_menu_added()
+                        } else {
+                            messages.invoke_menu_removed()
+                        }
+                        .to_string();
+                        // The other menus went through; say which one didn't.
+                        for line in &skipped {
+                            text.push(' ');
+                            text.push_str(&sentence(line));
+                        }
+                        (text, !skipped.is_empty())
+                    }
                     Err(e) => {
                         // Show the switch as it really is.
                         app.ui().set_shell_menu_on(!on);
