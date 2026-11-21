@@ -196,10 +196,13 @@ struct App {
     pick_wanted: Cell<bool>,
 }
 
+/// Answers the folder picker of "Extract selected…" in tests.
+type FolderAnswer = Box<dyn Fn() -> Option<PathBuf>>;
+
 thread_local! {
     static APP: RefCell<Option<Rc<App>>> = const { RefCell::new(None) };
     /// Answers the folder picker of "Extract selected…" instead of a dialog.
-    static PICKED: RefCell<Option<Box<dyn Fn() -> Option<PathBuf>>>> = const { RefCell::new(None) };
+    static PICKED: RefCell<Option<FolderAnswer>> = const { RefCell::new(None) };
 }
 
 /// Makes "Extract selected…" take its folder from `answer` instead of
