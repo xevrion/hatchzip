@@ -47,6 +47,13 @@ const CASE_VERSION: u32 = 7;
 /// setting them.
 const FOLDERS_VERSION: u32 = 8;
 const READABLE: [u32; 7] = [2, 3, 4, 5, 6, 7, 8];
+/// What an extraction of a native split ZIP keeps at `<stem>.zip.hatchzip`
+/// while it runs. Builds before split ZIP support take `<stem>.zip` for a
+/// ZIP that is one file and look for its journal there, so they find this
+/// and refuse it as a newer journal, instead of extracting the last segment
+/// on its own and cutting away the index the rest of the set needs. Builds
+/// that know split ZIPs open the set from its `.z01` and never read it.
+const STUB_VERSION: u32 = 1000;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Link {
@@ -171,6 +178,9 @@ pub struct Paths {
     pub journal: PathBuf,
     pub tail: PathBuf,
     pub folders: PathBuf,
+    /// For a native split ZIP, where its stub journal goes, next to its
+    /// `.zip`; see [`STUB_VERSION`].
+    pub stub: Option<PathBuf>,
 }
 
 impl Paths {
@@ -180,12 +190,55 @@ impl Paths {
             s.push(suffix);
             PathBuf::from(s)
         };
+        let stub = storage::split_zip_last(archive).map(|last| {
+            let mut s = last.into_os_string();
+            s.push(".hatchzip");
+            PathBuf::from(s)
+        });
         Self {
             archive: archive.to_path_buf(),
             journal: with(".hatchzip"),
             tail: with(".hatchzip-tail"),
             folders: with(".hatchzip-folders"),
+            stub,
         }
+    }
+
+    /// Writes the stub journal of a native split ZIP's extraction.
+    fn write_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        let json = serde_json::json!({
+            "version": STUB_VERSION,
+            "split_zip": self.archive,
+        });
+        fsutil::write_atomic(stub, &serde_json::to_vec(&json)?)
+    }
+
+    /// Removes the stub journal, if that is what is at its name: a journal
+    /// of a `.zip` of the same name extracted on its own stays.
+    pub fn remove_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        #[derive(Deserialize)]
+        struct Versioned {
+            version: u32,
+        }
+        let is_stub = fs::read(stub)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Versioned>(&b).ok())
+            .is_some_and(|v| v.version == STUB_VERSION);
+        if is_stub {
+            match fs::remove_file(stub) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("removing {}", stub.display()));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub fn exists(&self) -> bool {
@@ -202,7 +255,9 @@ impl Paths {
                 _ => {}
             }
         }
-        Ok(())
+        // Last: until the journal is gone, an older build must not take the
+        // `.zip` for a whole archive.
+        self.remove_stub()
     }
 }
 
@@ -245,6 +300,11 @@ fn version_for(
 
 impl Journal {
     pub fn create(paths: &Paths, storage: &Storage, plan: Plan) -> Result<Self> {
+        // Before the journal, so no older build ever finds the journal of a
+        // run on a split ZIP without the stub next to its `.zip`.
+        if plan.format == crate::archive::SPLIT_ZIP {
+            paths.write_stub()?;
+        }
         let mut tail = Vec::new();
         let mut r = storage.reader(None);
         r.seek(SeekFrom::Start(plan.tail_start))?;
@@ -305,6 +365,16 @@ impl Journal {
         let version = serde_json::from_slice::<Versioned>(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?
             .version;
+        if version == STUB_VERSION {
+            bail!(
+                "{} marks {} as the last part of a split ZIP being extracted from its .z01 part. \
+                 Open the .z01 part to continue that extraction, or delete {} if no extraction \
+                 of it is in progress. Nothing was modified",
+                paths.journal.display(),
+                paths.archive.display(),
+                paths.journal.display()
+            );
+        }
         if !READABLE.contains(&version) {
             let which = if version > VERSION {
                 "a newer"
@@ -408,8 +478,16 @@ impl Journal {
         if self.parts.is_empty() {
             return Err(foreign());
         }
+        // A split ZIP's parts are read only through its own index; read as
+        // one file, its offsets would point at the wrong bytes.
+        let split = self.format == crate::archive::SPLIT_ZIP;
+        if split != (storage::is_split_zip(&paths.archive) && self.parts.len() > 1) {
+            return Err(foreign());
+        }
+        let count = self.parts.len();
         for (i, (part, _)) in self.parts.iter().enumerate() {
-            if !storage::volume_path(&paths.archive, i).is_some_and(|v| fsutil::same_path(&v, part))
+            if !storage::volume_path_in(&paths.archive, i, count)
+                .is_some_and(|v| fsutil::same_path(&v, part))
             {
                 return Err(foreign());
             }

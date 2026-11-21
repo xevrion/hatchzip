@@ -143,6 +143,9 @@ impl std::error::Error for Unsupported {}
 /// The format name of RAR archives in the journal.
 pub const RAR: &str = "rar";
 
+/// The format name of native split ZIPs (`.z01`, ..., `.zip`) in the journal.
+pub const SPLIT_ZIP: &str = zip::SPLIT;
+
 /// Whether this build extracts RAR archives. Builds without UnRAR refuse
 /// them before anything is touched.
 pub const RAR_SUPPORTED: bool = cfg!(feature = "rar");
@@ -276,6 +279,7 @@ pub fn open(
     };
     match name.as_str() {
         "zip" => zip::open(storage, tail, password),
+        zip::SPLIT => zip::open_split(storage, tail, password),
         "7z" => sevenz::open(storage, tail, password),
         "tar" => tar::open(storage, tail),
         #[cfg(feature = "rar")]
@@ -298,6 +302,10 @@ pub struct NewIndex {
     /// Written over bytes below `keep`: the 7z start header, which has to
     /// point at the new header.
     pub patches: Vec<(u64, Vec<u8>)>,
+    /// `append` is a new last volume of its own, created at the last
+    /// recorded part's path, which the extraction deleted, instead of being
+    /// written at `keep`: a native split ZIP whose `.zip` is gone.
+    pub new_last: bool,
 }
 
 /// Lists the entries of a [`SolidStream`]'s walk from `from` once to the
@@ -356,6 +364,14 @@ pub fn rebuild_index(
     keep: u64,
     hard_links: &[(&Path, &Path)],
 ) -> Result<NewIndex> {
+    if format == zip::SPLIT {
+        let (append, new_last) = zip::rebuild_split_index(storage.parts(), &tail, keep)?;
+        return Ok(NewIndex {
+            append,
+            patches: Vec::new(),
+            new_last,
+        });
+    }
     let (append, patches) = match format {
         "zip" => (zip::rebuild_index(&tail, keep)?, Vec::new()),
         "tar" => (tar::closing(hard_links)?, Vec::new()),
@@ -370,10 +386,20 @@ pub fn rebuild_index(
         RAR => return Err(no_rar()),
         other => bail!("unknown archive format '{other}' in the journal"),
     };
-    Ok(NewIndex { append, patches })
+    Ok(NewIndex {
+        append,
+        patches,
+        new_last: false,
+    })
 }
 
 fn sniff(storage: &Storage) -> Result<&'static str> {
+    // Named `.z01` and opened with its `.zip`: the first segment of a native
+    // split ZIP. Its index is in the last segment, in a form only `zip`'s
+    // split reader takes.
+    if storage.parts().len() > 1 && storage::is_split_zip(storage.primary()) {
+        return Ok(zip::SPLIT);
+    }
     let mut head = [0u8; 512];
     let mut r = storage.reader(None);
     let n = read_up_to(&mut r, &mut head)?;
