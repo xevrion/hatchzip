@@ -26,11 +26,17 @@
 //! batches, checks and commits, so it resumes the same way, but never
 //! truncates, punches or deletes: its storage is protected, and the run
 //! frees nothing, exactly like an output on another disk.
+//!
+//! An extraction of some entries only ([`Job::select`]) must keep the
+//! archive, since truncating it would destroy the entries left out. Units
+//! with nothing selected are dropped from the job; a unit that holds both,
+//! such as a solid 7z block, is still decoded whole, and what was not
+//! selected is read and discarded.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -116,6 +122,49 @@ pub struct Job {
     /// recorded when it began, since a tar no longer lists the entries it
     /// has extracted.
     case_clashes: Box<CaseClashes>,
+    /// The entries chosen, when only some are extracted.
+    only: Option<Only>,
+}
+
+/// The entries an extraction is limited to. `units` then holds only units
+/// with something selected, and their items only what is selected.
+struct Only {
+    /// As the journal records them: every path chosen, and the targets of
+    /// the hard links among them.
+    paths: Vec<PathBuf>,
+    /// The unit as the archive has it, for each unit that also holds entries
+    /// left out: a solid block decodes only whole, in order.
+    whole: HashMap<u64, Unit>,
+}
+
+/// Whether `path` is one of `only` or lies inside a folder among them.
+pub fn picks(only: &[PathBuf], path: &Path) -> bool {
+    only.iter().any(|p| path.starts_with(p))
+}
+
+/// A path to select, as typed: `docs`, `docs/` and `./docs` are the same
+/// folder. Anything that could not be a path inside the archive is refused.
+pub fn selection_path(given: &Path) -> Result<PathBuf> {
+    let mut path = PathBuf::new();
+    for c in given.components() {
+        match c {
+            Component::Normal(n) => path.push(n),
+            Component::CurDir => {}
+            _ => bail!(
+                "'{}' is not a path inside the archive. Give it as the archive lists it, such as \
+                 docs/readme.txt. Nothing was modified",
+                given.display()
+            ),
+        }
+    }
+    if path.as_os_str().is_empty() {
+        bail!(
+            "'{}' names no entry. Give a path as the archive lists it, such as docs/readme.txt. \
+             Nothing was modified",
+            given.display()
+        );
+    }
+    Ok(path)
 }
 
 /// How many folders of one archive may hold names that differ only in case.
@@ -357,6 +406,17 @@ impl Job {
         let point = journal.resume.as_ref();
         let opened = archive::open(&storage, Some((&journal.format, tail, point)), password)?;
         let mut job = Self::build(storage, opened, journal.committed_len)?;
+        if let Some(only) = &journal.only {
+            // The selection never streams, so it never leaves a point.
+            if journal.resume.is_some() {
+                bail!(
+                    "the journal of {} records a partially extracted file in an extraction of \
+                     selected entries, which never has one. The archive will not be modified",
+                    job.storage.primary().display()
+                );
+            }
+            job.restrict(only.clone());
+        }
         job.started = journal.replace.as_ref().is_none_or(|r| r.moved);
         job.case_clashes.recorded.clone_from(&journal.case_folders);
         job.case_clashes.recorded_beyond_ascii = journal.case_beyond_ascii;
@@ -439,7 +499,90 @@ impl Job {
             resume: None,
             started: false,
             case_clashes: Box::default(),
+            only: None,
         })
+    }
+
+    /// Limits a fresh job to the entries at `given` and everything inside
+    /// the folders among them. Every path must name something in the
+    /// archive. A hard link brings its target along, since the link is made
+    /// from the extracted target and would otherwise point at whatever is at
+    /// that path in the output folder, or at nothing. Symbolic links are
+    /// extracted as they are, whether their targets are selected or not: a
+    /// link is only text and never reaches outside what it names.
+    ///
+    /// Nothing is touched here. Such a job may only be extracted while the
+    /// archive is kept, which [`crate::session::begin`] enforces.
+    pub fn select(&mut self, given: &[PathBuf]) -> Result<()> {
+        if self.only.is_some() {
+            bail!("the entries to extract were already chosen");
+        }
+        if given.is_empty() {
+            bail!("no entries were selected. Nothing was modified");
+        }
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for g in given {
+            let p = selection_path(g)?;
+            if !paths.contains(&p) {
+                paths.push(p);
+            }
+        }
+        let items = || self.units.iter().flat_map(|u| &u.items);
+        for p in &paths {
+            if !items().any(|i| i.path.starts_with(p)) {
+                bail!(
+                    "'{}' is not in the archive, so nothing was extracted. Nothing was modified",
+                    p.display()
+                );
+            }
+        }
+        let targets: Vec<PathBuf> = items()
+            .filter(|i| picks(&paths, &i.path))
+            .filter_map(|i| match &i.kind {
+                Kind::HardLink(t) if !picks(&paths, t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        for t in targets {
+            if !paths.contains(&t) {
+                paths.push(t);
+            }
+        }
+        self.restrict(paths);
+        Ok(())
+    }
+
+    /// Drops every unit with nothing in `paths`, and every item outside it
+    /// from the units left, keeping the whole of a unit that loses some.
+    fn restrict(&mut self, paths: Vec<PathBuf>) {
+        let mut whole = HashMap::new();
+        self.units.retain_mut(|u| {
+            let picked = u.items.iter().filter(|i| picks(&paths, &i.path)).count();
+            if picked == 0 {
+                return false;
+            }
+            if picked < u.items.len() {
+                whole.insert(u.start, u.clone());
+                u.items.retain(|i| picks(&paths, &i.path));
+            }
+            true
+        });
+        self.only = Some(Only { paths, whole });
+    }
+
+    /// The entries this job is limited to, if it is: what the journal
+    /// records.
+    pub fn selection(&self) -> Option<&[PathBuf]> {
+        self.only.as_ref().map(|o| o.paths.as_slice())
+    }
+
+    /// `unit` as the decoder needs it: whole, with the entries left out of
+    /// the selection, which a sink then skips.
+    fn decodable<'a>(&'a self, unit: &'a Unit) -> &'a Unit {
+        self.only
+            .as_ref()
+            .and_then(|o| o.whole.get(&unit.start))
+            .unwrap_or(unit)
     }
 
     /// Refuses entries that differ only in case, unless the folder where
@@ -635,7 +778,7 @@ impl Job {
             left,
             buf: vec![0; BUF_SIZE],
         };
-        match worker.extract(unit, &mut sink) {
+        match worker.extract(self.decodable(unit), &mut sink) {
             Ok(()) => Ok(()),
             Err(e) if e.chain().any(|c| c.is::<ProbeDone>()) => Ok(()),
             Err(e) if e.chain().any(|c| c.is::<archive::PasswordNeeded>()) => Err(e),
@@ -827,7 +970,11 @@ impl Job {
     /// and a margin at each end of the punched range come on top. Links are
     /// made at the end, once the archive is gone.
     fn solid_cost(&self, i: usize, p: &Profile, span: i128, reclaims: bool) -> (i128, i128) {
-        let out_left = (p.files + p.links) as i128;
+        // The profile measured every file; a selection writes its own.
+        let out_left = match self.only {
+            Some(_) => on_disk(&self.units[i]),
+            None => p.files + p.links,
+        } as i128;
         // Assumed punched already, as for a single streamed file.
         let freed = self.resumed(i).map_or(0, |r| r.bit / 8) as i128;
         let net = if reclaims {
@@ -948,7 +1095,7 @@ impl Job {
             .units
             .iter()
             .rev()
-            .filter_map(|u| worker.extract(u, &mut sink).err())
+            .filter_map(|u| worker.extract(self.decodable(u), &mut sink).err())
             .map(|e| format!("{e:#}"))
             .collect())
     }
@@ -970,7 +1117,7 @@ impl Job {
                 |(worker, sink), unit| {
                     let mut run = || -> Result<()> {
                         let w = worker.as_mut().map_err(|e| anyhow!("{e:#}"))?;
-                        w.extract(unit, sink)
+                        w.extract(self.decodable(unit), sink)
                     };
                     run().err().map(|e| format!("{e:#}"))
                 },
@@ -1112,6 +1259,12 @@ impl Run<'_> {
 
         // Keeping the archive frees nothing, which is exactly the case of an
         // output on another disk: nothing is streamed or punched.
+        if self.job.only.is_some() && !self.journal.keep {
+            bail!(
+                "only some entries are selected, which are extracted only while the archive is \
+                 kept. Nothing was modified"
+            );
+        }
         let reclaims =
             !self.journal.keep && fsutil::same_filesystem(self.job.storage.primary(), &out);
         if self.journal.keep {
@@ -1463,7 +1616,12 @@ impl Run<'_> {
             Some(s) => s.profile().clone(),
             None => bail!("the archive is not a compressed stream"),
         };
-        let mut left = profile.files;
+        let mut left = match self.job.only {
+            Some(_) => on_disk(&self.job.units[i]),
+            None => profile.files,
+        };
+        // A file left out of the selection is read past, not written.
+        let mut skipping = false;
         // This run hasn't punched anything yet. Its first punch starts at 0,
         // in case the last run stopped between journaling a point and
         // punching up to it.
@@ -1481,6 +1639,10 @@ impl Run<'_> {
             }
             match walk.next(BUF_SIZE)? {
                 Event::Entry { item, link, done } => {
+                    if self.job.selection().is_some_and(|o| !picks(o, &item.path)) {
+                        skipping = item.kind == Kind::File;
+                        continue;
+                    }
                     let dest = out.join(&item.path);
                     let what = || format!("extracting '{}'", item.path.display());
                     match &item.kind {
@@ -1519,6 +1681,7 @@ impl Run<'_> {
                         }
                     }
                 }
+                Event::Data(_) if skipping => {}
                 Event::Data(bytes) => {
                     let f = open
                         .as_mut()
@@ -1552,6 +1715,7 @@ impl Run<'_> {
                         }
                     }
                 }
+                Event::FileEnd if skipping => skipping = false,
                 Event::FileEnd => {
                     let f = open
                         .take()
@@ -1566,7 +1730,11 @@ impl Run<'_> {
                     left = left.saturating_sub(pad);
                 }
                 Event::Point => {
-                    if since_point < step {
+                    // A selection is extracted while the archive is kept, so
+                    // nothing is freed at a point, and a crash starts the
+                    // stream over: a point inside a file left out would name
+                    // a file the run never writes.
+                    if since_point < step || self.job.only.is_some() {
                         continue;
                     }
                     let mut point = walk.point()?;
@@ -1741,6 +1909,7 @@ impl Run<'_> {
                 on_bytes,
                 buf: vec![0; BUF_SIZE],
                 links: Vec::new(),
+                only: self.job.selection(),
             };
             let mut worker = self
                 .job
@@ -1749,7 +1918,7 @@ impl Run<'_> {
                 .map_err(|e| anyhow!("opening the archive: {e:#}"))?;
             // Lowest first, so the worker reads the archive front to back.
             for unit in batch.iter().rev() {
-                match worker.extract(unit, &mut sink) {
+                match worker.extract(self.job.decodable(unit), &mut sink) {
                     Ok(()) => {}
                     Err(e) if is_interrupt(&e) => return Ok(None),
                     Err(e) => return Err(e),
@@ -1768,6 +1937,7 @@ impl Run<'_> {
                         on_bytes,
                         buf: vec![0; BUF_SIZE],
                         links: Vec::new(),
+                        only: self.job.selection(),
                     };
                     (self.job.format.worker(threads), sink)
                 },
@@ -1775,7 +1945,7 @@ impl Run<'_> {
                     let w = worker
                         .as_mut()
                         .map_err(|e| anyhow!("opening the archive: {e:#}"))?;
-                    w.extract(unit, sink)?;
+                    w.extract(self.job.decodable(unit), sink)?;
                     Ok(std::mem::take(&mut sink.links))
                 },
             )
@@ -2063,16 +2233,36 @@ struct DiskSink<'a> {
     on_bytes: &'a (dyn Fn(u64) + Sync),
     buf: Vec<u8>,
     links: Vec<Link>,
+    /// The selection, if only some entries are extracted.
+    only: Option<&'a [PathBuf]>,
 }
 
 impl Sink for DiskSink<'_> {
     fn item(&mut self, item: &Item, data: &mut dyn Read) -> Result<()> {
+        if self.only.is_some_and(|o| !picks(o, &item.path)) {
+            return self
+                .skip(data)
+                .with_context(|| format!("reading past '{}'", item.path.display()));
+        }
         self.write(item, data)
             .with_context(|| format!("extracting '{}'", item.path.display()))
     }
 }
 
 impl DiskSink<'_> {
+    /// Reads an entry left out of the selection to its end, so the decoder
+    /// still checks it and reaches the next one, and writes nothing.
+    fn skip(&mut self, data: &mut dyn Read) -> Result<()> {
+        loop {
+            if self.stop.load(Ordering::Relaxed) {
+                return Err(io::Error::from(io::ErrorKind::Interrupted).into());
+            }
+            if data.read(&mut self.buf)? == 0 {
+                return Ok(());
+            }
+        }
+    }
+
     fn write(&mut self, item: &Item, data: &mut dyn Read) -> Result<()> {
         let dest = self.out.join(&item.path);
         match &item.kind {
