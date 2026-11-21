@@ -1,6 +1,8 @@
 //! The language in the Settings window, through the same callbacks its
 //! controls call.
-use hatchzip_gui::{Screen, SettingsWindow, backend::Drops, main_window, settings::Settings};
+use hatchzip_gui::{
+    MainWindow, Screen, SettingsWindow, backend::Drops, main_window, settings::Settings,
+};
 use i_slint_backend_testing::{TestingBackend, TestingBackendOptions};
 use slint::{ComponentHandle, Model, Timer, TimerMode};
 use std::cell::Cell;
@@ -46,6 +48,11 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The machine's language would otherwise decide the first assertions,
+    // which read English. Slint registers its catalogs with the first
+    // component, so one has to exist before the language can be pinned.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
     let dir = tempfile::tempdir().unwrap();
     let archive = dir.path().join("sample.zip");
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
