@@ -268,12 +268,13 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
         // A prompt closed on a resume leaves a journal, so the hint that the
         // run can go on still applies.
         view.message = if task.resumable_failure.is_some() {
-            messages.invoke_task_resumable_error(cancelled)
+            messages.invoke_joined(cancelled, messages.invoke_task_resumable_error())
         } else {
             cancelled
         };
     } else if let Some(reason) = &task.resumable_failure {
-        view.message = messages.invoke_task_resumable_error(reason.as_str().into());
+        view.message = messages.invoke_task_resumable_error();
+        view.reason = reason.as_str().into();
     }
     if let Some((entries, output, kept, aside)) = &task.restore_result {
         let held = messages.invoke_restore_held(plural_count(*entries), count(*entries).into());

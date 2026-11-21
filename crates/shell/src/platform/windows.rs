@@ -4,7 +4,7 @@
 //! Windows 11 shows the classic menu under "Show more options"; a top-level
 //! entry there needs a packaged shell extension.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use winreg::RegKey;
@@ -21,6 +21,8 @@ fn menu_key(ext: &str) -> String {
 pub fn current_dirs() -> Result<Dirs> {
     Ok(Dirs {
         data: std::env::temp_dir(),
+        config: PathBuf::new(),
+        system_config: Vec::new(),
     })
 }
 
@@ -53,7 +55,7 @@ pub fn register(_dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
     Ok(written)
 }
 
-pub fn unregister(_dirs: &Dirs) -> Result<()> {
+pub fn unregister(_dirs: &Dirs) -> Result<Vec<String>> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     for ext in ALL_EXTENSIONS {
         match hkcu.delete_subkey_all(menu_key(ext)) {
@@ -63,7 +65,7 @@ pub fn unregister(_dirs: &Dirs) -> Result<()> {
             _ => {}
         }
     }
-    Ok(())
+    Ok(Vec::new())
 }
 
 pub fn is_registered(_dirs: &Dirs) -> bool {

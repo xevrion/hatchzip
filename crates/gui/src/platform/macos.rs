@@ -13,6 +13,25 @@ pub const SHELL_MENU_NAME: super::ShellMenuName = super::ShellMenuName::Finder;
 /// Finder's Quick Actions.
 pub const SHELL_MENU: bool = true;
 
+/// The menu bar is the system's, at the top of the screen.
+pub const IN_WINDOW_MENU: bool = false;
+
+/// The faces with real bold weights for these scripts. `""` keeps the
+/// system font.
+///
+/// Chinese: fontique cannot draw the outlines PingFang ships in on macOS,
+/// so asking for it falls through to Heiti SC, whose Light and Medium are
+/// weights 300 and 400: text and headings both drew at 400. Hiragino Sans
+/// GB is in every macOS and has W3 (300) and W6 (600), so text gets W3 and
+/// a 600 heading gets W6. Devanagari: the fallback has tight line metrics.
+pub fn font_family(language: &str) -> &'static str {
+    match language {
+        "zh_CN" => "Hiragino Sans GB",
+        "hi" => "Kohinoor Devanagari",
+        _ => "",
+    }
+}
+
 /// `~/Library/Application Support/HatchZip`.
 pub fn config_dir() -> Option<PathBuf> {
     Some(std::env::home_dir()?.join("Library/Application Support/HatchZip"))

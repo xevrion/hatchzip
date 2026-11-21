@@ -221,7 +221,7 @@ pub fn register(dirs: &Dirs, gui: &Path) -> Result<Vec<String>> {
     )])
 }
 
-pub fn unregister(dirs: &Dirs) -> Result<()> {
+pub fn unregister(dirs: &Dirs) -> Result<Vec<String>> {
     for a in ACTIONS {
         remove_dir(&staging(dirs, a.id))?;
         remove_dir(&bundle(dirs, a.id))?;
@@ -229,7 +229,7 @@ pub fn unregister(dirs: &Dirs) -> Result<()> {
     if is_current(dirs) {
         refresh_services();
     }
-    Ok(())
+    Ok(Vec::new())
 }
 
 pub fn is_registered(dirs: &Dirs) -> bool {
