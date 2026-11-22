@@ -965,7 +965,7 @@ fn extract(
             );
             return Ok(Ended::Extracted {
                 output: journal.output,
-                nested: Vec::new(),
+                written: Vec::new(),
             });
         }
         State::Resume(job, journal) => {
