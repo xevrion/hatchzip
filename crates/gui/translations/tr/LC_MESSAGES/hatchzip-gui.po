@@ -31,6 +31,12 @@ msgstr "Arşivi çıkarma esnasında sil"
 msgid "Close the progress window when extraction completes"
 msgstr "İlerleme durumu penceresini çıkarma bitince kapat"
 
+msgid "Language"
+msgstr "Dil"
+
+msgid "Use the system language"
+msgstr "Sistem dilini kullan"
+
 msgid "Help"
 msgstr "Yardım"
 
@@ -40,11 +46,20 @@ msgstr "Güncellemeleri kontrol et"
 msgid "About HatchZip"
 msgstr "HatchZip Hakkında"
 
+msgid "Version {}"
+msgstr "Sürüm {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "Büyük arşivleri yerinde çıkarır. Arşiv çıkarıldıkça silinir, bu yüzden sadece çıkarılan dosyalar kadar boş alan gereklidir."
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "MIT veya Apache-2.0 lisanslı"
+
 msgid "Drop the archive to open it"
 msgstr "Arşivi açmak için bırak"
 
 msgid "No archive open"
-msgstr "Açık arviş yok"
+msgstr "Açık arşiv yok"
 
 msgid "The archive is removed progressively during extraction, so only the space for the extracted files is required."
 msgstr "Arşiv çıkarıldıkça silinir, bundan dolayı sadece arşivi çıkaracak kadar hafıza gereklidir."
@@ -94,11 +109,11 @@ msgstr "Çıkarmaya devam et"
 msgid "Finish"
 msgstr "Bitir"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
-msgstr "Ya da bu pencereye desteklenen bir arşiv formatı bırak. Desteklenen formatlar: ZIP, 7z, tar, tar.gz, tar.xz ve bölünmüş arşivler."
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives."
+msgstr "Ya da bu pencereye bir arşiv sürükle. Desteklenen formatlar: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst ve bölünmüş arşivler."
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
-msgstr "Ya da bu pencereye desteklenen bir arşiv formatı bırak. Desteklenen formatlar: ZIP, 7z, tar, tar.gz, tar.xz, RAR ve bölünmüş arşivler."
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives."
+msgstr "Ya da bu pencereye bir arşiv sürükle. Desteklenen formatlar: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR ve bölünmüş arşivler."
 
 msgid "Opening {}…"
 msgstr "{} açılıyor…"
@@ -154,7 +169,7 @@ msgstr "{} arşiv"
 msgid "{} entry"
 msgid_plural "{} entries"
 msgstr[0] "{} öğe"
-msgstr[1] "{} öğeler"
+msgstr[1] "{} öğe"
 
 msgid "{} in {} remaining"
 msgstr "{0} kaldı ({1})"
@@ -181,7 +196,7 @@ msgid "Pausing…"
 msgstr "Durduruluyor…"
 
 msgid "Pause"
-msgstr "Durdur"
+msgstr "Duraklat"
 
 msgid "Resume"
 msgstr "Devam et"
@@ -237,6 +252,9 @@ msgstr "Ayrılmış alan"
 msgid "Available after extraction"
 msgstr "Çıkardıktan sonra kullanılabilir"
 
+msgid "Not enough"
+msgstr "Yetersiz"
+
 msgid "Restore complete"
 msgstr "Geri yükleme tamamlandı"
 
@@ -286,7 +304,7 @@ msgid "Verifying archive before extracting…"
 msgstr "Arşiv çıkarmadan önce doğrulanıyor..."
 
 msgid "Progress is saved. The extraction can be resumed now or later."
-msgstr "İlerleme kaydedildi. Arşiv çıkartma şu anda yada daha sonra devam ettirilebilir."
+msgstr "İlerleme kaydedildi. Arşiv çıkartma şu anda ya da daha sonra devam ettirilebilir."
 
 msgid "All entries were extracted. The archive was kept."
 msgstr "Tüm öğeler çıkarıldı. Arşive dokunulmadı."
@@ -297,7 +315,7 @@ msgstr "Tüm öğeler çıkarıldı. Arşiv silindi."
 msgid "Test passed: 1 entry verified."
 msgid_plural "Test passed: {} entries verified."
 msgstr[0] "Test başarılı: 1 öğe doğrulandı."
-msgstr[1] "Test başarılı: {} öğeler doğrulandı."
+msgstr[1] "Test başarılı: {} öğe doğrulandı."
 
 msgid "'{}' already exists in {}."
 msgstr "'{}' zaten {} dizininde var"
@@ -311,7 +329,7 @@ msgstr "Değiştirme zaten olan dosyayı çıkartma işlemi bitince siler. Atla 
 msgid "Do the same for the next file"
 msgid_plural "Do the same for the next {} files"
 msgstr[0] "Bir sonraki dosya için aynısını yap"
-msgstr[1] "Sonraki {} dosyalar için aynısını yap"
+msgstr[1] "Sonraki {} dosya için aynısını yap"
 
 msgid "Destination: {}"
 msgstr "Hedef: {}"
@@ -349,7 +367,7 @@ msgstr[1] "{} saat"
 msgid "the 1 entry"
 msgid_plural "the {} entries"
 msgstr[0] "1 öğe"
-msgstr[1] "{} öğeler"
+msgstr[1] "{} öğe"
 
 msgid "Extraction progress discarded. The archive was not modified. Extracted files remain in {}."
 msgstr "Çıkartma iptal edildi. Arşive dokunulmadı. Çıkarılan dosyalar {} dizininde tutuldu."
@@ -365,8 +383,8 @@ msgstr[1] "{} çıkarılan dosya {} dizininde duruyor, çünkü çıkarılan dos
 msgid "link"
 msgstr "link"
 
-msgid "{} Progress is saved; the extraction can be resumed."
-msgstr "{} İlerleme kaydedildi; çıkartma devam ettirilebilir."
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "İlerleme kaydedildi; çıkartma devam ettirilebilir."
 
 msgid "Folder"
 msgstr "Klasör"
@@ -374,5 +392,204 @@ msgstr "Klasör"
 msgid "Link"
 msgstr "Link"
 
-msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
-msgstr "{}.  \"Arşivi çıkarma esnasında sil\" seçeneğini kapatırsanız arşivi çıkarıp silmeden arşivin kendisini tutabilirsiniz."
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
+msgstr "{}. Arşivi çıkarıp tutmak için \"Arşivi çıkarma esnasında sil\" seçeneğini kapatın."
+
+msgid "Sufficient disk space"
+msgstr "Yeterli disk alanı"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "Yetersiz disk alanı. {} daha gerekli."
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "Arşivi çıkarma esnasında silmek yalnızca {} gerektirir."
+
+msgid "There is also enough space to keep the archive."
+msgstr "Arşivi tutmak için de yeterli alan var."
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "Gereken alanın çoğu tek bir katı blok ve bu blok ancak tamamen çıkarıldıktan sonra boşaltılabilir."
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "Hedef başka bir sürücüde, bu yüzden arşivi silmek orada yer açmaz."
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "Bu sürücü bir dosyanın içindeki alanı boşaltamaz, bu yüzden sıkıştırılmış arşiv çıkarma bitene kadar olduğu gibi kalır."
+
+msgid "Extract with {} reserved"
+msgstr "{} ayırarak çıkar"
+
+msgid "Extract without a reserve"
+msgstr "Alan ayırmadan çıkar"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "Tek engel ayrılmış alan: {} gerekli ve {} kullanılabilir, bu yüzden {} ayırarak çalışabilir ve bitince {} kalır."
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "Tek engel ayrılmış alan: {} gerekli ve {} kullanılabilir, bu yüzden alan ayırmadan çalışabilir ve bitince {} kalır."
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "Kullanılabilir: {}. Gerekli: {}, artı {} ayrılmış."
+
+msgid "Settings…"
+msgstr "Ayarlar…"
+
+msgid "General"
+msgstr "Genel"
+
+msgid "Extraction"
+msgstr "Çıkarma"
+
+msgid "Integration"
+msgstr "Entegrasyon"
+
+msgid "Advanced"
+msgstr "Gelişmiş"
+
+msgid "Appearance"
+msgstr "Görünüm"
+
+msgid "System follows the light or dark setting of the operating system."
+msgstr "\"Sistem\", işletim sisteminin açık ya da koyu ayarını izler."
+
+msgid "System"
+msgstr "Sistem"
+
+msgid "Light"
+msgstr "Açık"
+
+msgid "Dark"
+msgstr "Koyu"
+
+msgid "After extracting"
+msgstr "Çıkardıktan sonra"
+
+msgid "The destination folder opens in the file manager when an extraction completes."
+msgstr "Çıkarma bitince hedef klasör dosya yöneticisinde açılır."
+
+msgid "The result is shown in the window and nothing else is opened."
+msgstr "Sonuç pencerede gösterilir, başka bir şey açılmaz."
+
+msgid "Do nothing"
+msgstr "Hiçbir şey yapma"
+
+msgid "Open the folder"
+msgstr "Klasörü aç"
+
+msgid "Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open."
+msgstr "Sağ-tık menüsünün açtığı pencere için geçerlidir. Test, duraklatma ya da hata olursa pencere açık kalır."
+
+msgid "Every entry is read and checked before anything is extracted or removed, which takes longer."
+msgstr "Bir şey çıkarılmadan ya da silinmeden önce her öğe okunup kontrol edilir, bu daha uzun sürer."
+
+msgid "Free space left untouched on the destination drive, so the system and other programs keep room to work."
+msgstr "Hedef sürücüde dokunulmadan bırakılan boş alan, böylece sistem ve diğer programlar çalışmak için yer bulur."
+
+msgid "Default destination"
+msgstr "Varsayılan hedef"
+
+msgid "Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive."
+msgstr "Her arşiv, seçilen klasörün içinde kendi adını taşıyan bir klasöre çıkarılır. Sağ-tık menüsündeki \"Extract here\" yine arşivin yanına çıkarır."
+
+msgid "Each archive is extracted into a folder named after it, next to the archive."
+msgstr "Her arşiv, arşivin yanında kendi adını taşıyan bir klasöre çıkarılır."
+
+msgid "Next to the archive"
+msgstr "Arşivin yanında"
+
+msgid "Always in a folder"
+msgstr "Her zaman bir klasörde"
+
+msgid "No folder chosen"
+msgstr "Klasör seçilmedi"
+
+msgid "When a file already exists"
+msgstr "Dosya zaten varsa"
+
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "Var olan dosyalar değiştirilir. Eski kopyalar çıkarma bitene kadar tutulur, sonra silinir."
+
+msgid "Existing files are kept, and the archive's copies of them are not."
+msgstr "Var olan dosyalar tutulur, arşivdeki kopyaları tutulmaz."
+
+msgid "Each file already in the destination is shown, with the choice to replace it, skip it or keep both."
+msgstr "Hedefte zaten olan her dosya gösterilir, değiştirmeyi, atlamayı ya da ikisini de tutmayı seçebilirsiniz."
+
+msgid "Ask"
+msgstr "Sor"
+
+msgid "Adds HatchZip's extract and test entries to the right-click menu of archives."
+msgstr "HatchZip'in çıkarma ve test öğelerini arşivlerin sağ-tık menüsüne ekler."
+
+msgid "Settings file"
+msgstr "Ayar dosyası"
+
+msgid "Settings are saved here as soon as they change."
+msgstr "Ayarlar değiştiği anda buraya kaydedilir."
+
+msgid "Show in Explorer"
+msgstr "Dosya Gezgini'nde göster"
+
+msgid "Show in Finder"
+msgstr "Finder'da göster"
+
+msgid "Show in the file manager"
+msgstr "Dosya yöneticisinde göster"
+
+msgid "Every setting returns to its default, including the language and the appearance."
+msgstr "Dil ve görünüm dahil tüm ayarlar varsayılana döner."
+
+msgid "Reset all settings…"
+msgstr "Tüm ayarları sıfırla…"
+
+msgid "Reset all settings?"
+msgstr "Tüm ayarlar sıfırlansın mı?"
+
+msgid "The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed."
+msgstr "Dil, görünüm ve tüm çıkarma ayarları varsayılana döner. Sağ-tık menüsü değişmez."
+
+msgid "Reset"
+msgstr "Sıfırla"
+
+msgid "Select the default destination folder"
+msgstr "Varsayılan hedef klasörü seç"
+
+msgid "Archive {} of {}"
+msgstr "Arşiv {0}/{1}"
+
+msgid "All {} archives completed."
+msgstr "{} arşivin hepsi tamamlandı."
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "Arşiv {0}/{1}. 1 arşiv daha bekliyor."
+msgstr[1] "Arşiv {0}/{1}. {2} arşiv daha bekliyor."
+
+msgid "Required: {}. Available: {}."
+msgstr "Gerekli: {}. Kullanılabilir: {}."
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "Test iptal edildi. Arşive dokunulmadı."
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "Çıkarma iptal edildi. Arşive dokunulmadı."
+
+msgid "{} {}"
+msgstr "{} {}"
+
+msgid "{} {}."
+msgstr "{} {}."
+
+msgid "Extract selected…"
+msgstr "Seçimi çıkar…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "{} öğe seçildi. Seçimi çıkarmak arşive dokunmaz."
+msgstr[1] "{} öğe seçildi. Seçimi çıkarmak arşive dokunmaz."
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "Seçilen öğeler çıkarıldı. Arşive dokunulmadı."
+
+msgid "Extract all"
+msgstr "Tümünü çıkar"
