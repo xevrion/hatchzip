@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use slint::{Timer, TimerMode};
 
-use crate::task::Task;
+use crate::task::{Queue, Task};
 use crate::work::{self, Counters, Request, Update};
 use crate::{password, replace};
 
@@ -99,6 +99,14 @@ impl Runner {
         self.start(Task::restore(&name), Request::Restore { archive });
     }
 
+    /// Shows the task again as it stands, such as after the language
+    /// changed, without touching it.
+    pub fn redraw(&self) {
+        if let Some(t) = self.task.borrow().as_ref() {
+            (self.show)(t);
+        }
+    }
+
     pub fn running(&self) -> bool {
         self.task.borrow().as_ref().is_some_and(Task::running)
     }
@@ -120,25 +128,20 @@ impl Runner {
     }
 
     /// "Archive 2 of 3" while several are queued, and what is left when one
-    /// stops them.
-    fn step(&self, task: &Task) -> String {
+    /// stops them. The window turns it into a sentence, in its language.
+    fn step(&self, task: &Task) -> Queue {
         let (at, of) = self.place.get();
         if of < 2 {
-            return String::new();
+            return Queue::Single;
         }
         let left = of - at;
         if task.view.phase == crate::Phase::Done && left == 0 {
-            return format!("All {of} archives completed.");
+            return Queue::All { of };
         }
         if task.running() || left == 0 {
-            return format!("Archive {at} of {of}");
+            return Queue::Of { at, of };
         }
-        let rest = if left == 1 {
-            "1 more archive has not started".to_string()
-        } else {
-            format!("{left} more archives have not started")
-        };
-        format!("Archive {at} of {of}. {rest}.")
+        Queue::Waiting { at, of, left }
     }
 
     /// Starts the next queued archive if the current one is done.
@@ -181,6 +184,26 @@ impl Runner {
             return;
         }
         self.launch(|| {});
+    }
+
+    /// Runs the last extraction again with less reserved space, as the
+    /// no-space state offers when the plan fits without it. Only this run:
+    /// the saved default does not change.
+    pub fn lower_reserve(&self) {
+        if self.running() {
+            return;
+        }
+        let Some(offer) = self.task.borrow().as_ref().and_then(|t| t.lower_reserve) else {
+            return;
+        };
+        let lowered = self
+            .request
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|r| r.set_keep_free(offer));
+        if lowered {
+            self.launch(|| {});
+        }
     }
 
     fn launch(&self, before: impl FnOnce() + Send + 'static) {
@@ -280,7 +303,7 @@ impl Runner {
         let mut task = self.task.borrow_mut();
         if let Some(t) = task.as_mut() {
             f(t);
-            t.view.step = self.step(t).into();
+            t.queue = self.step(t);
             (self.show)(t);
         }
     }

@@ -9,6 +9,7 @@ Thank you for your interest in contributing. HatchZip deletes people's archives 
 - [Development setup](#development-setup)
 - [Project structure](#project-structure)
 - [Engineering standards](#engineering-standards)
+- [Translations](#translations)
 - [Documentation style](#documentation-style)
 - [Pull requests](#pull-requests)
 - [Reporting bugs](#reporting-bugs)
@@ -131,6 +132,12 @@ Every figure in the README and docs was measured on real hardware. Changes that 
 - `anyhow` for errors, with context on anything touching the filesystem. Error messages tell the user what happened and what to do next.
 - Comments explain why, not what.
 
+## Translations
+
+Translations of the desktop app are very welcome, and a new language needs no code beyond two lines. [crates/gui/translations/README.md](crates/gui/translations/README.md) walks through adding one: copy a catalog, set its language and plural rule, translate, run `cargo test -p hatchzip-gui --test catalog`, and open a pull request. Fixes to an existing translation are welcome from native speakers too.
+
+When you change the app's text, mark it with `@tr()` and update every catalog in the same pull request; the test lists what's missing. The command line stays in English.
+
 ## Documentation style
 
 - Clear, neutral, professional English, sentence case headings, no first person in the README and docs.
@@ -144,7 +151,7 @@ Every figure in the README and docs was measured on real hardware. Changes that 
 
 ## Reporting bugs
 
-Use the [bug report form](https://github.com/xevrion/hatchzip/issues/new/choose). If an extraction failed midway, keep the `.hatchzip` and `.hatchzip-tail` files next to the archive: they are needed to resume, and they help diagnose what happened.
+Use the [bug report form](https://github.com/xevrion/hatchzip/issues/new/choose). If an extraction failed midway, keep the `.hatchzip`, `.hatchzip-tail` and `.hatchzip-folders` files next to the archive: they are needed to resume, and they help diagnose what happened.
 
 ## Code of conduct
 

@@ -1,0 +1,622 @@
+import { Button, ComboBox, LineEdit, Palette, ScrollView, Switch } from "std-widgets.slint";
+import { Theme, Line, VLine, PathBlock } from "theme.slint";
+
+// Which file manager the right-click menu belongs to, so the labels can
+// name it and still follow a language change.
+export enum FileManager { explorer, finder, files }
+
+// One entry of the sidebar.
+component SectionItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    // The sidebar has the keyboard and it got there by the keyboard, so the
+    // selected entry shows a ring. A click or opening the window doesn't.
+    in property <bool> focused;
+    callback clicked();
+
+    // The fill and the bar are the selection, focused or not; the ring is
+    // only the keyboard's.
+    height: 32px;
+    border-radius: 6px;
+    background: root.selected ? Theme.track : touch.has-hover ? Theme.panel : transparent;
+    accessible-role: list-item;
+    accessible-label: root.text;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.selected;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    if root.selected: Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: 3px;
+        height: 16px;
+        border-radius: 1.5px;
+        background: Palette.accent-background;
+    }
+    // Inset, so it never covers the bar.
+    if root.selected && root.focused: Rectangle {
+        x: 2px;
+        y: 2px;
+        width: parent.width - 4px;
+        height: parent.height - 4px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Palette.accent-background;
+    }
+    Text {
+        x: 12px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text: root.text;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A setting: its name, its control, and a line on what it does.
+component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> note;
+    spacing: 6px;
+    // Wrapped text needs its height bound, or the page counts it as one
+    // line and the pane can't scroll to the last setting.
+    if root.label != "": Text {
+        text: root.label;
+        font-weight: 600;
+        wrap: word-wrap;
+        height: self.preferred-height;
+    }
+    @children
+    if root.note != "": Text {
+        text: root.note;
+        color: Theme.muted;
+        font-size: Theme.small-size;
+        wrap: word-wrap;
+        height: self.preferred-height;
+    }
+}
+
+// A switch whose label wraps. Switch's own text never does, so a long or
+// translated label ran past the edge of a narrow window.
+component SwitchRow inherits HorizontalLayout {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled();
+
+    // The gap Switch puts before its own text.
+    spacing: 12px;
+    Switch {
+        accessible-label: root.text;
+        checked <=> root.checked;
+        toggled => {
+            root.toggled();
+        }
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.text;
+                wrap: word-wrap;
+                height: self.preferred-height;
+                // The switch already carries this as its name.
+                accessible-role: none;
+            }
+        }
+        // Clicking the label still toggles, as it did inside the Switch.
+        TouchArea {
+            clicked => {
+                root.checked = !root.checked;
+                root.toggled();
+            }
+        }
+    }
+}
+
+// Asks before every setting goes back to its default.
+component ResetPrompt inherits Rectangle {
+    callback reset();
+    callback cancel();
+
+    background: Theme.scrim;
+    // Swallows clicks meant for what is underneath.
+    TouchArea { }
+
+    FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.cancel();
+                return accept;
+            }
+            // Tab stays between the two buttons, or it would reach the
+            // settings behind the scrim while the question is still open.
+            if event.text == Key.Tab || event.text == Key.Backtab {
+                if cancel-button.has-focus {
+                    reset-button.focus();
+                } else {
+                    cancel-button.focus();
+                }
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            width: min(400px, root.width - 32px);
+            height: card.preferred-height;
+            background: Palette.background;
+            border-radius: Theme.card-radius;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: Theme.shadow;
+
+            card := VerticalLayout {
+                padding: 24px;
+                spacing: 10px;
+                Text {
+                    text: @tr("Reset all settings?");
+                    font-size: 15px;
+                    font-weight: 600;
+                }
+                Text {
+                    text: @tr("The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed.");
+                    color: Theme.muted;
+                    wrap: word-wrap;
+                    height: self.preferred-height;
+                }
+                // Room between the question and the answers.
+                Rectangle {
+                    height: 8px;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    cancel-button := Button {
+                        text: @tr("Cancel");
+                        clicked => {
+                            root.cancel();
+                        }
+                    }
+                    reset-button := Button {
+                        text: @tr("Reset");
+                        primary: true;
+                        clicked => {
+                            root.reset();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    init => {
+        // The safe answer has the keyboard, so Enter never resets by accident.
+        cancel-button.focus();
+    }
+}
+
+// Every setting in one place. Changes apply and are saved at once, so there
+// is no Save button; the main window's own controls follow along.
+export component SettingsWindow inherits Window {
+    // 0 General, 1 Extraction, 2 Integration, 3 Advanced.
+    in-out property <int> section: 0;
+
+    // "Use the system language", then every language in its own script.
+    // Built from Rust, which words the first entry in the current language.
+    in property <[string]> language-names;
+    in-out property <int> language-index;
+    // System, Light, Dark.
+    in-out property <int> appearance-index;
+    // Do nothing, Open the folder.
+    in-out property <int> after-index;
+    in-out property <bool> close-when-done: true;
+
+    in-out property <bool> remove-archive: true;
+    in-out property <bool> verify-first;
+    in-out property <string> keep-free: "2";
+    in property <bool> keep-free-valid: true;
+    out property <string> storage-unit: @tr("GB");
+    // Next to the archive, Always in a folder.
+    in-out property <int> destination-index;
+    in property <string> destination-folder;
+    // Ask, Replace, Skip.
+    in-out property <int> existing-index;
+
+    // The right-click menu setting exists where hatchzip-shell supports it.
+    in property <bool> shell-menu-available;
+    in property <FileManager> file-manager;
+    in-out property <bool> shell-menu-on;
+    // The outcome of the last change to the right-click menu.
+    in property <string> shell-notice;
+    in property <bool> shell-notice-bad;
+
+    // Empty when settings are kept in memory only, as in tests.
+    in property <string> settings-path;
+    property <bool> confirm-reset;
+    // The keyboard last moved around the window, so focus is shown.
+    property <bool> keyboard-nav;
+
+    public function system-language() -> string { return @tr("Use the system language"); }
+    public function destination-title() -> string { return @tr("Select the default destination folder"); }
+
+    callback choose-language(int);
+    callback choose-appearance(int);
+    callback choose-after(int);
+    callback close-when-done-toggled();
+    callback remove-archive-toggled();
+    callback verify-first-toggled();
+    callback keep-free-edited(string);
+    callback choose-destination(int);
+    callback browse-destination();
+    callback choose-existing(int);
+    callback shell-menu-toggled();
+    callback show-settings-file();
+    callback reset();
+    callback close-requested();
+
+    function step-section(delta: int) {
+        let next = root.section + delta;
+        let skipped = (next == 2 && !root.shell-menu-available) ? next + delta : next;
+        root.section = max(0, min(3, skipped));
+    }
+
+    title: @tr("Settings");
+    preferred-width: 760px;
+    preferred-height: 580px;
+    min-width: 600px;
+    min-height: 420px;
+    background: Palette.background;
+    default-font-family: Theme.font-family;
+
+    init => {
+        sidebar.focus();
+    }
+
+    // Only hears the keys the controls inside turn down, such as Escape.
+    FocusScope {
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.close-requested();
+                return accept;
+            }
+            // Tab moving the focus, from the controls that turn it down.
+            if event.text == Key.Tab || event.text == Key.Backtab {
+                root.keyboard-nav = true;
+            }
+            reject
+        }
+
+        HorizontalLayout {
+            sidebar := FocusScope {
+                width: 200px;
+                key-pressed(event) => {
+                    root.keyboard-nav = true;
+                    if event.text == Key.UpArrow {
+                        root.step-section(-1);
+                        return accept;
+                    }
+                    if event.text == Key.DownArrow {
+                        root.step-section(1);
+                        return accept;
+                    }
+                    reject
+                }
+
+                Rectangle {
+                    background: Theme.panel;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 2px;
+                        alignment: start;
+                        SectionItem {
+                            text: @tr("General");
+                            selected: root.section == 0;
+                            focused: sidebar.has-focus && root.keyboard-nav;
+                            clicked => {
+                                root.keyboard-nav = false;
+                                root.section = 0;
+                                sidebar.focus();
+                            }
+                        }
+                        SectionItem {
+                            text: @tr("Extraction");
+                            selected: root.section == 1;
+                            focused: sidebar.has-focus && root.keyboard-nav;
+                            clicked => {
+                                root.keyboard-nav = false;
+                                root.section = 1;
+                                sidebar.focus();
+                            }
+                        }
+                        if root.shell-menu-available: SectionItem {
+                            text: @tr("Integration");
+                            selected: root.section == 2;
+                            focused: sidebar.has-focus && root.keyboard-nav;
+                            clicked => {
+                                root.keyboard-nav = false;
+                                root.section = 2;
+                                sidebar.focus();
+                            }
+                        }
+                        SectionItem {
+                            text: @tr("Advanced");
+                            selected: root.section == 3;
+                            focused: sidebar.has-focus && root.keyboard-nav;
+                            clicked => {
+                                root.keyboard-nav = false;
+                                root.section = 3;
+                                sidebar.focus();
+                            }
+                        }
+                    }
+                }
+            }
+            VLine { }
+
+            pane := ScrollView {
+                horizontal-stretch: 1;
+                horizontal-scrollbar-policy: always-off;
+                content-width: self.visible-width;
+                content-height: page.preferred-height;
+
+                page := VerticalLayout {
+                    width: pane.visible-width;
+                    padding: 24px;
+                    padding-bottom: 32px;
+                    spacing: 20px;
+                    alignment: start;
+
+                    Text {
+                        text: root.section == 0 ? @tr("General") : root.section == 1 ? @tr("Extraction") : root.section == 2 ? @tr("Integration") : @tr("Advanced");
+                        font-size: Theme.title-size;
+                        font-weight: 600;
+                    }
+
+                    if root.section == 0: VerticalLayout {
+                        spacing: 20px;
+                        Field {
+                            label: @tr("Language");
+                            HorizontalLayout {
+                                alignment: start;
+                                ComboBox {
+                                    min-width: 260px;
+                                    accessible-label: @tr("Language");
+                                    model: root.language-names;
+                                    current-index <=> root.language-index;
+                                    selected => {
+                                        root.choose-language(self.current-index);
+                                    }
+                                }
+                            }
+                        }
+                        Field {
+                            label: @tr("Appearance");
+                            note: @tr("System follows the light or dark setting of the operating system.");
+                            HorizontalLayout {
+                                alignment: start;
+                                ComboBox {
+                                    min-width: 260px;
+                                    accessible-label: @tr("Appearance");
+                                    model: [@tr("System"), @tr("Light"), @tr("Dark")];
+                                    current-index <=> root.appearance-index;
+                                    selected => {
+                                        root.choose-appearance(self.current-index);
+                                    }
+                                }
+                            }
+                        }
+                        Field {
+                            label: @tr("After extracting");
+                            note: root.after-index == 1 ? @tr("The destination folder opens in the file manager when an extraction completes.") : @tr("The result is shown in the window and nothing else is opened.");
+                            HorizontalLayout {
+                                alignment: start;
+                                ComboBox {
+                                    min-width: 260px;
+                                    accessible-label: @tr("After extracting");
+                                    model: [@tr("Do nothing"), @tr("Open the folder")];
+                                    current-index <=> root.after-index;
+                                    selected => {
+                                        root.choose-after(self.current-index);
+                                    }
+                                }
+                            }
+                        }
+                        Field {
+                            note: @tr("Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open.");
+                            SwitchRow {
+                                text: @tr("Close the progress window when extraction completes");
+                                checked <=> root.close-when-done;
+                                toggled => {
+                                    root.close-when-done-toggled();
+                                }
+                            }
+                        }
+                    }
+
+                    if root.section == 1: VerticalLayout {
+                        spacing: 20px;
+                        Field {
+                            note: root.remove-archive ? @tr("The archive is removed progressively during extraction. An interrupted extraction can be resumed.") : @tr("The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed.");
+                            SwitchRow {
+                                text: @tr("Remove the archive during extraction");
+                                checked <=> root.remove-archive;
+                                toggled => {
+                                    root.remove-archive-toggled();
+                                }
+                            }
+                        }
+                        Field {
+                            note: @tr("Every entry is read and checked before anything is extracted or removed, which takes longer.");
+                            SwitchRow {
+                                text: @tr("Verify archive before extracting");
+                                checked <=> root.verify-first;
+                                toggled => {
+                                    root.verify-first-toggled();
+                                }
+                            }
+                        }
+                        Field {
+                            label: @tr("Reserved space");
+                            note: @tr("Free space left untouched on the destination drive, so the system and other programs keep room to work.");
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                LineEdit {
+                                    width: 90px;
+                                    accessible-label: @tr("Reserved space");
+                                    text <=> root.keep-free;
+                                    input-type: decimal;
+                                    horizontal-alignment: right;
+                                    edited(text) => {
+                                        root.keep-free-edited(text);
+                                    }
+                                }
+                                Text {
+                                    text: root.keep-free-valid ? root.storage-unit : @tr("GB. Enter a number, such as 2 or 0.5.");
+                                    vertical-alignment: center;
+                                    color: root.keep-free-valid ? Palette.foreground : Theme.danger;
+                                }
+                            }
+                        }
+                        Field {
+                            label: @tr("Default destination");
+                            note: root.destination-index == 1 ? @tr("Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive.") : @tr("Each archive is extracted into a folder named after it, next to the archive.");
+                            HorizontalLayout {
+                                alignment: start;
+                                ComboBox {
+                                    min-width: 260px;
+                                    accessible-label: @tr("Default destination");
+                                    model: [@tr("Next to the archive"), @tr("Always in a folder")];
+                                    current-index <=> root.destination-index;
+                                    selected => {
+                                        root.choose-destination(self.current-index);
+                                    }
+                                }
+                            }
+                            // The whole path wraps in view; the button keeps
+                            // its own height beside it.
+                            if root.destination-index == 1: HorizontalLayout {
+                                spacing: 8px;
+                                PathBlock {
+                                    text: root.destination-folder != "" ? root.destination-folder : @tr("No folder chosen");
+                                    label: @tr("Default destination");
+                                    horizontal-stretch: 1;
+                                }
+                                VerticalLayout {
+                                    alignment: start;
+                                    Button {
+                                        text: @tr("Browse…");
+                                        clicked => {
+                                            root.browse-destination();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Field {
+                            label: @tr("When a file already exists");
+                            note: root.existing-index == 1 ? @tr("Existing files are replaced. The old copies are kept until the extraction completes, then deleted.") : root.existing-index == 2 ? @tr("Existing files are kept, and the archive's copies of them are not.") : @tr("Each file already in the destination is shown, with the choice to replace it, skip it or keep both.");
+                            HorizontalLayout {
+                                alignment: start;
+                                ComboBox {
+                                    min-width: 260px;
+                                    accessible-label: @tr("When a file already exists");
+                                    model: [@tr("Ask"), @tr("Replace"), @tr("Skip")];
+                                    current-index <=> root.existing-index;
+                                    selected => {
+                                        root.choose-existing(self.current-index);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.section == 2 && root.shell-menu-available: VerticalLayout {
+                        spacing: 20px;
+                        Field {
+                            note: @tr("Adds HatchZip's extract and test entries to the right-click menu of archives.");
+                            SwitchRow {
+                                text: root.file-manager == FileManager.explorer ? @tr("Show in the Explorer context menu") : root.file-manager == FileManager.finder ? @tr("Show in the Finder context menu") : @tr("Show in the file manager's context menu");
+                                checked <=> root.shell-menu-on;
+                                toggled => {
+                                    root.shell-menu-toggled();
+                                }
+                            }
+                        }
+                        if root.shell-notice != "": Text {
+                            text: root.shell-notice;
+                            wrap: word-wrap;
+                            color: root.shell-notice-bad ? Theme.danger : Palette.foreground;
+                        }
+                    }
+
+                    if root.section == 3: VerticalLayout {
+                        spacing: 20px;
+                        Field {
+                            label: @tr("Settings file");
+                            note: @tr("Settings are saved here as soon as they change.");
+                            HorizontalLayout {
+                                spacing: 8px;
+                                PathBlock {
+                                    text: root.settings-path;
+                                    label: @tr("Settings file");
+                                    horizontal-stretch: 1;
+                                }
+                                VerticalLayout {
+                                    alignment: start;
+                                    Button {
+                                        text: root.file-manager == FileManager.explorer ? @tr("Show in Explorer") : root.file-manager == FileManager.finder ? @tr("Show in Finder") : @tr("Show in the file manager");
+                                        enabled: root.settings-path != "";
+                                        clicked => {
+                                            root.show-settings-file();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // The button names it; a heading saying the same
+                        // was one bold line too many.
+                        Field {
+                            note: @tr("Every setting returns to its default, including the language and the appearance.");
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: @tr("Reset all settings…");
+                                    clicked => {
+                                        root.confirm-reset = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // The prompt takes its focused button with it, so the keyboard goes
+    // back to the sidebar, where Escape and the arrows work again.
+    if root.confirm-reset: ResetPrompt {
+        reset => {
+            root.confirm-reset = false;
+            sidebar.focus();
+            root.reset();
+        }
+        cancel => {
+            root.confirm-reset = false;
+            sidebar.focus();
+        }
+    }
+}

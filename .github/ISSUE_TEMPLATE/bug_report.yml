@@ -7,9 +7,9 @@ body:
       value: |
         > [!IMPORTANT]
         > If an extraction failed or was interrupted midway, do **not** delete the
-        > `.hatchzip` and `.hatchzip-tail` files next to the archive. The archive has
-        > already been partly truncated, and those two files are what lets HatchZip
-        > resume and finish it. Rerunning the same command resumes.
+        > `.hatchzip`, `.hatchzip-tail` and `.hatchzip-folders` files next to the
+        > archive. The archive has already been partly truncated, and those files are
+        > what lets HatchZip resume and finish it. Rerunning the same command resumes.
 
         Do not attach archives that contain private information. A small archive
         that shows the same problem is equally useful.

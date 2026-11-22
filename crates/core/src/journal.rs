@@ -41,7 +41,24 @@ const CHOOSE_VERSION: u32 = 6;
 /// that never asks where it may resume such a run, so on a filesystem that
 /// ignores case it would delete an extracted file as its own.
 const CASE_VERSION: u32 = 7;
-const READABLE: [u32; 6] = [2, 3, 4, 5, 6, 7];
+/// One whose archive has folder entries with permissions or times writes
+/// version 8, whatever else it does, names that differ only in case included,
+/// and keeps them in a side file. A build before that would finish without
+/// setting them.
+const FOLDERS_VERSION: u32 = 8;
+/// One that extracts only selected entries writes version 9, whatever else
+/// it does. A build before that would resume it as a whole extraction: it
+/// would delete whatever is at the paths of the entries left out, which no
+/// check looked at before the run began, and extract them over it.
+const SELECT_VERSION: u32 = 9;
+const READABLE: [u32; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
+/// What an extraction of a native split ZIP keeps at `<stem>.zip.hatchzip`
+/// while it runs. Builds before split ZIP support take `<stem>.zip` for a
+/// ZIP that is one file and look for its journal there, so they find this
+/// and refuse it as a newer journal, instead of extracting the last segment
+/// on its own and cutting away the index the rest of the set needs. Builds
+/// that know split ZIPs open the set from its `.z01` and never read it.
+const STUB_VERSION: u32 = 1000;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Link {
@@ -60,11 +77,11 @@ pub struct Resume {
     /// Bytes of output in `<name>.hatchzip-part`, flushed. Anything the file
     /// holds past this was written after the point and is thrown away.
     pub written: u64,
-    /// Where decoding restarts, in bits from the start of the archive. Only
-    /// deflate streams ever stop between two bytes.
+    /// Where decoding restarts, in bits from the start of the archive. Deflate
+    /// and bzip2 blocks can stop between two bytes.
     pub bit: u64,
     /// CRC-32 of the first `written` bytes of output. Unused for a
-    /// compressed tar, whose checksums are per gzip member, in `stream`.
+    /// compressed tar, whose checksums are per gzip member or bzip2 stream, in `stream`.
     pub crc: u32,
     /// For a compressed tar, where one stream holds every entry: the
     /// decoder's and the tar parser's state at `bit`. `written` is then how
@@ -126,6 +143,21 @@ pub struct Journal {
     /// case. Asked again for the same reason.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub case_beyond_ascii: bool,
+    /// The archive's folder entries are saved in their own file, set once
+    /// every file and link is made; see [`crate::folders`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folders: Option<crate::folders::Saved>,
+    /// Every link is made and every put-back file settled: only the folders
+    /// and the cleanup are left, and a resume does just that. Making a link
+    /// again would need write permission on its folder, which the folder's
+    /// own mode may have taken away by then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub folders_left: bool,
+    /// Only these entries, and everything inside the folders among them,
+    /// are extracted, always with the archive kept. A resume continues the
+    /// same selection, whatever it is asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<PathBuf>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -150,11 +182,27 @@ impl Replace {
     }
 }
 
+/// Whether `path` holds a stub journal; see [`STUB_VERSION`].
+fn is_stub(path: &Path) -> bool {
+    #[derive(Deserialize)]
+    struct Versioned {
+        version: u32,
+    }
+    fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Versioned>(&b).ok())
+        .is_some_and(|v| v.version == STUB_VERSION)
+}
+
 pub struct Paths {
     /// The first volume of the archive the side files belong to.
     pub archive: PathBuf,
     pub journal: PathBuf,
     pub tail: PathBuf,
+    pub folders: PathBuf,
+    /// For a native split ZIP, where its stub journal goes, next to its
+    /// `.zip`; see [`STUB_VERSION`].
+    pub stub: Option<PathBuf>,
 }
 
 impl Paths {
@@ -164,11 +212,87 @@ impl Paths {
             s.push(suffix);
             PathBuf::from(s)
         };
+        let stub = storage::split_zip_last(archive).map(|last| {
+            let mut s = last.into_os_string();
+            s.push(".hatchzip");
+            PathBuf::from(s)
+        });
         Self {
             archive: archive.to_path_buf(),
             journal: with(".hatchzip"),
             tail: with(".hatchzip-tail"),
+            folders: with(".hatchzip-folders"),
+            stub,
         }
+    }
+
+    /// Writes the stub journal of a native split ZIP's extraction. Only over
+    /// a stub an earlier run left: see [`Self::check_stub`].
+    fn write_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        self.check_stub()?;
+        let json = serde_json::to_vec(&serde_json::json!({
+            "version": STUB_VERSION,
+            "split_zip": self.archive,
+        }))?;
+        if is_stub(stub) {
+            return fsutil::write_atomic(stub, &json);
+        }
+        {
+            use std::io::Write;
+            let mut f = crate::platform::create_new_no_follow(stub)
+                .with_context(|| format!("creating {}", stub.display()))?;
+            f.write_all(&json)?;
+            f.sync_all()?;
+        }
+        fsutil::sync_dir(stub.parent().unwrap_or(Path::new(".")))
+    }
+
+    /// Refuses a native split ZIP whose stub name holds anything but a stub:
+    /// the journal of an extraction of its `.zip` opened on its own, before
+    /// the other parts were next to it. A stub written over it would lose
+    /// the only record of what that run extracted and freed.
+    pub fn check_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        match fs::symlink_metadata(stub) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", stub.display())),
+            Ok(_) if is_stub(stub) => Ok(()),
+            Ok(_) => {
+                let last = stub.with_extension("");
+                bail!(
+                    "{} already has an extraction in progress that opened it on its own, and {} \
+                     is its journal. To resume that one, move the other parts of the split ZIP \
+                     out of the folder and open {}; or delete {} if no extraction of it is in \
+                     progress. Nothing was modified",
+                    last.display(),
+                    stub.display(),
+                    last.display(),
+                    stub.display()
+                )
+            }
+        }
+    }
+
+    /// Removes the stub journal, if that is what is at its name: a journal
+    /// of a `.zip` of the same name extracted on its own stays.
+    pub fn remove_stub(&self) -> Result<()> {
+        let Some(stub) = &self.stub else {
+            return Ok(());
+        };
+        if is_stub(stub) {
+            match fs::remove_file(stub) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("removing {}", stub.display()));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub fn exists(&self) -> bool {
@@ -177,7 +301,7 @@ impl Paths {
 
     pub fn remove(&self) -> Result<()> {
         crate::chosen::forget(&self.archive);
-        for p in [&self.tail, &self.journal] {
+        for p in [&self.folders, &self.tail, &self.journal] {
             match fs::remove_file(p) {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => {
                     return Err(e).with_context(|| format!("removing {}", p.display()));
@@ -185,7 +309,9 @@ impl Paths {
                 _ => {}
             }
         }
-        Ok(())
+        // Last: until the journal is gone, an older build must not take the
+        // `.zip` for a whole archive.
+        self.remove_stub()
     }
 }
 
@@ -200,10 +326,25 @@ pub struct Plan {
     pub replace: Option<Replace>,
     pub case_folders: Vec<PathBuf>,
     pub case_beyond_ascii: bool,
+    /// Folder entries with a mode or a time, saved before anything is
+    /// extracted.
+    pub folders: Vec<crate::folders::Folder>,
+    /// The selected entries, if not every one is extracted.
+    pub only: Option<Vec<PathBuf>>,
 }
 
-fn version_for(keep: bool, replace: Option<&Replace>, case_folders: &[PathBuf]) -> u32 {
-    if !case_folders.is_empty() {
+fn version_for(
+    keep: bool,
+    replace: Option<&Replace>,
+    case_folders: &[PathBuf],
+    folders: bool,
+    only: bool,
+) -> u32 {
+    if only {
+        SELECT_VERSION
+    } else if folders {
+        FOLDERS_VERSION
+    } else if !case_folders.is_empty() {
         CASE_VERSION
     } else if replace.is_some_and(Replace::chose) {
         CHOOSE_VERSION
@@ -218,13 +359,25 @@ fn version_for(keep: bool, replace: Option<&Replace>, case_folders: &[PathBuf]) 
 
 impl Journal {
     pub fn create(paths: &Paths, storage: &Storage, plan: Plan) -> Result<Self> {
+        // Before the journal, so no older build ever finds the journal of a
+        // run on a split ZIP without the stub next to its `.zip`.
+        if plan.format == crate::archive::SPLIT_ZIP {
+            paths.write_stub()?;
+        }
         let mut tail = Vec::new();
         let mut r = storage.reader(None);
         r.seek(SeekFrom::Start(plan.tail_start))?;
         r.read_to_end(&mut tail)?;
         fsutil::write_atomic(&paths.tail, &tail)?;
+        let folders = crate::folders::save(&paths.folders, &plan.folders)?;
         let journal = Self {
-            version: version_for(plan.keep, plan.replace.as_ref(), &plan.case_folders),
+            version: version_for(
+                plan.keep,
+                plan.replace.as_ref(),
+                &plan.case_folders,
+                folders.is_some(),
+                plan.only.is_some(),
+            ),
             format: plan.format.to_string(),
             parts: storage.record(),
             tail_start: plan.tail_start,
@@ -240,9 +393,25 @@ impl Journal {
             replace: plan.replace,
             case_folders: plan.case_folders,
             case_beyond_ascii: plan.case_beyond_ascii,
+            folders,
+            folders_left: false,
+            only: plan.only,
         };
         journal.save(paths)?;
         Ok(journal)
+    }
+
+    /// For a resume, before it changes anything: the list is read at the very
+    /// end, and a resume past a missing or damaged one would free the rest of
+    /// the archive and only then fail. Nothing else needs the list, so a lost
+    /// one stops neither a look at the archive nor a restore.
+    pub fn check_folders(&self, paths: &Paths) -> Result<()> {
+        if let Some(saved) = self.folders {
+            crate::folders::load(&paths.folders, saved).map_err(|e| {
+                anyhow!("{e:#}. Put it back, or run `hatchzip restore` to give the archive back.")
+            })?;
+        }
+        Ok(())
     }
 
     pub fn load(paths: &Paths) -> Result<(Self, Arc<Tail>)> {
@@ -257,6 +426,16 @@ impl Journal {
         let version = serde_json::from_slice::<Versioned>(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?
             .version;
+        if version == STUB_VERSION {
+            bail!(
+                "{} marks {} as the last part of a split ZIP being extracted from its .z01 part. \
+                 Open the .z01 part to continue that extraction, or delete {} if no extraction \
+                 of it is in progress. Nothing was modified",
+                paths.journal.display(),
+                paths.archive.display(),
+                paths.journal.display()
+            );
+        }
         if !READABLE.contains(&version) {
             let which = if version > VERSION {
                 "a newer"
@@ -271,13 +450,31 @@ impl Journal {
         }
         let mut journal: Self = serde_json::from_slice(&bytes)
             .with_context(|| format!("{} is damaged", paths.journal.display()))?;
-        // Names that differ only in case take the version over from all the
-        // others, so at that version it says nothing about the rest.
+        // Versions 7, 8 and 9 are written whatever else the run does, so
+        // they say nothing about keeping or replacing. Only 8 and 9 may have
+        // folders, only 9 a selection, which always keeps the archive, and
+        // only those three may have case folders, which 7 is there for.
         let case = version == CASE_VERSION;
+        let folders = version == FOLDERS_VERSION;
+        let selects = version == SELECT_VERSION;
+        let later = folders || selects;
         let replaces = version == REPLACE_VERSION || version == CHOOSE_VERSION;
-        if journal.case_folders.is_empty() == case
-            || (journal.case_beyond_ascii && !case)
+        if (!selects && journal.folders.is_some() != folders)
+            || (journal.folders_left && journal.folders.is_none())
+            || journal.only.is_some() != selects
+            || (selects && !journal.keep)
+            || journal.only.as_ref().is_some_and(|o| {
+                o.is_empty()
+                    || !o.iter().all(|p| {
+                        p.components().next().is_some()
+                            && p.components().all(|c| matches!(c, Component::Normal(_)))
+                    })
+            })
+            || (case && journal.case_folders.is_empty())
+            || (!case && !later && !journal.case_folders.is_empty())
+            || (journal.case_beyond_ascii && journal.case_folders.is_empty())
             || (!case
+                && !later
                 && (journal.replace.is_some() != replaces
                     || journal.replace.as_ref().is_some_and(Replace::chose)
                         != (version == CHOOSE_VERSION)
@@ -305,6 +502,8 @@ impl Journal {
             journal.keep,
             journal.replace.as_ref(),
             &journal.case_folders,
+            journal.folders.is_some(),
+            journal.only.is_some(),
         );
         journal.check_bound(paths)?;
         let tail =
@@ -333,21 +532,36 @@ impl Journal {
     /// is checked by [`crate::session::check_output`].
     fn check_bound(&self, paths: &Paths) -> Result<()> {
         let foreign = || {
+            let files = match self.folders {
+                Some(_) => format!(
+                    "{}, {} and {}",
+                    paths.journal.display(),
+                    paths.tail.display(),
+                    paths.folders.display()
+                ),
+                None => format!("{} and {}", paths.journal.display(), paths.tail.display()),
+            };
             anyhow!(
                 "{} does not belong to {}, so it was not used and nothing was modified. If the \
                  archive was moved during an extraction, move it back to resume; otherwise \
-                 delete {} and {}",
+                 delete {files}",
                 paths.journal.display(),
                 paths.archive.display(),
-                paths.journal.display(),
-                paths.tail.display()
             )
         };
         if self.parts.is_empty() {
             return Err(foreign());
         }
+        // A split ZIP's parts are read only through its own index; read as
+        // one file, its offsets would point at the wrong bytes.
+        let split = self.format == crate::archive::SPLIT_ZIP;
+        if split != (storage::is_split_zip(&paths.archive) && self.parts.len() > 1) {
+            return Err(foreign());
+        }
+        let count = self.parts.len();
         for (i, (part, _)) in self.parts.iter().enumerate() {
-            if !storage::volume_path(&paths.archive, i).is_some_and(|v| fsutil::same_path(&v, part))
+            if !storage::volume_path_in(&paths.archive, i, count)
+                .is_some_and(|v| fsutil::same_path(&v, part))
             {
                 return Err(foreign());
             }
@@ -406,6 +620,37 @@ mod tests {
         );
         fs::write(&paths.journal, json).unwrap();
         paths
+    }
+
+    /// The stub of a split ZIP's extraction never goes over the journal of
+    /// its `.zip` extracted on its own; a stub an earlier run left is
+    /// written over, and only a stub is removed.
+    #[test]
+    fn a_stub_never_replaces_a_journal() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-stub-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let lone = write(&dir, 3);
+        let before = fs::read(&lone.journal).unwrap();
+        let split = Paths::for_archive(&dir.join("game.z01"));
+        assert_eq!(split.stub.as_deref(), Some(lone.journal.as_path()));
+
+        let err = split.write_stub().unwrap_err().to_string();
+        assert!(
+            err.contains("already has an extraction in progress"),
+            "{err}"
+        );
+        assert!(split.check_stub().is_err());
+        split.remove_stub().unwrap();
+        assert_eq!(fs::read(&lone.journal).unwrap(), before);
+
+        fs::remove_file(&lone.journal).unwrap();
+        split.write_stub().unwrap();
+        split.check_stub().unwrap();
+        split.write_stub().unwrap();
+        split.remove_stub().unwrap();
+        assert!(!lone.journal.exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Only an extraction that keeps the archive writes version 4, so older
@@ -518,6 +763,97 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Saved folders make a journal version 8 whatever else the run does, and
+    /// no other journal may claim them.
+    #[test]
+    fn saved_folders_are_version_8_and_only_that_is() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-folders-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let list = [crate::folders::Folder {
+            path: PathBuf::from("docs"),
+            mode: Some(0o750),
+            mtime: None,
+        }];
+        let saved = crate::folders::save(&dir.join("game.zip.hatchzip-folders"), &list)
+            .unwrap()
+            .unwrap();
+        let folders = &format!(
+            r#","folders":{{"count":{},"crc":{}}}"#,
+            saved.count, saved.crc
+        );
+        let (journal, _) = Journal::load(&write_with(&dir, 8, folders)).unwrap();
+        assert_eq!(journal.version, FOLDERS_VERSION);
+        let kept = format!(r#","keep":true,"replace":{{"moved":true,"keep":["a.txt"]}}{folders}"#);
+        let (journal, _) = Journal::load(&write_with(&dir, 8, &kept)).unwrap();
+        assert!(journal.keep && journal.replace.as_ref().is_some_and(Replace::chose));
+        assert_eq!(journal.version, FOLDERS_VERSION);
+
+        // A run can have both names that differ only in case and folders.
+        let both = format!(r#","case_folders":["a"],"case_beyond_ascii":true{folders}"#);
+        let (journal, _) = Journal::load(&write_with(&dir, 8, &both)).unwrap();
+        assert_eq!(journal.case_folders, [PathBuf::from("a")]);
+        assert!(journal.case_beyond_ascii && journal.folders.is_some());
+        assert_eq!(journal.version, FOLDERS_VERSION);
+
+        assert!(Journal::load(&write_with(&dir, 8, "")).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, folders)).is_err());
+        assert!(Journal::load(&write_with(&dir, 7, folders)).is_err());
+        let both = format!(r#","case_folders":["a"]{folders}"#);
+        assert!(Journal::load(&write_with(&dir, 7, &both)).is_err());
+        let ascii = format!(r#","case_beyond_ascii":true{folders}"#);
+        assert!(Journal::load(&write_with(&dir, 8, &ascii)).is_err());
+        let outside = format!(r#","case_folders":["../a"]{folders}"#);
+        assert!(Journal::load(&write_with(&dir, 8, &outside)).is_err());
+        assert!(Journal::load(&write_with(&dir, 3, r#","folders_left":true"#)).is_err());
+
+        // A resume checks the list up front, not when it is read at the very
+        // end, and only a resume does.
+        fs::write(dir.join("game.zip.hatchzip-folders"), b"[]").unwrap();
+        let paths = write_with(&dir, 8, folders);
+        let (journal, _) = Journal::load(&paths).unwrap();
+        assert!(journal.check_folders(&paths).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A selection makes a journal version 9 whatever else the run does,
+    /// always with the archive kept, and no other journal may hold one.
+    #[test]
+    fn a_selection_is_version_9_and_only_that_is() {
+        let dir =
+            std::env::temp_dir().join(format!("hatchzip-journal-only-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let only = r#","keep":true,"only":["docs","bin/tool"]"#;
+        let (journal, _) = Journal::load(&write_with(&dir, 9, only)).unwrap();
+        assert_eq!(
+            journal.only,
+            Some(vec![PathBuf::from("docs"), PathBuf::from("bin/tool")])
+        );
+        assert_eq!(journal.version, SELECT_VERSION);
+        let saved = serde_json::to_string(&journal).unwrap();
+        assert!(saved.contains(r#""version":9"#), "{saved}");
+        // Alongside anything else a run records.
+        let more = r#","keep":true,"only":["a"],"case_folders":["a"],"replace":{"moved":true}"#;
+        let (journal, _) = Journal::load(&write_with(&dir, 9, more)).unwrap();
+        assert_eq!(journal.version, SELECT_VERSION);
+
+        // Older builds would resume it whole; a selection that removes the
+        // archive, or that leaves the output folder, was never written.
+        assert!(Journal::load(&write_with(&dir, 4, only)).is_err());
+        assert!(Journal::load(&write_with(&dir, 8, only)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","keep":true"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","only":["a"]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","keep":true,"only":[]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","keep":true,"only":["../a"]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","keep":true,"only":["/a"]"#)).is_err());
+        assert!(Journal::load(&write_with(&dir, 9, r#","keep":true,"only":[""]"#)).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A run started by the previous release resumes; one started by a
     /// release that knows more is refused before anything is touched.
     #[test]
@@ -529,7 +865,9 @@ mod tests {
         assert_eq!(journal.resume, None);
         assert_eq!(journal.version, VERSION);
 
-        let err = Journal::load(&write(&dir, CASE_VERSION + 1)).err().unwrap();
+        let err = Journal::load(&write(&dir, SELECT_VERSION + 1))
+            .err()
+            .unwrap();
         assert!(format!("{err:#}").contains("newer HatchZip"), "{err:#}");
         let err = Journal::load(&write(&dir, 1)).err().unwrap();
         assert!(format!("{err:#}").contains("older HatchZip"), "{err:#}");

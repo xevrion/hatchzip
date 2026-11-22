@@ -20,8 +20,8 @@ use hatchzip_gui::args::{TaskArgs, TaskKind};
 use hatchzip_gui::backend::Drops;
 use hatchzip_gui::settings::Settings;
 use hatchzip_gui::{
-    EntryRow, MainWindow, Palette, Phase, PlanView, Screen, TaskView, TaskWindow, main_window,
-    task_window,
+    EntryRow, MainWindow, Mode, Palette, Phase, PlanView, Screen, TaskView, TaskWindow,
+    main_window, task_window,
 };
 use i_slint_backend_testing::{ElementHandle, TestingBackend, TestingBackendOptions};
 use slint::language::ColorScheme;
@@ -126,7 +126,7 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         let ui = w.unwrap();
         ui.get_screen() == Screen::Opened && ui.get_plan().ready
     });
-    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().verdict);
+    assert!(ui.get_plan().fits, "{:?}", ui.get_plan().refusal);
     assert!(
         ui.get_summary().contains("35 entries"),
         "{}",
@@ -148,6 +148,13 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .map(|r| r.path.to_string())
             .collect::<Vec<_>>(),
         ["Northwind"]
+    );
+    ui.window().dispatch_event(WindowEvent::KeyPressed {
+        text: Key::LeftArrow.into(),
+    });
+    assert_eq!(
+        inside_window(&ui, "Northwind").accessible_item_selected(),
+        Some(true)
     );
     ui.window().dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
@@ -228,12 +235,34 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .any(|r| r.path == "Northwind/bin/northwind")
     );
     shot(ui.window(), &format!("{tag}-2-tree-expanded"));
+    let key = |key: Key| {
+        window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    };
+    let selected = |path: &str| {
+        assert_eq!(
+            inside_window(&ui, path).accessible_item_selected(),
+            Some(true),
+            "selection should be on {path}"
+        );
+    };
+    selected("Northwind/bin");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin/northwind");
+    key(Key::LeftArrow);
+    selected("Northwind/bin");
+    assert_eq!(folder.accessible_expanded(), Some(true));
+    key(Key::LeftArrow);
+    assert_eq!(folder.accessible_expanded(), Some(false));
+    key(Key::LeftArrow);
+    selected("Northwind");
+    key(Key::RightArrow);
+    selected("Northwind/bin");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::DownArrow.into(),
     });
-    window.dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    selected("Northwind/data");
     window.dispatch_event(WindowEvent::KeyPressed {
         text: Key::RightArrow.into(),
     });
@@ -242,23 +271,30 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
             .iter()
             .any(|r| r.path == "Northwind/data/level29.pak")
     );
+    selected("Northwind/data");
+    key(Key::RightArrow);
+    selected("Northwind/data/level00.pak");
     for _ in 0..29 {
         window.dispatch_event(WindowEvent::KeyPressed {
             text: Key::DownArrow.into(),
         });
     }
+    selected("Northwind/data/level29.pak");
     shot(ui.window(), &format!("{tag}-2-tree-scrolled"));
+    key(Key::LeftArrow);
+    selected("Northwind/data");
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_expanded(),
+        Some(true)
+    );
 
     // Asking to keep 100 TB free makes it not fit, and says by how much.
     ui.set_keep_free("100000".into());
     ui.invoke_keep_free_edited("100000".into());
     let w = ui.as_weak();
     wait_until("the plan to say no", move || !w.unwrap().get_plan().fits);
-    assert!(
-        ui.get_plan()
-            .verdict
-            .starts_with("Insufficient disk space. ")
-    );
+    assert!(!ui.get_plan().fits);
+    assert!(!ui.get_plan().short.is_empty());
     shot(ui.window(), &format!("{tag}-3-no-fit"));
 
     ui.invoke_keep_free_edited("not a number".into());
@@ -273,19 +309,21 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         Settings::load_from(&settings_file).keep_free == 0
     });
 
-    ui.invoke_test();
+    ui.window().set_size(LogicalSize::new(640.0, 440.0));
+    click_control(&ui, "Test");
     let w = ui.as_weak();
     wait_until("the test", move || {
         w.unwrap().get_task().phase == Phase::Done
     });
     assert!(ui.get_task().message == "Test passed: 35 entries verified.");
+    inside_window(&ui, "Back");
     shot(ui.window(), &format!("{tag}-4-tested"));
     ui.invoke_back();
     assert_eq!(ui.get_task().phase, Phase::Idle);
 
     ui.set_verify_first(true);
     ui.invoke_verify_first_toggled();
-    ui.invoke_extract();
+    click_control(&ui, "Extract");
     let w = ui.as_weak();
     wait_until("the extraction", move || {
         w.unwrap().get_task().phase == Phase::Done
@@ -305,6 +343,8 @@ fn main_window_flow(scheme: ColorScheme, tag: &str) {
         ui.get_task().detail,
         format!("Destination: {}", out.display())
     );
+    inside_window(&ui, "Open folder");
+    inside_window(&ui, "Open another archive…");
     shot(ui.window(), &format!("{tag}-5-done"));
 
     ui.invoke_about();
@@ -467,9 +507,9 @@ fn keep_flow(scheme: ColorScheme, tag: &str) {
         w.unwrap().get_plan().keep_archive
     });
     let plan = ui.get_plan();
-    assert!(plan.fits, "{}", plan.verdict);
+    assert!(plan.fits, "{}", plan.refusal);
     assert_eq!(plan.needed, plan.normal, "keeping needs every file");
-    assert_eq!(plan.verdict, "Sufficient disk space");
+    assert!(plan.short.is_empty());
     shot(ui.window(), &format!("{tag}-17-keep-opened"));
     wait_until("the choice to be saved", move || {
         Settings::load_from(&settings_file).keep_archive
@@ -491,6 +531,118 @@ fn keep_flow(scheme: ColorScheme, tag: &str) {
     );
     assert!(!session::locate(&archive).unwrap().1.exists());
     shot(ui.window(), &format!("{tag}-18-keep-done"));
+    ui.hide().unwrap();
+}
+
+/// Two rows chosen in the tree, one with a click and one with Space,
+/// extract through "Extract selected…" into the folder picked, and only
+/// those, while the archive stays as it was although "Remove the archive
+/// during extraction" is on.
+fn selection_flow(scheme: ColorScheme, tag: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = make_zip(dir.path());
+    let before = std::fs::read(&archive).unwrap();
+    let drops = Drops::default();
+    let ui = main_window::build(
+        Some(archive.clone()),
+        &drops,
+        Settings {
+            keep_free: 0,
+            ..Settings::default()
+        },
+        None,
+    )
+    .unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.window().set_size(LogicalSize::new(980.0, 660.0));
+    let w = ui.as_weak();
+    wait_until("the archive to open", move || {
+        let ui = w.unwrap();
+        ui.get_screen() == Screen::Opened && ui.get_plan().ready
+    });
+    assert!(ui.get_remove_archive());
+    assert_eq!(ui.get_selection_count(), 0);
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Extract selected…")
+            .next()
+            .is_none(),
+        "nothing chosen, nothing to offer"
+    );
+
+    // The single root opens by itself: Northwind, bin, data, README.txt.
+    // A plain click only moves the cursor; Space chooses the row under it.
+    click_control(&ui, "Northwind/README.txt");
+    assert_eq!(ui.get_selection_count(), 0, "a plain click chooses nothing");
+    let key = |key: Key| {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    };
+    let chosen = |path: &str| inside_window(&ui, path).accessible_checked();
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 1);
+    key(Key::UpArrow);
+    key(Key::Space);
+    assert_eq!(chosen("Northwind/data"), Some(true));
+    key(Key::Space);
+    assert_eq!(
+        chosen("Northwind/data"),
+        Some(false),
+        "Space again takes the row out, although the cursor is on it"
+    );
+    assert_eq!(
+        inside_window(&ui, "Northwind/data").accessible_item_selected(),
+        Some(true),
+        "the cursor is the selected item"
+    );
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 2);
+    for path in ["Northwind/README.txt", "Northwind/data"] {
+        assert_eq!(chosen(path), Some(true), "{path} is chosen");
+    }
+    assert_eq!(chosen("Northwind/bin"), Some(false));
+    // Extract still removes the archive, and the footer still says so.
+    let removed = "The archive is removed progressively during extraction. An interrupted \
+                   extraction can be resumed. 2 items selected. Extracting the selection keeps \
+                   the archive unchanged.";
+    inside_window(&ui, removed);
+    key(Key::Escape);
+    assert_eq!(ui.get_selection_count(), 0, "Escape empties the selection");
+    assert_eq!(chosen("Northwind/README.txt"), Some(false));
+    key(Key::Space);
+    key(Key::DownArrow);
+    key(Key::Space);
+    assert_eq!(ui.get_selection_count(), 2);
+    inside_window(&ui, "Extract selected…");
+    // With rows chosen the main button says it still takes everything.
+    inside_window(&ui, "Extract all");
+    shot(ui.window(), &format!("{tag}-21-selection"));
+
+    let picked = dir.path().join("picked");
+    let answer = picked.clone();
+    main_window::answer_folder_picker(move || Some(answer.clone()));
+    ui.invoke_extract_selected();
+    let w = ui.as_weak();
+    wait_until("the extraction of the selection", move || {
+        w.unwrap().get_task().phase == Phase::Done
+    });
+    assert_eq!(
+        ui.get_task().message,
+        "The selected entries were extracted. The archive was kept."
+    );
+    assert_eq!(std::fs::read(&archive).unwrap(), before);
+    assert_eq!(
+        std::fs::read(picked.join("Northwind/README.txt")).unwrap(),
+        b"Northwind demo build.\n"
+    );
+    for i in 0..30u8 {
+        assert_eq!(
+            std::fs::read(picked.join(format!("Northwind/data/level{i:02}.pak"))).unwrap(),
+            vec![i; 40_000 + usize::from(i) * 1000]
+        );
+    }
+    assert!(!picked.join("Northwind/bin").exists(), "bin was not chosen");
+    assert!(!session::locate(&archive).unwrap().1.exists());
+    shot(ui.window(), &format!("{tag}-22-selection-done"));
     ui.hide().unwrap();
 }
 
@@ -794,7 +946,8 @@ fn give_back_flow(scheme: ColorScheme, tag: &str) {
     // exists, so the archive is half extracted.
     let (primary, paths) = session::locate(&archive).unwrap();
     let reads = Default::default();
-    let State::Fresh(job, out) = session::open(&primary, &paths, None, true, None, &reads).unwrap()
+    let State::Fresh(job, out) =
+        session::open(&primary, &paths, None, None, true, None, &reads).unwrap()
     else {
         panic!("a new archive opens fresh");
     };
@@ -909,19 +1062,106 @@ fn task_window_states(scheme: ColorScheme, tag: &str) {
         free: "21.3 GB".into(),
         needed: "30.4 GB".into(),
         keep: "2.0 GB".into(),
-        note: "Most of this is one solid block, which can only be freed once all of it is out. \
-               Archives packed with smaller blocks need far less."
-            .into(),
+        short: "11.1 GB".into(),
+        note_solid: true,
         ..Default::default()
     });
     ui.set_task(TaskView {
         phase: Phase::NoSpace,
         heading: "Insufficient disk space".into(),
         can_retry: true,
-        message: "Insufficient disk space. 11.1 GB more is required.".into(),
         ..base
     });
     shot(ui.window(), &format!("{tag}-10-task-no-space"));
+    ui.hide().unwrap();
+}
+
+/// Clicks the control whose accessible label is `label`, after checking it
+/// sits entirely inside the window.
+fn click_labelled(ui: &TaskWindow, label: &str) {
+    let _ = ui.window().take_snapshot().unwrap();
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .next()
+        .unwrap_or_else(|| panic!("missing control: {label}"));
+    let p = element.absolute_position();
+    let s = element.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "{label}: position {p:?}, size {s:?}, window {window:?}"
+    );
+    let at = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position: at });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+}
+
+/// When the reserve is the only thing in the way, the window offers the
+/// largest one that still fits, and the button runs the extraction with it.
+fn reserve_offer_flow(scheme: ColorScheme, tag: &str) {
+    let ui = TaskWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.window().set_size(LogicalSize::new(480.0, 270.0));
+    let clicked = Rc::new(Cell::new(false));
+    let flag = clicked.clone();
+    ui.on_lower_reserve(move || flag.set(true));
+    let base = TaskView {
+        phase: Phase::NoSpace,
+        heading: "Insufficient disk space".into(),
+        message: "Insufficient disk space. 1.4 GB more is required.".into(),
+        can_retry: true,
+        ..Default::default()
+    };
+    ui.set_plan(PlanView {
+        ready: true,
+        free: "1.4 GB".into(),
+        needed: "842.5 MB".into(),
+        keep: "2.0 GB".into(),
+        left: "557.5 MB".into(),
+        ..Default::default()
+    });
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        ..base.clone()
+    });
+    ui.show().unwrap();
+    shot(ui.window(), &format!("{tag}-15-task-lower-reserve"));
+    click_labelled(&ui, "Extract with 500.0 MB reserved");
+    assert!(clicked.get(), "the offer must run the extraction");
+    // Without an offer the button is not there at all.
+    ui.set_task(base);
+    let _ = ui.window().take_snapshot().unwrap();
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Extract with 500.0 MB reserved")
+            .next()
+            .is_none()
+    );
+
+    // The offer speaks the language the rest of the window does.
+    slint::select_bundled_translation("es").unwrap();
+    ui.set_task(TaskView {
+        lower_reserve: true,
+        reserve_amount: "500.0 MB".into(),
+        heading: "Espacio en disco insuficiente".into(),
+        phase: Phase::NoSpace,
+        ..Default::default()
+    });
+    clicked.set(false);
+    shot(ui.window(), &format!("{tag}-16-task-lower-reserve-es"));
+    click_labelled(&ui, "Extraer con 500.0 MB reservados");
+    assert!(clicked.get(), "the translated offer must run it too");
+    slint::select_bundled_translation("en").unwrap();
     ui.hide().unwrap();
 }
 
@@ -932,9 +1172,10 @@ fn tree_accessibility_edges(scheme: ColorScheme) {
     ui.show().unwrap();
     // Realize the empty list before sending a key to its FocusScope.
     let _ = ui.window().take_snapshot().unwrap();
-    ui.window().dispatch_event(WindowEvent::KeyPressed {
-        text: Key::DownArrow.into(),
-    });
+    for key in [Key::LeftArrow, Key::RightArrow, Key::DownArrow] {
+        ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+    }
     assert_eq!(ui.get_entries().row_count(), 0);
     ui.set_entries(
         Rc::new(slint::VecModel::from(vec![
@@ -977,13 +1218,203 @@ fn tree_accessibility_edges(scheme: ColorScheme) {
     ui.hide().unwrap();
 }
 
+fn inside_window(ui: &MainWindow, label: &str) -> ElementHandle {
+    let _ = ui.window().take_snapshot().unwrap();
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .next()
+        .unwrap_or_else(|| panic!("missing control: {label}"));
+    let p = element.absolute_position();
+    let s = element.size();
+    let window = ui.window().size().to_logical(ui.window().scale_factor());
+    assert!(
+        s.width > 0.0
+            && s.height > 0.0
+            && p.x >= 0.0
+            && p.y >= 0.0
+            && p.x + s.width <= window.width + 0.5
+            && p.y + s.height <= window.height + 0.5,
+        "{label}: position {p:?}, size {s:?}, window {window:?}"
+    );
+    element
+}
+
+fn click_control(ui: &MainWindow, label: &str) {
+    let button = inside_window(ui, label);
+    let p = button.absolute_position();
+    let s = button.size();
+    let position = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position,
+        button: PointerEventButton::Left,
+    });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position,
+        button: PointerEventButton::Left,
+    });
+}
+
+fn scroll_plan(ui: &MainWindow, pane: &ElementHandle, delta: f32) {
+    let p = pane.absolute_position();
+    let s = pane.size();
+    ui.window().dispatch_event(WindowEvent::PointerMoved {
+        position: slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0),
+    });
+    pane.scroll(0.0, delta);
+    let _ = ui.window().take_snapshot().unwrap();
+}
+
+fn minimum_layout_flow(scheme: ColorScheme, tag: &str) {
+    let ui = MainWindow::new().unwrap();
+    ui.global::<Palette>().set_color_scheme(scheme);
+    ui.set_screen(Screen::Opened);
+    ui.set_archive_name("sample.zip".into());
+    ui.set_output("C:/Games/Northwind/destination".into());
+    let plan = PlanView {
+        ready: true,
+        fits: true,
+        free: "40 GB".into(),
+        in_place: "2 GB".into(),
+        normal: "8 GB".into(),
+        keep: "2 GB".into(),
+        after: "38 GB".into(),
+        note_keep: true,
+        ..Default::default()
+    };
+    ui.set_plan(plan.clone());
+    let clicked = Rc::new(Cell::new(false));
+    let tested = clicked.clone();
+    ui.on_test(move || tested.set(true));
+    ui.show().unwrap();
+    for (size, width, height) in [("minimum", 640.0, 440.0), ("normal", 980.0, 660.0)] {
+        ui.window().set_size(LogicalSize::new(width, height));
+        ui.set_task(TaskView::default());
+        ui.set_mode(Mode::Fresh);
+        let blocked = "Insufficient disk space. Free another 3 GB to extract this archive.";
+        ui.set_plan(PlanView {
+            fits: false,
+            free: "1 GB".into(),
+            after: "0 B".into(),
+            refusal: blocked.into(),
+            ..plan.clone()
+        });
+        assert_eq!(
+            inside_window(&ui, "Extract").accessible_enabled(),
+            Some(false)
+        );
+        let pane = ElementHandle::find_by_element_id(&ui, "MainWindow::space-scroll")
+            .next()
+            .unwrap();
+        let verdict = ElementHandle::find_by_accessible_label(&ui, blocked)
+            .next()
+            .expect("the space verdict should be visible without scrolling");
+        let top = verdict.absolute_position().y;
+        let bottom = top + verdict.size().height;
+        let pane_top = pane.absolute_position().y;
+        let pane_bottom = pane_top + pane.size().height;
+        assert!(
+            top >= pane_top - 0.5 && bottom <= pane_bottom + 0.5,
+            "space verdict must be visible without scrolling at {size} size: \
+             verdict {top}..{bottom}, pane {pane_top}..{pane_bottom}"
+        );
+        shot(ui.window(), &format!("{tag}-{size}-blocked"));
+        ui.set_plan(plan.clone());
+        for label in [
+            "Test",
+            "Extract",
+            "Browse…",
+            "Verify archive before extracting",
+            "Remove the archive during extraction",
+        ] {
+            inside_window(&ui, label);
+        }
+        clicked.set(false);
+        click_control(&ui, "Test");
+        assert!(
+            clicked.get(),
+            "the visible Test button must receive a click"
+        );
+        shot(ui.window(), &format!("{tag}-{size}-opened"));
+
+        // A longer plan must stay scrollable without displacing the actions.
+        // The last note is the one to look for: only the visible part of a
+        // scroll view is laid out, and after scrolling to the bottom the
+        // notes above it can be out of view on some platforms.
+        let last_note = "This drive cannot release space inside a file, so the compressed \
+                         archive remains whole until extraction completes.";
+        ui.set_plan(PlanView {
+            note_in_place: "500 MB".into(),
+            note_keep: true,
+            note_solid: true,
+            note_other_drive: true,
+            note_kept_whole: true,
+            ..plan.clone()
+        });
+        inside_window(&ui, "Extract");
+        scroll_plan(&ui, &pane, -10000.0);
+        let note = ElementHandle::find_by_accessible_label(&ui, last_note)
+            .next()
+            .unwrap();
+        shot(ui.window(), &format!("{tag}-{size}-long-plan"));
+        assert!(
+            note.absolute_position().y + note.size().height
+                <= pane.absolute_position().y + pane.size().height + 0.5,
+            "note {:?} {:?}; pane {:?} {:?}",
+            note.absolute_position(),
+            note.size(),
+            pane.absolute_position(),
+            pane.size()
+        );
+        inside_window(&ui, "Test");
+        ui.set_plan(plan.clone());
+        scroll_plan(&ui, &pane, 10000.0);
+        for (mode, labels) in [
+            (Mode::Resume, vec!["Resume extraction", "Restore archive"]),
+            (Mode::Orphan, vec!["Finish"]),
+        ] {
+            ui.set_mode(mode);
+            for label in labels {
+                inside_window(&ui, label);
+            }
+        }
+        ui.set_mode(Mode::Fresh);
+        for (phase, label, can_retry, can_open_folder) in [
+            (Phase::Working, "Pause", false, false),
+            (Phase::Paused, "Resume", false, false),
+            (Phase::Failed, "Retry", true, false),
+            (Phase::NoSpace, "Check again", true, false),
+            (Phase::Done, "Open folder", false, true),
+        ] {
+            ui.set_task(TaskView {
+                phase,
+                can_retry,
+                can_open_folder,
+                heading: "Extraction progress".into(),
+                amounts: "1 GB of 2 GB".into(),
+                rate: "100 MB/s".into(),
+                archive_left: "1 GB remaining".into(),
+                message: "Progress is saved; the extraction can be resumed.".into(),
+                ..Default::default()
+            });
+            inside_window(&ui, label);
+        }
+    }
+    ui.hide().unwrap();
+}
+
 #[test]
 fn windows_end_to_end() {
     let data = tempfile::tempdir().unwrap();
     let linux = std::env::consts::OS == "linux";
     if linux {
         // SAFETY: no other thread exists yet in this one-test binary.
-        unsafe { std::env::set_var("XDG_DATA_HOME", data.path()) };
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", data.path());
+            // The Thunar actions too, never the real user's.
+            std::env::set_var("XDG_CONFIG_HOME", data.path().join("config"));
+            std::env::set_var("XDG_CONFIG_DIRS", data.path().join("system-config"));
+        }
     }
     slint::platform::set_platform(Box::new(TestingBackend::new(TestingBackendOptions {
         mock_time: false,
@@ -991,12 +1422,20 @@ fn windows_end_to_end() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The windows follow the system language, and these flows read English
+    // labels. Slint registers its bundled catalogs with the first component,
+    // so one has to exist before the language can be pinned.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
 
     for (scheme, tag) in [(ColorScheme::Light, "light"), (ColorScheme::Dark, "dark")] {
+        minimum_layout_flow(scheme, tag);
         main_window_flow(scheme, tag);
         tree_accessibility_edges(scheme);
         keep_flow(scheme, tag);
+        selection_flow(scheme, tag);
         task_window_flow(scheme, tag);
+        reserve_offer_flow(scheme, tag);
         replace_flow(scheme, tag);
         keep_task_flow(scheme, tag);
         queue_flow(scheme, tag);

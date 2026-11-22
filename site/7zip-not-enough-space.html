@@ -3,12 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://gateway.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <title>7-Zip not enough space on disk: causes and fixes</title>
 <meta name="description" content="Why 7-Zip says there is not enough space on the disk: drag and drop through the Windows temp folder, the FAT32 4 GiB file limit, or an archive and files that don't fit together. With a measured test.">
 <link rel="canonical" href="https://hatchzip.dev/7zip-not-enough-space.html">
+<link rel="alternate" hreflang="en" href="https://hatchzip.dev/7zip-not-enough-space.html">
+<link rel="alternate" hreflang="zh-Hans" href="https://hatchzip.dev/zh-7zip-not-enough-space.html">
+<link rel="alternate" hreflang="x-default" href="https://hatchzip.dev/7zip-not-enough-space.html">
 <meta property="og:url" content="https://hatchzip.dev/7zip-not-enough-space.html">
 <meta property="og:type" content="article">
 <meta property="og:title" content="7-Zip says there is not enough space on the disk: the causes">
@@ -18,10 +21,10 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="HatchZip: extract huge archives without double the disk space.">
 <meta property="article:published_time" content="2026-10-25">
-<meta property="article:modified_time" content="2026-10-25">
+<meta property="article:modified_time" content="2026-11-12">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"7-Zip says there is not enough space on the disk: the causes","description":"Drag and drop through the temp folder, FAT32's 4 GiB file limit, or an archive and files that don't fit together: how to tell which, and the fix for each.","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-10-25","inLanguage":"en","mainEntityOfPage":"https://hatchzip.dev/7zip-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/"},{"@type":"ListItem","position":2,"name":"7-Zip says there is not enough space on the disk","item":"https://hatchzip.dev/7zip-not-enough-space.html"}]}]}
+{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"7-Zip says there is not enough space on the disk: the causes","description":"Drag and drop through the temp folder, FAT32's 4 GiB file limit, or an archive and files that don't fit together: how to tell which, and the fix for each.","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-12","inLanguage":"en","mainEntityOfPage":"https://hatchzip.dev/7zip-not-enough-space.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/"},{"@type":"ListItem","position":2,"name":"7-Zip says there is not enough space on the disk","item":"https://hatchzip.dev/7zip-not-enough-space.html"}]}]}
 </script>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css?v=6">
@@ -47,6 +50,10 @@
 <li><a href="https://github.com/xevrion/hatchzip">Source code</a></li>
 <li><a href="https://github.com/xevrion/hatchzip/issues">Report a bug</a></li>
 </ul>
+<p class="label">Language</p>
+<ul>
+<li><a href="zh-7zip-not-enough-space.html" lang="zh-Hans" hreflang="zh-Hans">中文</a></li>
+</ul>
 </nav>
 </aside>
 
@@ -62,7 +69,7 @@
 </header>
 <main>
 <p class="answer">If 7-Zip says "There is not enough space on the disk" while the drive you chose has room, check three things. Dragging files from 7-Zip File Manager into Explorer extracts them to the Windows temporary folder first, usually on C:. A FAT32 drive cannot hold a file of 4 GiB or more. And the archive and its files may not fit together.</p>
-<p class="note">By <a href="https://x.com/xevrion_the1">Yash Bavadiya</a>, maker of <a href="https://github.com/xevrion/hatchzip">HatchZip</a>. Updated <time class="nw" datetime="2026-10-25">2026-10-25</time>.</p>
+<p class="note">By <a href="https://x.com/xevrion_the1">Yash Bavadiya</a>, maker of <a href="https://github.com/xevrion/hatchzip">HatchZip</a>. Updated <time class="nw" datetime="2026-11-12">2026-11-12</time>.</p>
 
 <section aria-labelledby="message">
 <h2 id="message">What does "There is not enough space on the disk" mean in 7-Zip?</h2>
@@ -104,7 +111,7 @@
 <li>FAT32. HatchZip cannot write a file of 4 GiB or more to a FAT32 drive either.</li>
 <li>A drive that cannot hold the extracted files themselves.</li>
 <li>Keeping the archive. In-place extraction uses it up.</li>
-<li><code>.tar.xz</code> and <code>.tar.zst</code>, which 7-Zip opens and HatchZip does not read yet.</li>
+<li><code>.tar.zst</code>, which 7-Zip opens and HatchZip does not read yet.</li>
 </ul>
 </section>
 
@@ -135,5 +142,6 @@
 </div>
 </div>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
 </body>
 </html>

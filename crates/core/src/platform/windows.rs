@@ -56,13 +56,74 @@ pub fn open_existing_no_follow(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Opens an existing folder to set its time, failing if `path` is a link, a
+/// junction or anything but a folder. Windows needs backup semantics to open
+/// a folder at all.
+pub fn open_folder_no_follow(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        FILE_WRITE_ATTRIBUTES,
+    };
+    let dir = fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    // Opened this way, a link is the link itself, which is not a folder.
+    if !dir.metadata()?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "it is not a folder",
+        ));
+    }
+    Ok(dir)
+}
+
+/// Windows has no folder mode to lock the owner out of a folder.
+pub fn unlock_folder(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
 /// Why Windows can't create a file or folder with this name, if it can't.
 /// Checked for every entry before the archive is touched, so a name made on
 /// another system fails up front instead of halfway through a run.
 pub fn name_problem(name: &str) -> Option<&'static str> {
+    // Windows also treats the superscript digits as port numbers, and the
+    // console and clock devices are reserved the same way; zip refuses them
+    // too, so a name it refused is never accepted here.
     const RESERVED: &[&str] = &[
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "COM\u{b9}",
+        "COM\u{b2}",
+        "COM\u{b3}",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+        "LPT\u{b9}",
+        "LPT\u{b2}",
+        "LPT\u{b3}",
+        "CONIN$",
+        "CONOUT$",
+        "CLOCK$",
+        "CONFIG$",
     ];
     // `CON.txt` is just as reserved as `CON`.
     let stem = name.split('.').next().unwrap_or(name).trim_end();
@@ -108,6 +169,31 @@ pub fn sync_dir(_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Truncates through `SetEndOfFile`, which makes NTFS free the clusters at
+/// once. Rust's `File::set_len` goes through `SetFileInformationByHandle`
+/// instead, and the freed space stays invisible to free-space queries until
+/// that handle closes.
+pub fn set_len_now(file: &File, len: u64) -> io::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_BEGIN, SetEndOfFile, SetFilePointerEx};
+
+    let mut f = file;
+    let at = f.stream_position()?;
+    let h = f.as_raw_handle() as HANDLE;
+    if unsafe { SetFilePointerEx(h, len as i64, std::ptr::null_mut(), FILE_BEGIN) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { SetEndOfFile(h) } == 0 {
+        let e = io::Error::last_os_error();
+        let _ = f.seek(SeekFrom::Start(at));
+        return Err(e);
+    }
+    f.seek(SeekFrom::Start(at))?;
+    Ok(())
+}
+
 pub fn same_filesystem(a: &Path, b: &Path) -> bool {
     let volume = |p: &Path| {
         fs::canonicalize(p)
@@ -135,9 +221,84 @@ pub fn create_symlink(link: &Path, target: &Path) -> io::Result<()> {
 const ERROR_INVALID_FUNCTION: i32 = 1;
 const ERROR_NOT_SUPPORTED: i32 = 50;
 
-/// The punched range shrinks inwards to this, so NTFS doesn't spend writes
-/// zeroing pieces it can't free anyway.
-const PUNCH_ALIGN: u64 = 64 << 10;
+/// NTFS tracks sparse ranges in units of 16 clusters: 64 KiB with the default
+/// 4 KiB clusters, 1 MiB on volumes formatted with 64 KiB ones. `set zero
+/// data` rounds inwards to the unit, so a range must start and end on one to
+/// free anything, and the overlap has to be the same number: a punch that
+/// started later than the unit it kept would leave that unit allocated until
+/// the commit truncates.
+const PUNCH_UNIT_CLUSTERS: u64 = 16;
+
+/// 64 KiB, the unit with the default clusters, for when the volume can't be
+/// asked.
+const PUNCH_UNIT_FALLBACK: u64 = PUNCH_UNIT_CLUSTERS * 4096;
+
+/// The unit NTFS frees sparse ranges in, on the volume holding `path`.
+fn punch_unit(path: &Path) -> u64 {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetDiskFreeSpaceW, GetVolumePathNameW};
+
+    const MAX_WIDE_PATH: usize = 261;
+
+    // `GetDiskFreeSpaceW` wants the volume's root, and every path inside a
+    // volume names the same volume, including one mounted in a folder.
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut root = [0u16; MAX_WIDE_PATH];
+    let ok = unsafe { GetVolumePathNameW(wide.as_ptr(), root.as_mut_ptr(), MAX_WIDE_PATH as u32) };
+    if ok == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let (mut sectors, mut bytes, mut free, mut total) = (0u32, 0u32, 0u32, 0u32);
+    let ok = unsafe {
+        GetDiskFreeSpaceW(
+            root.as_ptr(),
+            &mut sectors,
+            &mut bytes,
+            &mut free,
+            &mut total,
+        )
+    };
+    let unit = sectors as u64 * bytes as u64 * PUNCH_UNIT_CLUSTERS;
+    // A network stack that answers zeros would round every range away, and
+    // `next_multiple_of` divides by this.
+    if ok == 0 || unit == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    unit
+}
+
+/// The same, for the archive itself: the volume is taken from its handle,
+/// since the caller has no path to give.
+fn punch_unit_of(file: &File) -> u64 {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{GetFinalPathNameByHandleW, VOLUME_NAME_DOS};
+
+    let handle = file.as_raw_handle();
+    let needed =
+        unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, VOLUME_NAME_DOS) };
+    if needed == 0 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let mut buf = vec![0u16; needed as usize];
+    let len = unsafe {
+        GetFinalPathNameByHandleW(handle, buf.as_mut_ptr(), buf.len() as u32, VOLUME_NAME_DOS)
+    };
+    if len == 0 || len >= buf.len() as u32 {
+        return PUNCH_UNIT_FALLBACK;
+    }
+    let name = plain_path(&String::from_utf16_lossy(&buf[..len as usize]));
+    punch_unit(Path::new(&name))
+}
+
+/// A path from `GetFinalPathNameByHandleW` without the verbatim prefix the
+/// volume queries don't take everywhere: `\\?\C:\a` is `C:\a`, and
+/// `\\?\UNC\host\share\a` is `\\host\share\a`.
+fn plain_path(path: &str) -> String {
+    match path.strip_prefix(r"\\?\UNC\") {
+        Some(rest) => format!(r"\\{rest}"),
+        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_string(),
+    }
+}
 
 /// Frees `len` bytes at `offset` without changing the file's length. Returns
 /// `Ok(false)` when the filesystem can't (FAT32, exFAT).
@@ -148,8 +309,9 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
         FILE_ZERO_DATA_INFORMATION, FSCTL_SET_SPARSE, FSCTL_SET_ZERO_DATA,
     };
 
-    let start = offset.next_multiple_of(PUNCH_ALIGN);
-    let end = (offset + len) / PUNCH_ALIGN * PUNCH_ALIGN;
+    let unit = punch_unit_of(file).max(4096);
+    let start = offset.next_multiple_of(unit);
+    let end = (offset + len) / unit * unit;
     if start >= end {
         return Ok(true);
     }
@@ -203,8 +365,15 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
 
 /// NTFS frees sparse ranges in compression units of 16 clusters: 64 KiB with
 /// the default 4 KiB clusters, 1 MiB on volumes formatted with 64 KiB ones.
-pub fn punch_granule(_dir: &Path) -> u64 {
+pub fn punch_margin(_dir: &Path) -> u64 {
     1 << 20
+}
+
+/// Both ends of a punch round inwards to the unit the volume frees in, so the
+/// next punch reaches the start of the unit the last one kept. Where clusters
+/// are 64 KiB that unit is 1 MiB, which only the commit's truncation can free.
+pub fn punch_overlap(dir: &Path) -> u64 {
+    punch_unit(dir).max(4096)
 }
 
 /// Bytes the file really occupies on disk, which for a sparse file is less
@@ -321,3 +490,70 @@ impl RarName {
 #[cfg(feature = "rar")]
 #[link(name = "advapi32")]
 unsafe extern "C" {}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, File};
+    use std::io::Write;
+
+    /// The ZIP fallback for names zip 9.5 reads as drive prefixes relies on
+    /// this list being at least as strict as zip's own Windows check.
+    #[test]
+    fn device_names_are_reserved_as_zip_reserves_them() {
+        for name in [
+            "CON",
+            "nul.txt",
+            "COM1",
+            "com\u{b9}",
+            "LPT\u{b3}.log",
+            "CONIN$",
+            "conout$",
+            "CLOCK$",
+            "CONFIG$",
+        ] {
+            assert!(super::name_problem(name).is_some(), "{name} accepted");
+        }
+        for name in ["COM", "COM10", "console", "CLOCK", "LPT0x"] {
+            assert!(super::name_problem(name).is_none(), "{name} refused");
+        }
+    }
+
+    /// `GetFinalPathNameByHandleW` answers verbatim paths, which the volume
+    /// queries below don't take everywhere.
+    #[test]
+    fn verbatim_paths_lose_their_prefix() {
+        assert_eq!(super::plain_path(r"\\?\C:\a\b"), r"C:\a\b");
+        assert_eq!(
+            super::plain_path(r"\\?\UNC\host\share\a"),
+            r"\\host\share\a"
+        );
+        assert_eq!(super::plain_path(r"C:\a"), r"C:\a");
+        assert_eq!(super::plain_path(r"\\host\share\a"), r"\\host\share\a");
+    }
+
+    /// The archive handle stays open for the whole run, so a truncation has
+    /// to show up in free space before that handle closes. Rust's own
+    /// `File::set_len` only makes NTFS release the clusters on close, which
+    /// made the next batch believe the disk was full (#79).
+    #[test]
+    fn truncating_returns_space_before_the_handle_closes() {
+        let dir = std::env::temp_dir().join(format!("hatchzip-set-len-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("archive.bin");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(&vec![0u8; 32 << 20]).unwrap();
+        file.sync_all().unwrap();
+
+        let before = crate::fsutil::available_space(&dir).unwrap();
+        super::set_len_now(&file, 0).unwrap();
+        let after = crate::fsutil::available_space(&dir).unwrap();
+
+        drop(file);
+        let _ = fs::remove_dir_all(&dir);
+        assert!(
+            after >= before + (16 << 20),
+            "free space stayed at {before} (now {after}) until the handle closed"
+        );
+    }
+}

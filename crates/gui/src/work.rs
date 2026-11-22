@@ -15,6 +15,8 @@ use hatchzip_core::engine::{self, Job, Outcome, Progress, Run};
 use hatchzip_core::journal::{Journal, Paths};
 use hatchzip_core::session::{self, SpacePlan, State};
 
+use crate::settings::Existing;
+
 #[derive(Default)]
 pub struct Counters {
     pub done: AtomicU64,
@@ -53,6 +55,12 @@ pub enum Request {
         /// at its top, in a folder named after it otherwise. `output` is
         /// then unused.
         here: bool,
+        /// Files already where entries go: ask, or answer for all of them
+        /// up front as the command line's `--replace` and `--skip-existing`.
+        existing: Existing,
+        /// Only these entries, and everything inside the folders among them,
+        /// which keeps the archive. `None` extracts every entry.
+        only: Option<Vec<PathBuf>>,
     },
     Test {
         archive: PathBuf,
@@ -75,6 +83,18 @@ impl Request {
         match self {
             Self::Extract { password, .. } | Self::Test { password, .. } => password.as_deref(),
             Self::Restore { .. } => None,
+        }
+    }
+
+    /// Changes how much free space an extraction leaves untouched. Returns
+    /// false for anything else, which has no reserve to lower.
+    pub fn set_keep_free(&mut self, bytes: u64) -> bool {
+        match self {
+            Self::Extract { keep_free, .. } => {
+                *keep_free = bytes;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -117,6 +137,10 @@ pub enum Update {
     Extracted {
         output: PathBuf,
         keep: bool,
+        /// Only the entries chosen when the run started were extracted,
+        /// whichever way it was resumed.
+        selected: bool,
+        warning: Option<String>,
     },
     Tested(usize),
     /// The archive is whole again, holding this many entries; the ones
@@ -137,6 +161,9 @@ pub struct Failure {
     pub message: String,
     /// A journal exists, so running again continues instead of starting over.
     pub resumable: bool,
+    /// The person closed the password or replace prompt before anything
+    /// started. The window has its own translated sentence for this one.
+    pub cancelled: bool,
 }
 
 /// Runs a request to the end, a pause or an error. Errors are reported as an
@@ -157,14 +184,19 @@ pub fn run(
             keep_archive,
             password,
             here,
+            existing,
+            only,
         } => extract(
             archive,
             output.clone(),
             Choices {
                 keep_free: *keep_free,
                 verify_first: *verify_first,
-                keep_archive: *keep_archive,
+                // The entries left out stay in the archive.
+                keep_archive: *keep_archive || only.is_some(),
                 here: *here,
+                existing: *existing,
+                only: only.clone(),
             },
             Secret {
                 password: password.clone(),
@@ -188,17 +220,19 @@ pub fn run(
     if let Err(e) = result {
         let resumable = matches!(request, Request::Extract { .. })
             && session::locate(request.archive()).is_ok_and(|(_, paths)| paths.exists());
-        let message = if e.is::<PasswordNeeded>() || e.is::<WrongPassword>() {
-            // Only reached when the person closed the password prompt.
-            match request {
-                Request::Test { .. } => "Test cancelled. The archive was not modified.",
-                _ => "Extraction cancelled. The archive was not modified.",
-            }
-            .to_string()
+        let cancelled = e.is::<PasswordNeeded>() || e.is::<WrongPassword>();
+        let message = if cancelled {
+            // Only reached when the person closed the password prompt. The
+            // window replaces this with its own translated sentence.
+            String::new()
         } else {
             sentence(&format!("{e:#}"))
         };
-        send(Update::Failed(Failure { message, resumable }));
+        send(Update::Failed(Failure {
+            message,
+            resumable,
+            cancelled,
+        }));
     }
 }
 
@@ -209,10 +243,12 @@ struct Secret<'a> {
 
 /// `session::open_encrypted`, reporting a password the person typed so a
 /// rerun can use it.
+#[allow(clippy::too_many_arguments)]
 fn open(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     secret: Secret,
     counters: &Counters,
@@ -223,6 +259,7 @@ fn open(
         primary,
         paths,
         output,
+        only,
         writable,
         secret.password,
         &counters.reading,
@@ -246,6 +283,8 @@ struct Choices {
     verify_first: bool,
     keep_archive: bool,
     here: bool,
+    existing: Existing,
+    only: Option<Vec<PathBuf>>,
 }
 
 fn extract(
@@ -262,6 +301,8 @@ fn extract(
         verify_first,
         keep_archive,
         here,
+        existing,
+        only,
     } = choices;
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
@@ -273,12 +314,24 @@ fn extract(
     // "Extract here" opens for the folder named after the archive, the safe
     // choice, and moves next to the archive once its contents allow.
     let output = if here { None } else { output };
-    let (job, journal) = match open(&primary, &paths, output, true, secret, counters, send)? {
-        State::Orphan(journal) => {
-            engine::finish_orphaned(&journal, &paths)?;
+    let opened = open(
+        &primary,
+        &paths,
+        output,
+        only.as_deref(),
+        true,
+        secret,
+        counters,
+        send,
+    )?;
+    let (job, journal) = match opened {
+        State::Orphan(mut journal) => {
+            let warning = engine::finish_orphaned(&mut journal, &paths)?;
             send(Update::Extracted {
+                selected: journal.only.is_some(),
                 output: journal.output,
                 keep: journal.keep,
+                warning,
             });
             return Ok(());
         }
@@ -310,10 +363,26 @@ fn extract(
             let choices = if found.is_empty() {
                 None
             } else {
-                let Some(c) = replace(&found, &out, !keep_archive) else {
-                    bail!("extraction cancelled. The archive was not modified");
-                };
-                Some(c)
+                match existing {
+                    Existing::Ask => {
+                        let Some(c) = replace(&found, &out, !keep_archive) else {
+                            // Closing the prompt is how to change one's mind; the
+                            // window has its own translated sentence for it.
+                            send(Update::Failed(Failure {
+                                message: String::new(),
+                                resumable: false,
+                                cancelled: true,
+                            }));
+                            return Ok(());
+                        };
+                        Some(c)
+                    }
+                    Existing::Replace => Some(hatchzip_core::replace::Choices::default()),
+                    Existing::Skip => Some(hatchzip_core::replace::Choices {
+                        keep: found,
+                        both: Vec::new(),
+                    }),
+                }
             };
             let plan = session::plan(&job, &out, false, keep_free, keep_archive)?;
             if !plan.fits {
@@ -342,6 +411,7 @@ fn extract(
 
     let output = journal.output.clone();
     let keep = journal.keep;
+    let selected = journal.only.is_some();
     counters.total.store(journal.total_size, Ordering::Relaxed);
     counters.done.store(
         journal.total_size.saturating_sub(job.remaining_size()),
@@ -373,9 +443,14 @@ fn extract(
         keep_free,
     };
     match run.execute()? {
-        Outcome::Finished => {
+        Outcome::Finished(warning) => {
             counters.archive.store(0, Ordering::Relaxed);
-            send(Update::Extracted { output, keep });
+            send(Update::Extracted {
+                output,
+                keep,
+                selected,
+                warning,
+            });
         }
         Outcome::Paused => send(Update::Paused),
     }
@@ -390,7 +465,7 @@ fn test(
 ) -> Result<()> {
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
-    let job = match open(&primary, &paths, None, false, secret, counters, send)? {
+    let job = match open(&primary, &paths, None, None, false, secret, counters, send)? {
         State::Fresh(job, _) => job,
         _ => bail!(
             "this archive is partially extracted and cannot be tested. Resume or restore it first"
@@ -450,6 +525,31 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn lowering_the_reserve_leaves_other_requests_alone() {
+        let mut extract = Request::Extract {
+            archive: "/games/game.zip".into(),
+            output: None,
+            keep_free: 2_000_000_000,
+            verify_first: false,
+            keep_archive: false,
+            password: None,
+            here: false,
+            existing: Existing::Ask,
+            only: None,
+        };
+        assert!(extract.set_keep_free(500_000_000));
+        match extract {
+            Request::Extract { keep_free, .. } => assert_eq!(keep_free, 500_000_000),
+            _ => panic!("still an extraction"),
+        }
+        let mut test = Request::Test {
+            archive: "/games/game.zip".into(),
+            password: None,
+        };
+        assert!(!test.set_keep_free(0));
+    }
 
     #[test]
     fn cancelled_sfv_does_not_start_extraction() {
@@ -538,6 +638,7 @@ mod tests {
                 ..
             } => format!("restored {entries}, {set_aside} set aside"),
             Update::Restored { kept: true, .. } => "progress discarded".to_string(),
+            Update::Failed(f) if f.cancelled => "failed: cancelled".to_string(),
             Update::Failed(f) => format!("failed: {}", f.message),
         }
     }
@@ -631,6 +732,8 @@ mod tests {
             keep_archive: false,
             password: None,
             here: false,
+            existing: Existing::Ask,
+            only: None,
         }
     }
 
@@ -643,6 +746,8 @@ mod tests {
             keep_archive: true,
             password: None,
             here: false,
+            existing: Existing::Ask,
+            only: None,
         }
     }
 
@@ -770,13 +875,7 @@ mod tests {
         counters.reset();
         let (updates, asked) = collect_replacing(&request, &counters, false);
         assert_eq!(asked, [20]);
-        assert_eq!(
-            updates,
-            [
-                "checking",
-                "failed: Extraction cancelled. The archive was not modified."
-            ]
-        );
+        assert_eq!(updates, ["checking", "failed: cancelled"]);
         assert!(again.exists(), "a refused run leaves the archive alone");
         assert_eq!(
             std::fs::read(dir.path().join("data/file3.bin")).unwrap(),
@@ -793,6 +892,34 @@ mod tests {
             vec![3u8; 10_300]
         );
         assert!(!hatchzip_core::replace::folder(dir.path()).exists());
+    }
+
+    /// "When a file already exists" set to Replace or Skip answers for every
+    /// file without asking, as `--replace` and `--skip-existing` do.
+    #[test]
+    fn existing_files_are_replaced_or_kept_without_asking_when_set() {
+        for existing in [Existing::Replace, Existing::Skip] {
+            let dir = tempfile::tempdir().unwrap();
+            let archive = make_zip(dir.path(), None);
+            let out = dir.path().join("out");
+            std::fs::create_dir_all(out.join("data")).unwrap();
+            std::fs::write(out.join("data/file3.bin"), b"old").unwrap();
+            let mut request = extract(&archive, Some(out.clone()), false);
+            if let Request::Extract { existing: e, .. } = &mut request {
+                *e = existing;
+            }
+            let counters = Arc::new(Counters::default());
+            let (updates, asked) = collect_replacing(&request, &counters, false);
+            assert!(asked.is_empty(), "{existing:?} never asks");
+            assert_eq!(updates, ["checking", "planned", "working", "extracted"]);
+            let kept = std::fs::read(out.join("data/file3.bin")).unwrap();
+            match existing {
+                Existing::Skip => assert_eq!(kept, b"old"),
+                _ => assert_eq!(kept, vec![3u8; 10_300]),
+            }
+            assert!(out.join("data/file19.bin").exists());
+            assert!(!hatchzip_core::replace::folder(&out).exists());
+        }
     }
 
     /// Paused after the files were moved aside, then stopped for good: they
@@ -872,6 +999,8 @@ mod tests {
             keep_archive: false,
             password: None,
             here: false,
+            existing: Existing::Ask,
+            only: None,
         };
         assert_eq!(collect(&request, &counters), ["checking", "no space"]);
         assert!(!session::locate(&archive).unwrap().1.exists());
@@ -911,13 +1040,7 @@ mod tests {
         // Closing the prompt gives up without touching anything.
         let mut request = extract(&archive, Some(dir.path().join("out")), false);
         let (updates, _) = collect_asking(&request, &counters, &[None]);
-        assert_eq!(
-            updates,
-            [
-                "checking",
-                "failed: Extraction cancelled. The archive was not modified."
-            ]
-        );
+        assert_eq!(updates, ["checking", "failed: cancelled"]);
         assert!(archive.exists());
 
         // A remembered password isn't asked for again.

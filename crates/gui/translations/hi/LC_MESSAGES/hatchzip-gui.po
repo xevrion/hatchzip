@@ -31,6 +31,12 @@ msgstr "एक्सट्रैक्शन के दौरान आर्क
 msgid "Close the progress window when extraction completes"
 msgstr "एक्सट्रैक्शन पूरा होने पर प्रगति विंडो बंद करें"
 
+msgid "Language"
+msgstr "भाषा"
+
+msgid "Use the system language"
+msgstr "सिस्टम की भाषा का उपयोग करें"
+
 msgid "Help"
 msgstr "मदद"
 
@@ -39,6 +45,15 @@ msgstr "अपडेट देखें"
 
 msgid "About HatchZip"
 msgstr "HatchZip के बारे में"
+
+msgid "Version {}"
+msgstr "संस्करण {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "बड़े आर्काइव को उसी जगह एक्सट्रैक्ट करता है। एक्सट्रैक्शन के दौरान आर्काइव धीरे-धीरे हटता है, इसलिए केवल एक्सट्रैक्ट की गई फ़ाइलों के लिए जगह चाहिए।"
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "MIT या Apache-2.0 लाइसेंस के तहत उपलब्ध"
 
 msgid "Drop the archive to open it"
 msgstr "आर्काइव खोलने के लिए यहाँ छोड़ें"
@@ -94,11 +109,11 @@ msgstr "एक्सट्रैक्शन फिर शुरू करें
 msgid "Finish"
 msgstr "पूरा करें"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst और विभाजित आर्काइव।"
 
-msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.xz, RAR, and split archives."
-msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.xz, RAR और विभाजित आर्काइव।"
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives."
+msgstr "या आर्काइव को इस विंडो पर खींचें। समर्थित फ़ॉर्मैट: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR और विभाजित आर्काइव।"
 
 msgid "Opening {}…"
 msgstr "{} खोला जा रहा है…"
@@ -237,6 +252,9 @@ msgstr "आरक्षित"
 msgid "Available after extraction"
 msgstr "एक्सट्रैक्शन के बाद उपलब्ध"
 
+msgid "Not enough"
+msgstr "पर्याप्त नहीं"
+
 msgid "Restore complete"
 msgstr "पुनर्स्थापन पूरा हुआ"
 
@@ -365,8 +383,8 @@ msgstr[1] "{} बदली हुई फ़ाइलें {} में बन�
 msgid "link"
 msgstr "लिंक"
 
-msgid "{} Progress is saved; the extraction can be resumed."
-msgstr "{} प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "प्रगति सहेजी गई है; एक्सट्रैक्शन फिर शुरू किया जा सकता है।"
 
 msgid "Folder"
 msgstr "फ़ोल्डर"
@@ -374,5 +392,204 @@ msgstr "फ़ोल्डर"
 msgid "Link"
 msgstr "लिंक"
 
-msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive"
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
 msgstr "{}। आर्काइव को रखते हुए एक्सट्रैक्ट करने के लिए \"एक्सट्रैक्शन के दौरान आर्काइव हटाएँ\" बंद करें।"
+
+msgid "Extract with {} reserved"
+msgstr "{} आरक्षित करके एक्सट्रैक्ट करें"
+
+msgid "Extract without a reserve"
+msgstr "बिना आरक्षित जगह के एक्सट्रैक्ट करें"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "रास्ते में केवल आरक्षित जगह है: {} चाहिए और {} उपलब्ध है, इसलिए {} आरक्षित रखकर इसे चलाया जा सकता है, और पूरा होने पर {} बचेगा।"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "रास्ते में केवल आरक्षित जगह है: {} चाहिए और {} उपलब्ध है, इसलिए इसे बिना आरक्षित जगह के चलाया जा सकता है, और पूरा होने पर {} बचेगा।"
+
+msgid "Sufficient disk space"
+msgstr "पर्याप्त डिस्क जगह"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "डिस्क में पर्याप्त जगह नहीं है। {} और चाहिए।"
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "एक्सट्रैक्शन के दौरान आर्काइव हटाने पर केवल {} चाहिए।"
+
+msgid "There is also enough space to keep the archive."
+msgstr "आर्काइव रखने के लिए भी पर्याप्त जगह है।"
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "ज़रूरी जगह का ज़्यादातर हिस्सा एक ठोस ब्लॉक है, जो पूरी तरह एक्सट्रैक्ट होने के बाद ही खाली हो सकता है।"
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "गंतव्य दूसरी ड्राइव पर है, इसलिए आर्काइव हटाने से वहाँ जगह खाली नहीं होगी।"
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "यह ड्राइव किसी फ़ाइल के अंदर जगह खाली नहीं कर सकती, इसलिए एक्सट्रैक्शन पूरा होने तक संपीड़ित आर्काइव पूरा रहता है।"
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "उपलब्ध: {}। ज़रूरी: {}, और {} आरक्षित।"
+
+msgid "Settings…"
+msgstr "सेटिंग्स…"
+
+msgid "General"
+msgstr "सामान्य"
+
+msgid "Extraction"
+msgstr "एक्सट्रैक्शन"
+
+msgid "Integration"
+msgstr "एकीकरण"
+
+msgid "Advanced"
+msgstr "उन्नत"
+
+msgid "Appearance"
+msgstr "रूप"
+
+msgid "System follows the light or dark setting of the operating system."
+msgstr "सिस्टम चुनने पर ऑपरेटिंग सिस्टम की हल्की या गहरी सेटिंग अपनाई जाती है।"
+
+msgid "System"
+msgstr "सिस्टम"
+
+msgid "Light"
+msgstr "हल्का"
+
+msgid "Dark"
+msgstr "गहरा"
+
+msgid "After extracting"
+msgstr "एक्सट्रैक्ट करने के बाद"
+
+msgid "The destination folder opens in the file manager when an extraction completes."
+msgstr "एक्सट्रैक्शन पूरा होने पर गंतव्य फ़ोल्डर फ़ाइल प्रबंधक में खुलता है।"
+
+msgid "The result is shown in the window and nothing else is opened."
+msgstr "परिणाम विंडो में दिखाया जाता है और कुछ और नहीं खुलता।"
+
+msgid "Do nothing"
+msgstr "कुछ न करें"
+
+msgid "Open the folder"
+msgstr "फ़ोल्डर खोलें"
+
+msgid "Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open."
+msgstr "यह संदर्भ मेन्यू से खुलने वाली विंडो पर लागू होता है। जाँच होने, रोके जाने या विफल होने पर वह खुली रहती है।"
+
+msgid "Every entry is read and checked before anything is extracted or removed, which takes longer."
+msgstr "कुछ भी एक्सट्रैक्ट करने या हटाने से पहले हर प्रविष्टि पढ़ी और जाँची जाती है, जिसमें अधिक समय लगता है।"
+
+msgid "Free space left untouched on the destination drive, so the system and other programs keep room to work."
+msgstr "गंतव्य ड्राइव पर छोड़ी गई खाली जगह, ताकि सिस्टम और दूसरे प्रोग्राम के पास काम करने के लिए जगह रहे।"
+
+msgid "Default destination"
+msgstr "डिफ़ॉल्ट गंतव्य"
+
+msgid "Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive."
+msgstr "हर आर्काइव चुने गए फ़ोल्डर के अंदर अपने नाम वाले फ़ोल्डर में एक्सट्रैक्ट होता है। संदर्भ मेन्यू का \"Extract here\" अब भी आर्काइव के पास ही एक्सट्रैक्ट करता है।"
+
+msgid "Each archive is extracted into a folder named after it, next to the archive."
+msgstr "हर आर्काइव अपने नाम वाले फ़ोल्डर में, आर्काइव के पास ही एक्सट्रैक्ट होता है।"
+
+msgid "Next to the archive"
+msgstr "आर्काइव के पास"
+
+msgid "Always in a folder"
+msgstr "हमेशा एक फ़ोल्डर में"
+
+msgid "No folder chosen"
+msgstr "कोई फ़ोल्डर नहीं चुना गया"
+
+msgid "When a file already exists"
+msgstr "जब फ़ाइल पहले से मौजूद हो"
+
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "मौजूदा फ़ाइलें बदल दी जाती हैं। पुरानी प्रतियाँ एक्सट्रैक्शन पूरा होने तक रखी जाती हैं, फिर हटा दी जाती हैं।"
+
+msgid "Existing files are kept, and the archive's copies of them are not."
+msgstr "मौजूदा फ़ाइलें रखी जाती हैं, और आर्काइव में उनकी प्रतियाँ नहीं रखी जातीं।"
+
+msgid "Each file already in the destination is shown, with the choice to replace it, skip it or keep both."
+msgstr "गंतव्य में पहले से मौजूद हर फ़ाइल दिखाई जाती है, और उसे बदलने, छोड़ने या दोनों रखने का विकल्प मिलता है।"
+
+msgid "Ask"
+msgstr "पूछें"
+
+msgid "Adds HatchZip's extract and test entries to the right-click menu of archives."
+msgstr "आर्काइव के संदर्भ मेन्यू में HatchZip की एक्सट्रैक्ट और जाँच वाली प्रविष्टियाँ जोड़ता है।"
+
+msgid "Settings file"
+msgstr "सेटिंग्स फ़ाइल"
+
+msgid "Settings are saved here as soon as they change."
+msgstr "सेटिंग्स बदलते ही यहाँ सहेज ली जाती हैं।"
+
+msgid "Show in Explorer"
+msgstr "Explorer में दिखाएँ"
+
+msgid "Show in Finder"
+msgstr "Finder में दिखाएँ"
+
+msgid "Show in the file manager"
+msgstr "फ़ाइल प्रबंधक में दिखाएँ"
+
+msgid "Every setting returns to its default, including the language and the appearance."
+msgstr "हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है, भाषा और रूप भी।"
+
+msgid "Reset all settings…"
+msgstr "सभी सेटिंग्स रीसेट करें…"
+
+msgid "Reset all settings?"
+msgstr "सभी सेटिंग्स रीसेट करें?"
+
+msgid "The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed."
+msgstr "भाषा, रूप और एक्सट्रैक्शन की हर सेटिंग अपने डिफ़ॉल्ट पर लौट आती है। संदर्भ मेन्यू नहीं बदला जाता।"
+
+msgid "Reset"
+msgstr "रीसेट करें"
+
+msgid "Select the default destination folder"
+msgstr "डिफ़ॉल्ट गंतव्य फ़ोल्डर चुनें"
+
+msgid "Archive {} of {}"
+msgstr "{1} में से आर्काइव {0}"
+
+msgid "All {} archives completed."
+msgstr "सभी {} आर्काइव पूरे हुए।"
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "{1} में से आर्काइव {0}। 1 और आर्काइव शुरू नहीं हुआ।"
+msgstr[1] "{1} में से आर्काइव {0}। {2} और आर्काइव शुरू नहीं हुए।"
+
+msgid "Required: {}. Available: {}."
+msgstr "ज़रूरी: {}। उपलब्ध: {}।"
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "जाँच रद्द हुई। आर्काइव नहीं बदला गया।"
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "एक्सट्रैक्शन रद्द हुआ। आर्काइव नहीं बदला गया।"
+
+msgid "{} {}"
+msgstr "{} {}"
+
+msgid "{} {}."
+msgstr "{} {}।"
+
+msgid "Extract selected…"
+msgstr "चयनित एक्सट्रैक्ट करें…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "{} आइटम चुना गया। चयन को एक्सट्रैक्ट करने पर आर्काइव अपरिवर्तित रखा जाता है।"
+msgstr[1] "{} आइटम चुने गए। चयन को एक्सट्रैक्ट करने पर आर्काइव अपरिवर्तित रखा जाता है।"
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "चयनित प्रविष्टियाँ एक्सट्रैक्ट हो गईं। आर्काइव रखा गया है।"
+
+msgid "Extract all"
+msgstr "सब एक्सट्रैक्ट करें"

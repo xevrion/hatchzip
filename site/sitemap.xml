@@ -2,7 +2,11 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://hatchzip.dev/</loc>
-    <lastmod>2026-11-05</lastmod>
+    <lastmod>2026-11-20</lastmod>
+  </url>
+  <url>
+    <loc>https://hatchzip.dev/zh.html</loc>
+    <lastmod>2026-11-20</lastmod>
   </url>
   <url>
     <loc>https://hatchzip.dev/verify.html</loc>
@@ -10,7 +14,7 @@
   </url>
   <url>
     <loc>https://hatchzip.dev/sponsor.html</loc>
-    <lastmod>2026-11-02</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>https://hatchzip.dev/code-signing.html</loc>
@@ -18,14 +22,26 @@
   </url>
   <url>
     <loc>https://hatchzip.dev/not-enough-space-to-extract.html</loc>
-    <lastmod>2026-10-25</lastmod>
+    <lastmod>2026-11-20</lastmod>
+  </url>
+  <url>
+    <loc>https://hatchzip.dev/zh-not-enough-space-to-extract.html</loc>
+    <lastmod>2026-11-20</lastmod>
   </url>
   <url>
     <loc>https://hatchzip.dev/winrar-not-enough-space.html</loc>
-    <lastmod>2026-10-25</lastmod>
+    <lastmod>2026-11-20</lastmod>
+  </url>
+  <url>
+    <loc>https://hatchzip.dev/zh-winrar-not-enough-space.html</loc>
+    <lastmod>2026-11-20</lastmod>
   </url>
   <url>
     <loc>https://hatchzip.dev/7zip-not-enough-space.html</loc>
-    <lastmod>2026-10-25</lastmod>
+    <lastmod>2026-11-20</lastmod>
+  </url>
+  <url>
+    <loc>https://hatchzip.dev/zh-7zip-not-enough-space.html</loc>
+    <lastmod>2026-11-20</lastmod>
   </url>
 </urlset>

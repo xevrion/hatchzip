@@ -12,27 +12,37 @@ use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::engine::Job;
 use hatchzip_core::human;
 use hatchzip_core::session::{self, State, display_name};
+use slint::winit_030::WinitWindowAccessor;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, Timer, TimerMode};
 
 use crate::backend::Drops;
 use crate::entries::{self, Entries, EntriesModel};
 use crate::runner::Runner;
-use crate::settings::{self, Settings};
+use crate::settings::{self, AfterExtracting, Appearance, Destination, Settings};
+use crate::settings_window as sw;
 use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
-use crate::{AboutWindow, MainWindow, Mode, PlanView, Screen, TaskView, platform, shell};
+use crate::{
+    AboutWindow, MainWindow, Messages, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView,
+    Theme, locale, platform, shell,
+};
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
 const RELEASES: &str = "https://github.com/xevrion/hatchzip/releases/latest";
 /// What the Open dialog offers. `.r00` is the second volume of an old-style
-/// RAR set; any volume opens the whole set.
+/// RAR set and `.z01` the first part of a split ZIP; any volume opens the
+/// whole set.
 const ARCHIVE_EXTENSIONS: &[&str] = if hatchzip_core::archive::RAR_SUPPORTED {
     &[
-        "zip", "7z", "tar", "gz", "tgz", "xz", "txz", "rar", "r00", "exe", "001",
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "rar",
+        "r00", "z01", "exe", "001",
     ]
 } else {
-    &["zip", "7z", "tar", "gz", "tgz", "xz", "txz", "exe", "001"]
+    &[
+        "zip", "7z", "tar", "gz", "tgz", "bz2", "tbz2", "tbz", "xz", "txz", "zst", "tzst", "exe",
+        "z01", "001",
+    ]
 };
 
 /// The Linux file choosers match a filter case-sensitively, so `GAME.RAR`
@@ -54,6 +64,8 @@ struct Loaded {
     mode: Mode,
     /// Half extracted by a run that keeps the archive.
     kept: bool,
+    /// Half extracted by a run of entries chosen in the tree.
+    selected: bool,
     output: PathBuf,
     job: Option<Job>,
     password: Option<String>,
@@ -68,11 +80,18 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let (state, password) =
-        session::open_encrypted(&primary, &paths, None, false, password, reads, |wrong| {
-            crate::password::ask(&file_name, wrong)
-        })?;
+    let (state, password) = session::open_encrypted(
+        &primary,
+        &paths,
+        None,
+        None,
+        false,
+        password,
+        reads,
+        |wrong| crate::password::ask(&file_name, wrong),
+    )?;
     let mut kept = false;
+    let mut selected = false;
     let (job, mode, output, total, left) = match state {
         State::Fresh(job, out) => {
             let total = job.remaining_size();
@@ -81,6 +100,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         State::Resume(job, journal) => {
             let left = job.remaining_size();
             kept = journal.keep;
+            selected = journal.only.is_some();
             (
                 Some(job),
                 Mode::Resume,
@@ -102,6 +122,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
         entries: Entries::new(job.as_ref().map(entries::collect).unwrap_or_default()),
         mode,
         kept,
+        selected,
         output,
         job,
         password,
@@ -117,6 +138,16 @@ fn plural_count(n: usize) -> i32 {
     i32::try_from(n).unwrap_or(i32::MAX)
 }
 
+/// What the summary line under the archive name is made of, kept so it can
+/// be worded again in another language.
+struct Summary {
+    /// The format, the entry count and the archive's size, when there is
+    /// still an archive to describe.
+    archive: Option<(String, usize, u64)>,
+    left: Option<u64>,
+    total: u64,
+}
+
 struct App {
     ui: slint::Weak<MainWindow>,
     entries: RefCell<Option<Rc<EntriesModel>>>,
@@ -126,14 +157,27 @@ struct App {
     mode: Cell<Mode>,
     /// The half-extracted run being resumed keeps its archive.
     kept_run: Cell<bool>,
+    /// ... and extracts only the entries chosen when it started.
+    selected_run: Cell<bool>,
     output: RefCell<PathBuf>,
+    /// Where a fresh archive goes next to itself, before the default
+    /// destination in Settings applies.
+    next_to: RefCell<PathBuf>,
+    /// The person picked this archive's folder with Browse, so a change of
+    /// the default destination leaves it alone.
+    output_chosen: Cell<bool>,
     keep_free: Cell<u64>,
     /// Shared with the threads that work out the space plan.
     job: RefCell<SharedJob>,
-    /// Bumped by every open and every plan request, so a slow answer to an
-    /// old question never overwrites a newer one.
+    /// Bumped by every open, so a slow load of an old archive never
+    /// overwrites a newer one.
     generation: Cell<u64>,
+    /// Bumped by every open and every plan request. Kept apart from
+    /// `generation` because a setting changed while an archive loads asks
+    /// for a plan, and that must not throw the load away.
+    plan_generation: Cell<u64>,
     about: RefCell<Option<AboutWindow>>,
+    settings_window: RefCell<Option<SettingsWindow>>,
     /// The password that opened the current archive, for this process only.
     password: RefCell<Option<String>>,
     settings: RefCell<Settings>,
@@ -145,10 +189,27 @@ struct App {
     /// The person changed the right-click switch, so the startup check,
     /// which may answer later, must not overwrite it.
     shell_touched: Cell<bool>,
+    summary: RefCell<Option<Summary>>,
+    /// The default destination's folder picker is open.
+    picking: Cell<bool>,
+    /// The folder it returns is still wanted: choosing "Next to the
+    /// archive" or resetting while it is open turns this off.
+    pick_wanted: Cell<bool>,
 }
+
+/// Answers the folder picker of "Extract selected…" in tests.
+type FolderAnswer = Box<dyn Fn() -> Option<PathBuf>>;
 
 thread_local! {
     static APP: RefCell<Option<Rc<App>>> = const { RefCell::new(None) };
+    /// Answers the folder picker of "Extract selected…" instead of a dialog.
+    static PICKED: RefCell<Option<FolderAnswer>> = const { RefCell::new(None) };
+}
+
+/// Makes "Extract selected…" take its folder from `answer` instead of
+/// asking with a dialog, which a test without a display can't answer.
+pub fn answer_folder_picker(answer: impl Fn() -> Option<PathBuf> + 'static) {
+    PICKED.with(|p| *p.borrow_mut() = Some(Box::new(answer)));
 }
 
 /// Runs `f` on the UI thread with the app, from any thread.
@@ -184,135 +245,27 @@ pub fn build(
     settings_file: Option<PathBuf>,
 ) -> Result<MainWindow> {
     let ui = MainWindow::new()?;
+    locale::apply(settings.language.as_deref());
+    locale::style(ui.global::<Theme>());
     ui.set_keep_free(gb_text(settings.keep_free).into());
     ui.set_verify_first(settings.verify_first);
     ui.set_remove_archive(!settings.keep_archive);
-    ui.set_close_when_done(settings.close_when_done);
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
-    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
-        platform::ShellMenuName::Explorer => ui.invoke_shell_explorer(),
-        platform::ShellMenuName::Finder => ui.invoke_shell_finder(),
-        platform::ShellMenuName::Files => ui.invoke_shell_files(),
-    });
+    show_shell_menu_label(&ui);
+    // Left alone when it follows the system, so the style's own binding to
+    // the system's setting stays in place.
+    if settings.appearance != Appearance::System {
+        ui.global::<Palette>()
+            .set_color_scheme(sw::color_scheme(settings.appearance));
+    }
 
     let weak = ui.as_weak();
     let runner = Runner::install(move |task: &Task| {
         if let Some(ui) = weak.upgrade() {
-            let mut view = task.view.clone();
-            view.heading = ui.invoke_task_heading(
-                view.phase,
-                view.is_test,
-                task.is_restoring(),
-                task.name().into(),
-            );
-            view.busy = ui.invoke_checking_space();
-            view.detail = if task.is_restoring() {
-                ui.invoke_restore_detail()
-            } else if view.is_test {
-                ui.invoke_test_detail()
-            } else if let Some(path) = &task.output {
-                ui.invoke_task_destination(path.display().to_string().into())
-            } else {
-                Default::default()
-            };
-            if task.waiting_for_disk() && !view.rate.is_empty() {
-                view.rate = ui.invoke_waiting_disk();
-            }
-            match view.phase {
-                crate::Phase::Pausing => view.message = ui.invoke_pausing_message(),
-                crate::Phase::Verifying if !view.is_test => {
-                    view.message = ui.invoke_verifying_message()
-                }
-                crate::Phase::Paused => view.message = ui.invoke_paused_message(),
-                crate::Phase::Done if !view.is_test && !task.is_restoring() => {
-                    view.message = if task.keeps_archive() {
-                        ui.invoke_extracted_kept()
-                    } else {
-                        ui.invoke_extracted_removed()
-                    };
-                }
-                _ => {}
-            }
-            if let Some(reason) = &task.resumable_failure {
-                view.message = ui.invoke_task_resumable_error(reason.as_str().into());
-            }
-            if let Some((entries, output, kept, aside)) = &task.restore_result {
-                let held =
-                    ui.invoke_restore_held(plural_count(*entries), text::count(*entries).into());
-                let mut message = ui
-                    .invoke_restore_result(*kept, held, output.display().to_string().into())
-                    .to_string();
-                if *aside > 0 {
-                    message.push(' ');
-                    message.push_str(
-                        &ui.invoke_restore_aside(
-                            plural_count(*aside),
-                            text::count(*aside).into(),
-                            hatchzip_core::replace::folder(output)
-                                .display()
-                                .to_string()
-                                .into(),
-                        ),
-                    );
-                }
-                view.message = message.into();
-            }
-            if let Some(count) = task.tested_entries {
-                view.message =
-                    ui.invoke_task_test_result(plural_count(count), text::count(count).into());
-            }
-            if let Some(percent) = task.reading_percent {
-                view.busy = ui.invoke_reading_archive(percent);
-            }
-            if !view.amounts.is_empty()
-                && let Some((done, total)) = task.progress_bytes
-            {
-                view.amounts = ui.invoke_task_amounts(human(done).into(), human(total).into());
-            }
-            if !view.archive_left.is_empty()
-                && let Some(left) = task.remaining_archive_bytes
-            {
-                view.archive_left = ui.invoke_task_archive_left(human(left).into());
-            }
-            if !view.rate.is_empty()
-                && let Some((speed, seconds)) = task.rate_estimate
-            {
-                let duration = match seconds {
-                    0..=4 => ui.invoke_time_short().to_string(),
-                    5..=59 => ui
-                        .invoke_time_seconds(
-                            i32::try_from(seconds).unwrap_or(i32::MAX),
-                            seconds.to_string().into(),
-                        )
-                        .to_string(),
-                    60..=3599 => {
-                        let minutes = seconds.div_ceil(60);
-                        ui.invoke_time_minutes(
-                            i32::try_from(minutes).unwrap_or(i32::MAX),
-                            minutes.to_string().into(),
-                        )
-                        .to_string()
-                    }
-                    _ => {
-                        let hours = seconds / 3600;
-                        let minutes = (seconds % 3600) / 60;
-                        format!(
-                            "{} {}",
-                            ui.invoke_time_hours(
-                                i32::try_from(hours).unwrap_or(i32::MAX),
-                                hours.to_string().into()
-                            ),
-                            ui.invoke_time_minutes(
-                                i32::try_from(minutes).unwrap_or(i32::MAX),
-                                minutes.to_string().into()
-                            )
-                        )
-                    }
-                };
-                view.rate = ui.invoke_task_rate(human(speed).into(), duration.into());
-            }
-            ui.set_task(view);
+            // Through `show_task`: it also keeps File > Open in step with
+            // whether the run is writing.
+            show_task(&ui, text::localize(task, &ui.global::<Messages>()));
         }
     });
     let app = Rc::new(App {
@@ -323,21 +276,38 @@ pub fn build(
         name: RefCell::new(String::new()),
         mode: Cell::new(Mode::Fresh),
         kept_run: Cell::new(false),
+        selected_run: Cell::new(false),
         output: RefCell::new(PathBuf::new()),
+        next_to: RefCell::new(PathBuf::new()),
+        output_chosen: Cell::new(false),
         keep_free: Cell::new(settings.keep_free),
         job: RefCell::default(),
         generation: Cell::new(0),
+        plan_generation: Cell::new(0),
         about: RefCell::new(None),
+        settings_window: RefCell::new(None),
         password: RefCell::new(None),
         settings: RefCell::new(settings),
         settings_file,
         notice_timer: Timer::default(),
         loading_timer: Timer::default(),
         shell_touched: Cell::new(false),
+        summary: RefCell::new(None),
+        picking: Cell::new(false),
+        pick_wanted: Cell::new(false),
     });
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
     wire(&ui, &app);
+    // Read when it happens, so a change in Settings counts for a run
+    // already going.
+    app.runner.when_extracted(|| {
+        with_app(|app| {
+            if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder {
+                app.open_folder();
+            }
+        });
+    });
     crate::password::host_in!(ui);
     crate::replace::host_in!(ui);
     if platform::SHELL_MENU {
@@ -349,6 +319,9 @@ pub fn build(
             post(move |app| {
                 if !app.shell_touched.get() {
                     app.ui().set_shell_menu_on(on);
+                    if let Some(w) = app.settings_window.borrow().as_ref() {
+                        w.set_shell_menu_on(on);
+                    }
                 }
             });
         });
@@ -381,7 +354,35 @@ pub fn about_window() -> Option<AboutWindow> {
     })
 }
 
+/// The Settings window, once it has been opened.
+pub fn settings_window() -> Option<SettingsWindow> {
+    APP.with(|a| {
+        a.borrow().as_ref().and_then(|app| {
+            app.settings_window
+                .borrow()
+                .as_ref()
+                .map(|w| w.clone_strong())
+        })
+    })
+}
+
+/// Runs `f` with the app, for callbacks of windows the app owns, which
+/// would keep it alive forever if they held it.
+fn with_app(f: impl FnOnce(&Rc<App>)) {
+    if let Some(app) = APP.with(|a| a.borrow().clone()) {
+        f(&app);
+    }
+}
+
 fn wire(ui: &MainWindow, app: &Rc<App>) {
+    let a = app.clone();
+    ui.on_navigate_entry(move |row, right| {
+        let entries = a.entries.borrow();
+        match (entries.as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.navigate(index, right) as i32,
+            _ => row,
+        }
+    });
     let a = app.clone();
     ui.on_toggle_entry(move |row, action| {
         if let Some(tree) = a.entries.borrow().as_ref() {
@@ -395,6 +396,21 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
             );
         }
     });
+    let a = app.clone();
+    ui.on_choose_entry(move |row, mode| {
+        let count = match (a.entries.borrow().as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.choose(index, mode),
+            _ => return,
+        };
+        let ui = a.ui();
+        ui.set_selection_count(plural_count(count));
+        ui.set_selection_text(
+            ui.global::<Messages>()
+                .invoke_selection_count(text::count(count).into(), plural_count(count)),
+        );
+    });
+    let a = app.clone();
+    ui.on_extract_selected(move || a.extract_selected());
     let a = app.clone();
     ui.on_open_archive(move || a.pick_archive());
     let a = app.clone();
@@ -423,21 +439,20 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
     let a = app.clone();
     ui.on_verify_first_toggled(move || {
         let on = a.ui().get_verify_first();
-        a.change_settings(|s| s.verify_first = on);
+        a.set_verify_first(on);
     });
     let a = app.clone();
     ui.on_remove_archive_toggled(move || {
         let keep = !a.ui().get_remove_archive();
-        a.change_settings(|s| s.keep_archive = keep);
-        a.refresh_plan();
+        a.set_keep_archive(keep);
     });
     let a = app.clone();
-    ui.on_close_when_done_toggled(move || {
-        let on = a.ui().get_close_when_done();
-        a.change_settings(|s| s.close_when_done = on);
+    ui.on_shell_menu_toggled(move || {
+        let on = a.ui().get_shell_menu_on();
+        a.shell_menu_toggled(on, false);
     });
     let a = app.clone();
-    ui.on_shell_menu_toggled(move || a.shell_menu_toggled());
+    ui.on_open_settings(move || a.show_settings());
     let a = app.clone();
     ui.on_give_back(move || a.give_back());
     let a = app.clone();
@@ -467,16 +482,24 @@ impl App {
         self.generation.get()
     }
 
+    fn next_plan_generation(&self) -> u64 {
+        self.plan_generation.set(self.plan_generation.get() + 1);
+        self.plan_generation.get()
+    }
+
     fn open(&self, path: PathBuf) {
         if self.runner.running() {
             return;
         }
         let ui = self.ui();
         let generation = self.next_generation();
+        self.next_plan_generation();
         *self.runner.task.borrow_mut() = None;
-        ui.set_task(TaskView::default());
+        *self.summary.borrow_mut() = None;
+        show_task(&ui, TaskView::default());
         ui.set_plan(PlanView::default());
         ui.set_entries(ModelRc::default());
+        ui.set_selection_count(0);
         *self.entries.borrow_mut() = None;
         ui.set_archive_name(
             path.file_name()
@@ -497,7 +520,10 @@ impl App {
                     && f < 1.0
                     && start.elapsed() >= Duration::from_millis(500)
                 {
-                    ui.set_loading_detail(ui.invoke_reading_archive((f * 100.0).floor() as i32));
+                    ui.set_loading_detail(
+                        ui.global::<Messages>()
+                            .invoke_reading_archive((f * 100.0).floor() as i32),
+                    );
                 }
             });
         // Opening the same archive again, after a run, needn't ask again.
@@ -512,6 +538,7 @@ impl App {
         };
         *self.archive.borrow_mut() = Some(path.clone());
         *self.job.borrow_mut() = SharedJob::default();
+        self.output_chosen.set(false);
 
         std::thread::spawn(move || {
             let result = load(&path, password, &reads);
@@ -535,44 +562,106 @@ impl App {
             }
         };
         ui.set_archive_name(loaded.name.as_str().into());
-        let mut summary = Vec::new();
-        if let Some(job) = &loaded.job {
-            summary.push(
-                ui.invoke_archive_kind(job.format_name.to_uppercase().into())
-                    .to_string(),
-            );
-            let count = job.item_count();
-            let entries = ui.invoke_entry_count(text::count(count).into(), plural_count(count));
-            match loaded.left {
-                None => {
-                    summary.push(human(job.storage.original_len()));
-                    summary.push(entries.to_string());
-                }
-                Some(left) => summary.push(
-                    ui.invoke_remaining_summary(human(left).into(), entries)
-                        .to_string(),
-                ),
-            }
-        }
-        summary.push(
-            ui.invoke_uncompressed_summary(human(loaded.total).into())
-                .to_string(),
-        );
-        ui.set_summary(summary.join(" \u{b7} ").into());
+        *self.summary.borrow_mut() = Some(Summary {
+            archive: loaded.job.as_ref().map(|job| {
+                (
+                    job.format_name.to_uppercase(),
+                    job.item_count(),
+                    job.storage.original_len(),
+                )
+            }),
+            left: loaded.left,
+            total: loaded.total,
+        });
+        self.show_summary();
         let tree = Rc::new(EntriesModel::new(loaded.entries));
         ui.set_entries(ModelRc::from(tree.clone()));
         *self.entries.borrow_mut() = Some(tree);
         ui.set_mode(loaded.mode);
         ui.set_kept_run(loaded.kept);
-        ui.set_output(loaded.output.display().to_string().into());
+        ui.set_selection_count(0);
+        self.selected_run.set(loaded.selected);
+        // A half-extracted archive goes on where it started.
+        let output = match loaded.mode {
+            Mode::Fresh => self.settings.borrow().output_for(&loaded.output),
+            _ => loaded.output.clone(),
+        };
+        ui.set_output(output.display().to_string().into());
         ui.set_screen(Screen::Opened);
         *self.name.borrow_mut() = loaded.name;
         *self.password.borrow_mut() = loaded.password;
         self.mode.set(loaded.mode);
         self.kept_run.set(loaded.kept);
-        *self.output.borrow_mut() = loaded.output;
+        *self.next_to.borrow_mut() = loaded.output;
+        *self.output.borrow_mut() = output;
         *self.job.borrow_mut() = Arc::new(Mutex::new(loaded.job));
         self.refresh_plan();
+    }
+
+    fn show_summary(&self) {
+        let summary = self.summary.borrow();
+        let Some(facts) = summary.as_ref() else {
+            return;
+        };
+        let ui = self.ui();
+        let messages = ui.global::<Messages>();
+        let mut parts = Vec::new();
+        if let Some((format, count, size)) = &facts.archive {
+            parts.push(
+                messages
+                    .invoke_archive_kind(format.as_str().into())
+                    .to_string(),
+            );
+            let entries =
+                messages.invoke_entry_count(text::count(*count).into(), plural_count(*count));
+            match facts.left {
+                None => {
+                    parts.push(human(*size));
+                    parts.push(entries.to_string());
+                }
+                Some(left) => parts.push(
+                    messages
+                        .invoke_remaining_summary(human(left).into(), entries)
+                        .to_string(),
+                ),
+            }
+        }
+        parts.push(
+            messages
+                .invoke_uncompressed_summary(human(facts.total).into())
+                .to_string(),
+        );
+        ui.set_summary(parts.join(" \u{b7} ").into());
+    }
+
+    /// The language in Settings; `""` follows the system. Windows the
+    /// right-click menu opens from now on read the saved choice too.
+    fn choose_language(&self, code: &str) {
+        let choice = (!code.is_empty()).then(|| code.to_string());
+        self.change_settings(|s| s.language = choice.clone());
+        locale::select(choice.as_deref());
+        let ui = self.ui();
+        locale::style(ui.global::<Theme>());
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
+        if let Some(w) = self.about.borrow().as_ref() {
+            locale::style(w.global::<Theme>());
+        }
+        // Text bound to @tr in the .slint files follows by itself; these were
+        // worded once from Rust and would stay in the old language.
+        show_shell_menu_label(&ui);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_languages(w, choice.as_deref());
+        }
+        self.show_summary();
+        // A task's view is worded again from the task as it stands, which a
+        // finished one, no longer ticking, needs. The task is not touched.
+        self.runner.redraw();
+        if self.runner.task.borrow().is_none() && ui.get_screen() == Screen::Opened {
+            // The plan's refusal and hint are worded when it is worked out.
+            self.refresh_plan();
+        }
     }
 
     fn refresh_plan(&self) {
@@ -581,12 +670,12 @@ impl App {
             ui.set_plan(PlanView {
                 ready: true,
                 fits: true,
-                verdict: ui.invoke_no_entries(),
+                refusal: ui.global::<Messages>().invoke_no_entries(),
                 ..Default::default()
             });
             return;
         }
-        let generation = self.next_generation();
+        let generation = self.next_plan_generation();
         let job = self.job.borrow().clone();
         let out = self.output.borrow().clone();
         let resuming = self.mode.get() == Mode::Resume;
@@ -603,23 +692,25 @@ impl App {
                     // Such as a solid RAR: it can only be extracted kept.
                     Some(why) => PlanView {
                         fits: false,
-                        verdict: why.into(),
+                        refusal: why.into(),
                         ..plan_view(&plan)
                     },
                     None => plan_view(&plan),
                 },
                 Err(e) => PlanView {
                     ready: true,
-                    verdict: sentence(&format!("{e:#}")).into(),
+                    refusal: sentence(&format!("{e:#}")).into(),
                     ..Default::default()
                 },
             };
             post(move |app| {
-                if generation == app.generation.get() {
+                if generation == app.plan_generation.get() {
                     let ui = app.ui();
                     let mut view = view;
                     if let Some(why) = keep_hint {
-                        view.verdict = sentence(&ui.invoke_keep_archive_hint(why.into())).into();
+                        view.refusal = ui
+                            .global::<Messages>()
+                            .invoke_keep_archive_hint(text::capitalise(&why).into());
                     }
                     ui.set_plan(view);
                 }
@@ -641,12 +732,234 @@ impl App {
         match parse_gb(text) {
             Some(bytes) => {
                 ui.set_keep_free_valid(true);
-                self.keep_free.set(bytes);
-                self.change_settings(|s| s.keep_free = bytes);
-                self.refresh_plan();
+                // The other window gets the text as typed; only the one being
+                // typed in may be left showing something invalid.
+                if let Some(w) = self.settings_window.borrow().as_ref() {
+                    w.set_keep_free(text.into());
+                    w.set_keep_free_valid(true);
+                }
+                self.set_keep_free(bytes);
             }
             None => ui.set_keep_free_valid(false),
         }
+    }
+
+    /// The reserve, typed in the Settings window.
+    fn settings_keep_free_edited(&self, text: &str) {
+        let Some(w) = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong())
+        else {
+            return;
+        };
+        match parse_gb(text) {
+            Some(bytes) => {
+                w.set_keep_free_valid(true);
+                let ui = self.ui();
+                ui.set_keep_free(text.into());
+                ui.set_keep_free_valid(true);
+                self.set_keep_free(bytes);
+            }
+            None => w.set_keep_free_valid(false),
+        }
+    }
+
+    fn set_keep_free(&self, bytes: u64) {
+        self.keep_free.set(bytes);
+        self.change_settings(|s| s.keep_free = bytes);
+        self.refresh_plan();
+    }
+
+    fn set_verify_first(&self, on: bool) {
+        self.change_settings(|s| s.verify_first = on);
+        self.ui().set_verify_first(on);
+        self.show_choices();
+    }
+
+    fn set_keep_archive(&self, keep: bool) {
+        self.change_settings(|s| s.keep_archive = keep);
+        self.ui().set_remove_archive(!keep);
+        self.show_choices();
+        self.refresh_plan();
+    }
+
+    /// Brings the Settings window's controls in line with the settings.
+    fn show_choices(&self) {
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_choices(w, &self.settings.borrow());
+        }
+    }
+
+    /// Every window, light or dark as chosen. The right-click windows read
+    /// the saved choice when they open.
+    fn choose_appearance(&self, appearance: Appearance) {
+        self.change_settings(|s| s.appearance = appearance);
+        let scheme = sw::color_scheme(appearance);
+        self.ui().global::<Palette>().set_color_scheme(scheme);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            w.global::<Palette>().set_color_scheme(scheme);
+        }
+        if let Some(w) = self.about.borrow().as_ref() {
+            w.global::<Palette>().set_color_scheme(scheme);
+        }
+        self.show_choices();
+    }
+
+    fn choose_destination(&self, destination: Destination) {
+        if destination == Destination::NextToArchive {
+            self.pick_wanted.set(false);
+        }
+        let has_folder = self.settings.borrow().destination_folder.is_some();
+        if destination == Destination::Folder && !has_folder {
+            // Nothing to extract into yet; the choice holds once a folder is.
+            self.pick_default_folder();
+            return;
+        }
+        self.change_settings(|s| s.destination = destination);
+        self.show_choices();
+        self.follow_default_destination();
+    }
+
+    fn pick_default_folder(&self) {
+        self.pick_wanted.set(true);
+        // A second picker would race the first; the open one answers.
+        if self.picking.get() {
+            return;
+        }
+        let Some(w) = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong())
+        else {
+            return;
+        };
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_title(w.invoke_destination_title().as_str())
+            .set_parent(&w.window().window_handle());
+        if let Some(dir) = self.settings.borrow().destination_folder.as_ref() {
+            dialog = dialog.set_directory(dir);
+        }
+        self.picking.set(true);
+        let _ = slint::spawn_local(async move {
+            let picked = dialog.pick_folder().await;
+            with_app(|app| {
+                app.picking.set(false);
+                if app.pick_wanted.replace(false) {
+                    app.set_default_folder(picked.map(|d| d.path().to_path_buf()));
+                } else {
+                    app.show_choices();
+                }
+            });
+        });
+    }
+
+    /// The folder picked for "Always in a folder". `None`, when the picker
+    /// was closed, keeps whatever was there.
+    fn set_default_folder(&self, folder: Option<PathBuf>) {
+        if let Some(dir) = folder {
+            self.change_settings(|s| {
+                s.destination = Destination::Folder;
+                s.destination_folder = Some(dir);
+            });
+            self.follow_default_destination();
+        }
+        // Puts the list back on "Next to the archive" if no folder came.
+        self.show_choices();
+    }
+
+    /// A fresh archive the person has not sent anywhere else moves to the
+    /// new default destination.
+    fn follow_default_destination(&self) {
+        let ui = self.ui();
+        if self.mode.get() != Mode::Fresh
+            || self.output_chosen.get()
+            || ui.get_screen() != Screen::Opened
+            || self.runner.task.borrow().is_some()
+        {
+            return;
+        }
+        let output = self.settings.borrow().output_for(&self.next_to.borrow());
+        ui.set_output(output.display().to_string().into());
+        *self.output.borrow_mut() = output;
+        self.refresh_plan();
+    }
+
+    /// Every setting back to its default and in effect, as if the app had
+    /// never been set up. The right-click menu is the system's, not a
+    /// setting, so it stays as it is.
+    fn reset_settings(&self) {
+        self.pick_wanted.set(false);
+        self.change_settings(|s| *s = Settings::default());
+        let defaults = Settings::default();
+        let ui = self.ui();
+        ui.set_keep_free(gb_text(defaults.keep_free).into());
+        ui.set_keep_free_valid(true);
+        ui.set_verify_first(defaults.verify_first);
+        ui.set_remove_archive(!defaults.keep_archive);
+        self.keep_free.set(defaults.keep_free);
+        self.choose_appearance(defaults.appearance);
+        self.choose_language("");
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            sw::show_all(w, &defaults);
+        }
+        self.follow_default_destination();
+        self.refresh_plan();
+    }
+
+    /// Opens the folder that holds the settings file, making it first if
+    /// nothing was saved yet.
+    fn show_settings_file(&self) {
+        let Some(dir) = self
+            .settings_file
+            .as_ref()
+            .and_then(|f| f.parent())
+            .map(Path::to_path_buf)
+        else {
+            return;
+        };
+        std::thread::spawn(move || {
+            if std::fs::create_dir_all(&dir).is_ok() {
+                let _ = open::that_detached(&dir);
+            }
+        });
+    }
+
+    fn show_settings(&self) {
+        let existing = self
+            .settings_window
+            .borrow()
+            .as_ref()
+            .map(|w| w.clone_strong());
+        let w = match existing {
+            Some(w) => w,
+            None => {
+                let Ok(w) = SettingsWindow::new() else { return };
+                locale::style(w.global::<Theme>());
+                let settings = self.settings.borrow().clone();
+                if settings.appearance != Appearance::System {
+                    w.global::<Palette>()
+                        .set_color_scheme(sw::color_scheme(settings.appearance));
+                }
+                sw::show_all(&w, &settings);
+                w.set_shell_menu_on(self.ui().get_shell_menu_on());
+                w.set_settings_path(
+                    self.settings_file
+                        .as_ref()
+                        .map(|f| f.display().to_string())
+                        .unwrap_or_default()
+                        .into(),
+                );
+                wire_settings(&w);
+                *self.settings_window.borrow_mut() = Some(w.clone_strong());
+                w
+            }
+        };
+        let _ = w.show();
+        // Opening it again brings the one already open to the front.
+        w.window().with_winit_window(|w| w.focus_window());
     }
 
     fn change_settings(&self, f: impl FnOnce(&mut Settings)) {
@@ -657,22 +970,53 @@ impl App {
         }
     }
 
-    fn shell_menu_toggled(&self) {
+    /// The right-click switch, flipped in the main window or, with
+    /// `in_settings`, in the Settings window, which then says how it went.
+    fn shell_menu_toggled(&self, on: bool, in_settings: bool) {
         self.shell_touched.set(true);
-        let on = self.ui().get_shell_menu_on();
+        self.ui().set_shell_menu_on(on);
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            w.set_shell_menu_on(on);
+            w.set_shell_notice("".into());
+        }
         std::thread::spawn(move || {
             let result = shell::set_menu(on);
             post(move |app| {
                 let (text, bad) = match result {
-                    Ok(()) if on => (app.ui().invoke_menu_added().to_string(), false),
-                    Ok(()) => (app.ui().invoke_menu_removed().to_string(), false),
+                    Ok(skipped) => {
+                        let ui = app.ui();
+                        let messages = ui.global::<Messages>();
+                        let mut text = if on {
+                            messages.invoke_menu_added()
+                        } else {
+                            messages.invoke_menu_removed()
+                        }
+                        .to_string();
+                        // The other menus went through; say which one didn't.
+                        for line in &skipped {
+                            text.push(' ');
+                            text.push_str(&sentence(line));
+                        }
+                        (text, !skipped.is_empty())
+                    }
                     Err(e) => {
-                        // Show the box as it really is.
+                        // Show the switch as it really is.
                         app.ui().set_shell_menu_on(!on);
+                        if let Some(w) = app.settings_window.borrow().as_ref() {
+                            w.set_shell_menu_on(!on);
+                        }
                         (sentence(&format!("{e:#}")), true)
                     }
                 };
-                app.notify(&text, bad);
+                let shown_in_settings = in_settings
+                    && app.settings_window.borrow().as_ref().is_some_and(|w| {
+                        w.set_shell_notice(text.as_str().into());
+                        w.set_shell_notice_bad(bad);
+                        w.window().is_visible()
+                    });
+                if !shown_in_settings {
+                    app.notify(&text, bad);
+                }
             });
         });
     }
@@ -697,9 +1041,15 @@ impl App {
         }
         let ui = self.ui();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_open_archive_title().as_str())
-            .add_filter(ui.invoke_archives_filter().as_str(), &picker_extensions())
-            .add_filter(ui.invoke_all_files_filter().as_str(), &["*"])
+            .set_title(ui.global::<Messages>().invoke_open_archive_title().as_str())
+            .add_filter(
+                ui.global::<Messages>().invoke_archives_filter().as_str(),
+                &picker_extensions(),
+            )
+            .add_filter(
+                ui.global::<Messages>().invoke_all_files_filter().as_str(),
+                &["*"],
+            )
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = self.archive.borrow().as_ref().and_then(|a| a.parent()) {
             dialog = dialog.set_directory(dir);
@@ -720,7 +1070,7 @@ impl App {
         // looking that up needs no disk access on this thread.
         let start = current.parent();
         let mut dialog = rfd::AsyncFileDialog::new()
-            .set_title(ui.invoke_destination_title().as_str())
+            .set_title(ui.global::<Messages>().invoke_destination_title().as_str())
             .set_parent(&ui.window().window_handle());
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);
@@ -735,6 +1085,7 @@ impl App {
     }
 
     fn set_output(&self, dir: PathBuf) {
+        self.output_chosen.set(true);
         self.ui().set_output(dir.display().to_string().into());
         *self.output.borrow_mut() = dir;
         self.refresh_plan();
@@ -756,16 +1107,90 @@ impl App {
             keep_archive: keep,
             password: self.password.borrow().clone(),
             here: false,
+            existing: self.settings.borrow().existing_files,
+            only: None,
         };
+        let mut task = Task::extract(&self.name.borrow(), Some(&output), keep);
+        if self.mode.get() == Mode::Resume && self.selected_run.get() {
+            task = task.selecting();
+        }
+        self.start_extraction(task, request);
+    }
+
+    fn start_extraction(&self, task: Task, request: Request) {
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
         // plan still being worked out.
         let job = self.job.replace(SharedJob::default());
         self.runner.start_after(
             move || drop(job.lock().map(|mut j| j.take())),
-            Task::extract(&self.name.borrow(), Some(&output), keep),
+            task,
             request,
         );
+    }
+
+    /// Asks where the rows chosen in the tree go, starting where the whole
+    /// archive would, then extracts only those, keeping the archive
+    /// whatever "Remove the archive during extraction" says.
+    fn extract_selected(&self) {
+        if self.runner.running() || self.mode.get() != Mode::Fresh {
+            return;
+        }
+        let chosen = match self.entries.borrow().as_ref() {
+            Some(tree) => tree.chosen(),
+            None => return,
+        };
+        if chosen.is_empty() {
+            return;
+        }
+        let Some(archive) = self.archive.borrow().clone() else {
+            return;
+        };
+        let only: Vec<PathBuf> = chosen.into_iter().map(PathBuf::from).collect();
+        if let Some(answer) = PICKED.with(|p| p.borrow().as_ref().map(|f| f())) {
+            if let Some(dir) = answer {
+                self.extract_only(&archive, only, dir);
+            }
+            return;
+        }
+        let ui = self.ui();
+        let output = self.output.borrow().clone();
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_title(ui.global::<Messages>().invoke_destination_title().as_str())
+            .set_parent(&ui.window().window_handle());
+        // The destination itself may not exist yet; its parent does.
+        if let Some(dir) = output.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+        let _ = slint::spawn_local(async move {
+            if let Some(dir) = dialog.pick_folder().await {
+                with_app(|app| app.extract_only(&archive, only, dir.path().to_path_buf()));
+            }
+        });
+    }
+
+    /// `archive` is the one open when the folder was asked for: the picker
+    /// may not block the window, and the paths belong to that archive.
+    fn extract_only(&self, archive: &Path, only: Vec<PathBuf>, output: PathBuf) {
+        if self.runner.running()
+            || self.mode.get() != Mode::Fresh
+            || self.archive.borrow().as_deref() != Some(archive)
+        {
+            return;
+        }
+        let request = Request::Extract {
+            archive: archive.to_path_buf(),
+            output: Some(output.clone()),
+            keep_free: self.keep_free.get(),
+            verify_first: self.ui().get_verify_first(),
+            keep_archive: true,
+            password: self.password.borrow().clone(),
+            here: false,
+            existing: self.settings.borrow().existing_files,
+            only: Some(only),
+        };
+        let task = Task::extract(&self.name.borrow(), Some(&output), true).selecting();
+        self.start_extraction(task, request);
     }
 
     /// Stops a half-done extraction for good and makes the archive whole.
@@ -807,7 +1232,9 @@ impl App {
         // A test only reads, so the archive is as it was.
         if was_test {
             *self.runner.task.borrow_mut() = None;
-            self.ui().set_task(TaskView::default());
+            show_task(&self.ui(), TaskView::default());
+            // The language may have changed while the test was on screen.
+            self.refresh_plan();
             return;
         }
         // Anything else may have changed the archive: look again. The path
@@ -829,6 +1256,12 @@ impl App {
         let mut about = self.about.borrow_mut();
         if about.is_none() {
             let Ok(w) = AboutWindow::new() else { return };
+            locale::style(w.global::<Theme>());
+            let appearance = self.settings.borrow().appearance;
+            if appearance != Appearance::System {
+                w.global::<Palette>()
+                    .set_color_scheme(sw::color_scheme(appearance));
+            }
             w.set_version(env!("CARGO_PKG_VERSION").into());
             w.on_open_link(|| {
                 let _ = open::that_detached(REPO);
@@ -845,4 +1278,76 @@ impl App {
             let _ = w.show();
         }
     }
+}
+
+fn show_shell_menu_label(ui: &MainWindow) {
+    ui.set_shell_menu_label(match platform::SHELL_MENU_NAME {
+        platform::ShellMenuName::Explorer => ui.global::<Messages>().invoke_shell_explorer(),
+        platform::ShellMenuName::Finder => ui.global::<Messages>().invoke_shell_finder(),
+        platform::ShellMenuName::Files => ui.global::<Messages>().invoke_shell_files(),
+    });
+}
+
+/// Each control of the Settings window calls the app, found through
+/// [`with_app`] so the window doesn't keep it alive.
+fn wire_settings(w: &SettingsWindow) {
+    w.on_choose_language(|i| with_app(|app| app.choose_language(sw::language_code(i))));
+    w.on_choose_appearance(|i| with_app(|app| app.choose_appearance(sw::appearance(i))));
+    w.on_choose_after(|i| {
+        with_app(|app| {
+            app.change_settings(|s| s.after_extracting = sw::after_extracting(i));
+            app.show_choices();
+        })
+    });
+    let weak = w.as_weak();
+    w.on_close_when_done_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_close_when_done());
+        with_app(|app| {
+            app.change_settings(|s| s.close_when_done = on);
+            app.show_choices();
+        });
+    });
+    let weak = w.as_weak();
+    w.on_remove_archive_toggled(move || {
+        let keep = !weak.upgrade().is_some_and(|w| w.get_remove_archive());
+        with_app(|app| app.set_keep_archive(keep));
+    });
+    let weak = w.as_weak();
+    w.on_verify_first_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_verify_first());
+        with_app(|app| app.set_verify_first(on));
+    });
+    w.on_keep_free_edited(|text| with_app(|app| app.settings_keep_free_edited(&text)));
+    w.on_choose_destination(|i| with_app(|app| app.choose_destination(sw::destination(i))));
+    w.on_browse_destination(|| with_app(|app| app.pick_default_folder()));
+    w.on_choose_existing(|i| {
+        with_app(|app| {
+            app.change_settings(|s| s.existing_files = sw::existing(i));
+            app.show_choices();
+        })
+    });
+    let weak = w.as_weak();
+    w.on_shell_menu_toggled(move || {
+        let on = weak.upgrade().is_some_and(|w| w.get_shell_menu_on());
+        with_app(|app| app.shell_menu_toggled(on, true));
+    });
+    w.on_show_settings_file(|| with_app(|app| app.show_settings_file()));
+    w.on_reset(|| with_app(|app| app.reset_settings()));
+    let weak = w.as_weak();
+    w.on_close_requested(move || {
+        if let Some(w) = weak.upgrade() {
+            let _ = w.hide();
+        }
+    });
+}
+
+/// Shows `view` in the main window. File > Open has a property of its own:
+/// bound to `task.phase`, Windows' native menu bar was rebuilt on every
+/// progress tick, which made the whole window flash during a run (#123).
+fn show_task(ui: &MainWindow, view: TaskView) {
+    ui.set_can_open(matches!(
+        view.phase,
+        crate::Phase::Idle | crate::Phase::Done
+    ));
+    ui.set_task(view);
 }

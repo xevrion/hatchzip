@@ -7,8 +7,10 @@ use std::time::{Duration, Instant};
 
 use hatchzip_core::human;
 use hatchzip_core::session::SpacePlan;
+use slint::SharedString;
 
-use crate::PlanView;
+use crate::task::Task;
+use crate::{Messages, PlanView, TaskView};
 
 /// What a long open says while it reads through the archive. Rounded down,
 /// so it never claims 100% before the read is done.
@@ -85,47 +87,6 @@ pub fn gb_text(bytes: u64) -> String {
 }
 
 pub fn plan_view(plan: &SpacePlan) -> PlanView {
-    let verdict = if plan.fits {
-        "Sufficient disk space".to_string()
-    } else {
-        let short = plan.needed + plan.keep_free - plan.free;
-        format!(
-            "Insufficient disk space. {} more is required.",
-            human(short)
-        )
-    };
-    let mut notes = Vec::new();
-    // Whichever way was not chosen, when it would change the answer or
-    // offers more. Only a fresh archive can still choose.
-    if plan.either && plan.keep_archive && !plan.fits && plan.in_place_fits() {
-        notes.push(format!(
-            "Removing the archive during extraction requires only {}.",
-            human(plan.in_place_needs)
-        ));
-    }
-    if plan.either && !plan.keep_archive && plan.fits && plan.normal_fits() {
-        notes.push("There is also enough space to keep the archive.".to_string());
-    }
-    if !plan.fits && plan.solid_block_bound {
-        notes.push(
-            "Most of the required space is one solid block, which can only be released after \
-             it is fully extracted."
-                .to_string(),
-        );
-    }
-    if !plan.reclaims && !plan.keep_archive {
-        notes.push(
-            "The destination is on another drive, so removing the archive does not free space there."
-                .to_string(),
-        );
-    }
-    if plan.archive_kept_whole {
-        notes.push(
-            "This drive cannot release space inside a file, so the compressed archive remains \
-             whole until extraction completes."
-                .to_string(),
-        );
-    }
     let used = plan.needed + plan.keep_free;
     PlanView {
         ready: true,
@@ -149,14 +110,42 @@ pub fn plan_view(plan: &SpacePlan) -> PlanView {
         } else {
             "-".into()
         },
+        left: human(plan.free_after).into(),
         fits: plan.fits,
-        verdict: verdict.into(),
-        note: notes.join(" ").into(),
+        short: if plan.fits {
+            String::new()
+        } else {
+            human(plan.needed + plan.keep_free - plan.free)
+        }
+        .into(),
+        refusal: "".into(),
+        // Whichever way was not chosen, when it would change the answer or
+        // offers more. Only a fresh archive can still choose.
+        note_in_place: if plan.either && plan.keep_archive && !plan.fits && plan.in_place_fits() {
+            human(plan.in_place_needs)
+        } else {
+            String::new()
+        }
+        .into(),
+        note_keep: plan.either && !plan.keep_archive && plan.fits && plan.normal_fits(),
+        note_solid: !plan.fits && plan.solid_block_bound,
+        note_other_drive: !plan.reclaims && !plan.keep_archive,
+        note_kept_whole: plan.archive_kept_whole,
         meter: if plan.free == 0 {
             1.0
         } else {
             (used as f64 / plan.free as f64).min(1.0) as f32
         },
+    }
+}
+
+/// The first letter in upper case and nothing else touched. `sentence`
+/// also adds a final stop, which is wrong for text that already ends in one.
+pub fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -213,6 +202,173 @@ impl Rate {
     }
 }
 
+/// Converts a count to Slint's `int`, saturating like the rest.
+pub(crate) fn plural_count(n: usize) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
+/// The task view with every message in the window's language. The engine's
+/// text stays English; everything the app builds itself comes from `@tr`.
+pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
+    let mut view = task.view.clone();
+    view.space = task
+        .space
+        .as_ref()
+        .map_or_else(Default::default, |(needed, free)| {
+            messages.invoke_task_space(needed.clone().into(), free.clone().into())
+        });
+    view.heading = messages.invoke_task_heading(
+        view.phase,
+        view.is_test,
+        task.is_restoring(),
+        task.name().into(),
+    );
+    view.busy = messages.invoke_checking_space();
+    view.detail = if task.is_restoring() {
+        messages.invoke_restore_detail()
+    } else if view.is_test {
+        messages.invoke_test_detail()
+    } else if let Some(path) = &task.output {
+        messages.invoke_task_destination(path.display().to_string().into())
+    } else {
+        Default::default()
+    };
+    if task.waiting_for_disk() && !view.rate.is_empty() {
+        view.rate = messages.invoke_waiting_disk();
+    }
+    match view.phase {
+        crate::Phase::Pausing => view.message = messages.invoke_pausing_message(),
+        crate::Phase::Verifying if !view.is_test => {
+            view.message = messages.invoke_verifying_message()
+        }
+        crate::Phase::Paused => view.message = messages.invoke_paused_message(),
+        // The pane showed the plan from before the run; a stop for space
+        // needs the amount the run found.
+        crate::Phase::NoSpace => {
+            view.message = messages.invoke_task_no_space(task.plan.short.clone());
+        }
+        crate::Phase::Done if !view.is_test && !task.is_restoring() => {
+            view.message = if task.extracts_selection() {
+                messages.invoke_extracted_selected()
+            } else if task.keeps_archive() {
+                messages.invoke_extracted_kept()
+            } else {
+                messages.invoke_extracted_removed()
+            };
+            if let Some(warning) = &task.warning {
+                view.warning = warning.as_str().into();
+            }
+        }
+        _ => {}
+    }
+    if task.cancelled {
+        let cancelled = if view.is_test {
+            messages.invoke_test_cancelled()
+        } else {
+            messages.invoke_extraction_cancelled()
+        };
+        // A prompt closed on a resume leaves a journal, so the hint that the
+        // run can go on still applies.
+        view.message = if task.resumable_failure.is_some() {
+            messages.invoke_joined(cancelled, messages.invoke_task_resumable_error())
+        } else {
+            cancelled
+        };
+    } else if let Some(reason) = &task.resumable_failure {
+        view.message = messages.invoke_task_resumable_error();
+        view.reason = reason.as_str().into();
+    }
+    if let Some((entries, output, kept, aside)) = &task.restore_result {
+        let held = messages.invoke_restore_held(plural_count(*entries), count(*entries).into());
+        let mut message = messages
+            .invoke_restore_result(*kept, held, output.display().to_string().into())
+            .to_string();
+        if *aside > 0 {
+            message = messages
+                .invoke_joined(
+                    message.into(),
+                    messages.invoke_restore_aside(
+                        plural_count(*aside),
+                        count(*aside).into(),
+                        hatchzip_core::replace::folder(output)
+                            .display()
+                            .to_string()
+                            .into(),
+                    ),
+                )
+                .to_string();
+        }
+        view.message = message.into();
+    }
+    if let Some(entries) = task.tested_entries {
+        view.message =
+            messages.invoke_task_test_result(plural_count(entries), count(entries).into());
+    }
+    if let Some(percent) = task.reading_percent {
+        view.busy = messages.invoke_reading_archive(percent);
+    }
+    if !view.amounts.is_empty()
+        && let Some((done, total)) = task.progress_bytes
+    {
+        view.amounts = messages.invoke_task_amounts(human(done).into(), human(total).into());
+    }
+    if !view.archive_left.is_empty()
+        && let Some(left) = task.remaining_archive_bytes
+    {
+        view.archive_left = messages.invoke_task_archive_left(human(left).into());
+    }
+    if !view.rate.is_empty()
+        && let Some((speed, seconds)) = task.rate_estimate
+    {
+        let duration = match seconds {
+            0..=4 => messages.invoke_time_short().to_string(),
+            5..=59 => messages
+                .invoke_time_seconds(
+                    i32::try_from(seconds).unwrap_or(i32::MAX),
+                    seconds.to_string().into(),
+                )
+                .to_string(),
+            60..=3599 => {
+                let minutes = seconds.div_ceil(60);
+                messages
+                    .invoke_time_minutes(
+                        i32::try_from(minutes).unwrap_or(i32::MAX),
+                        minutes.to_string().into(),
+                    )
+                    .to_string()
+            }
+            _ => {
+                let hours = seconds / 3600;
+                let minutes = (seconds % 3600) / 60;
+                messages
+                    .invoke_joined(
+                        messages.invoke_time_hours(
+                            i32::try_from(hours).unwrap_or(i32::MAX),
+                            hours.to_string().into(),
+                        ),
+                        messages.invoke_time_minutes(
+                            i32::try_from(minutes).unwrap_or(i32::MAX),
+                            minutes.to_string().into(),
+                        ),
+                    )
+                    .to_string()
+            }
+        };
+        view.rate = messages.invoke_task_rate(human(speed).into(), duration.into());
+    }
+    view.step = match task.queue {
+        crate::task::Queue::Single => SharedString::new(),
+        crate::task::Queue::Of { at, of } => {
+            messages.invoke_queue_of(plural_count(at), plural_count(of))
+        }
+        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(of)),
+        crate::task::Queue::Waiting { at, of, left } => {
+            messages.invoke_queue_waiting(plural_count(at), plural_count(of), plural_count(left))
+        }
+    };
+    view
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +392,16 @@ mod tests {
             "3 hours 2 minutes"
         );
         assert_eq!(duration(Duration::from_secs(3600 + 60)), "1 hour 1 minute");
+    }
+
+    #[test]
+    fn capitalise_leaves_the_stop_alone() {
+        assert_eq!(
+            capitalise("this archive is solid: x"),
+            "This archive is solid: x"
+        );
+        assert_eq!(capitalise(""), "");
+        assert_eq!(capitalise("Élan"), "Élan");
     }
 
     #[test]
@@ -314,35 +480,26 @@ mod tests {
         let tight = plan(6_000_000_000, 3_000_000_000, 2_000_000_000);
         let v = plan_view(&kept(tight));
         assert!(!v.fits && v.keep_archive);
-        assert_eq!(
-            v.verdict,
-            "Insufficient disk space. 2.0 GB more is required."
-        );
+        assert_eq!(v.short, "2.0 GB");
         assert_eq!(v.needed, "6.0 GB");
         assert_eq!(v.normal, "6.0 GB");
         assert_eq!(v.in_place, "3.0 GB");
-        assert_eq!(
-            v.note,
-            "Removing the archive during extraction requires only 3.0 GB."
-        );
+        assert_eq!(v.note_in_place, "3.0 GB");
         // In place fits and says nothing about keeping, which doesn't.
         let v = plan_view(&plan(6_000_000_000, 3_000_000_000, 2_000_000_000));
         assert!(v.fits && !v.keep_archive);
-        assert_eq!(v.note, "");
+        assert!(v.note_in_place.is_empty() && !v.note_keep);
 
         let roomy = plan(20_000_000_000, 3_000_000_000, 2_000_000_000);
-        assert_eq!(
-            plan_view(&roomy).note,
-            "There is also enough space to keep the archive."
-        );
-        assert_eq!(plan_view(&kept(roomy)).note, "");
+        assert!(plan_view(&roomy).note_keep);
+        assert!(!plan_view(&kept(roomy)).note_keep);
 
         // Half extracted, a run goes on the way it started.
         let mut resumed = kept(plan(1_000_000_000, 3_000_000_000, 0));
         resumed.either = false;
         let v = plan_view(&resumed);
         assert_eq!(v.in_place, "-");
-        assert_eq!(v.note, "");
+        assert!(v.note_in_place.is_empty());
         let mut resumed = plan(1_000_000_000, 300_000_000, 0);
         resumed.either = false;
         assert_eq!(plan_view(&resumed).normal, "-");
@@ -352,11 +509,11 @@ mod tests {
     fn plans_read_plainly() {
         let fits = plan_view(&plan(10_000_000_000, 3_000_000_000, 2_000_000_000));
         assert!(fits.fits);
-        assert_eq!(fits.verdict, "Sufficient disk space");
+        assert!(fits.short.is_empty() && fits.refusal.is_empty());
         assert_eq!(fits.needed, "3.0 GB");
         assert_eq!(fits.in_place, "3.0 GB");
         assert_eq!(fits.normal, "6.0 GB");
-        assert_eq!(fits.note, "There is also enough space to keep the archive.");
+        assert!(fits.note_keep);
         assert!((fits.meter - 0.5).abs() < 1e-6);
 
         let mut tight = plan(4_000_000_000, 3_000_000_000, 2_000_000_000);
@@ -364,13 +521,10 @@ mod tests {
         tight.reclaims = false;
         let v = plan_view(&tight);
         assert!(!v.fits);
-        assert_eq!(
-            v.verdict,
-            "Insufficient disk space. 1.0 GB more is required."
-        );
+        assert_eq!(v.short, "1.0 GB");
         assert_eq!(v.after, "-");
-        assert!(v.note.contains("solid block"));
-        assert!(v.note.contains("another drive"));
+        assert!(v.note_solid);
+        assert!(v.note_other_drive);
         assert_eq!(v.meter, 1.0);
     }
 }

@@ -21,6 +21,9 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
     Ok((primary, paths))
 }
 
+// Made once per open and taken apart at once, so the size of the largest
+// variant costs nothing worth boxing for.
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     /// Nothing touched yet. Nothing changes on disk until [`begin`] writes
     /// the journal.
@@ -54,16 +57,28 @@ pub fn case_sensitive(dir: &Path) -> bool {
 /// [`open_encrypted`] for the ask-and-retry loop front ends want. What
 /// opening reads is counted in `reads`, which a front end can show from
 /// another thread: a compressed tar is read in full here.
+///
+/// `only` limits a fresh extraction to those entries and the folders among
+/// them (see [`Job::select`]), which [`begin`] then allows only while the
+/// archive is kept. A half-extracted archive goes on with the selection its
+/// journal records, and one given here must be part of it.
 pub fn open(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<&str>,
     reads: &Arc<Reads>,
 ) -> Result<State> {
     if paths.exists() {
         let (mut journal, tail) = Journal::load(paths)?;
+        // With every entry out, or the archive gone, this is no resume: it
+        // only finishes, and a lost list costs the folders' permissions and
+        // times, which the finish warns about.
+        if writable && !journal.done && journal.parts[0].0.exists() {
+            journal.check_folders(paths)?;
+        }
         // Only a writable open deletes or writes anything in the folder.
         if writable || output.is_some() {
             check_output(&journal, primary, output.as_deref(), "extract")?;
@@ -81,6 +96,7 @@ pub fn open(
             crate::restore::recover(&mut journal, paths)?;
         }
         if !journal.parts[0].0.exists() {
+            check_first_part_gone(&journal)?;
             if journal.keep {
                 // Only the person could have removed an archive this run
                 // promised to keep, and the rest of it is still to extract.
@@ -99,11 +115,20 @@ pub fn open(
         if journal.done {
             return Ok(State::Orphan(journal));
         }
+        if let Some(given) = only {
+            check_same_selection(&journal, given)?;
+        }
         let job = Job::resume(&journal, tail, writable, password, reads.clone())?;
         check_no_links_on_the_way(&job, &journal.output)?;
         return Ok(State::Resume(job, journal));
     }
-    let job = Job::open(primary, writable, password, reads.clone())?;
+    let mut job = Job::open(primary, writable, password, reads.clone())?;
+    if writable && job.format_name == crate::archive::SPLIT_ZIP {
+        paths.check_stub()?;
+    }
+    if let Some(given) = only {
+        job.select(given)?;
+    }
     let output = match output {
         Some(o) => std::path::absolute(o)?,
         None => {
@@ -119,6 +144,56 @@ pub fn open(
         job.check_case(&output)?;
     }
     Ok(State::Fresh(job, output))
+}
+
+/// With the first part of a split archive gone, a run that never journaled
+/// its last commit has not deleted it: the first part is only ever shortened,
+/// and deleted with the rest once everything is out. So when a later part
+/// that still holds entries to extract is there, the first one was moved,
+/// and finishing the run as one whose archive is gone would delete the
+/// journal and the saved index the rest of the archive needs.
+pub(crate) fn check_first_part_gone(journal: &Journal) -> Result<()> {
+    if journal.done || journal.keep {
+        return Ok(());
+    }
+    let mut start = 0u64;
+    for (i, (part, len)) in journal.parts.iter().enumerate() {
+        if i > 0 && start < journal.committed_len && part.exists() {
+            bail!(
+                "{} was moved or deleted during the extraction, but {} and the rest of the \
+                 archive still need it. Put it back to resume. Nothing was modified",
+                journal.parts[0].0.display(),
+                part.display()
+            );
+        }
+        start = start.saturating_add(*len);
+    }
+    Ok(())
+}
+
+/// A resume goes on with what its journal records. Asking for entries now is
+/// fine when they are all part of that selection, and refused otherwise,
+/// before the archive is opened for writing.
+fn check_same_selection(journal: &Journal, given: &[PathBuf]) -> Result<()> {
+    let Some(recorded) = &journal.only else {
+        bail!(
+            "this archive is partially extracted with every entry selected. Resume it without \
+             choosing entries, or run restore first. Nothing was modified"
+        );
+    };
+    for g in given {
+        let p = crate::engine::selection_path(g)?;
+        // A path inside a recorded folder is part of the selection too.
+        if !crate::engine::picks(recorded, &p) {
+            bail!(
+                "this archive is partially extracted with other entries selected, and '{}' is \
+                 not one of them. Resume it without choosing entries to finish those, or run \
+                 restore first. Nothing was modified",
+                p.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 /// The journal lies next to the archive, where anyone who supplied the
@@ -238,10 +313,12 @@ fn check_path_lengths(job: &Job, out: &Path) -> Result<()> {
 /// up. Archives with a password are proven with [`Job::check_password`]
 /// before this returns, so nothing is deleted on a wrong guess. Returns the
 /// state and the password that worked.
+#[allow(clippy::too_many_arguments)]
 pub fn open_encrypted(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<String>,
     reads: &Arc<Reads>,
@@ -251,6 +328,7 @@ pub fn open_encrypted(
         primary,
         paths,
         output,
+        only,
         writable,
         password,
         reads,
@@ -267,6 +345,7 @@ pub fn open_encrypted_noting(
     primary: &Path,
     paths: &Paths,
     output: Option<PathBuf>,
+    only: Option<&[PathBuf]>,
     writable: bool,
     mut password: Option<String>,
     reads: &Arc<Reads>,
@@ -279,6 +358,7 @@ pub fn open_encrypted_noting(
             primary,
             paths,
             output.clone(),
+            only,
             writable,
             password.as_deref(),
             reads,
@@ -470,9 +550,8 @@ pub fn retarget(job: &Job, out: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-/// `game.zip`, `game.7z.001`, `game.tar.gz` and `game.part1.rar` all extract
-/// into `game`, next
-/// to them.
+/// `game.zip`, `game.7z.001`, `game.tar.gz`, `game.part1.rar` and `game.z01`
+/// all extract into `game`, next to them.
 pub fn default_output(primary: &Path) -> PathBuf {
     let file_name = primary
         .file_name()
@@ -486,6 +565,14 @@ pub fn default_output(primary: &Path) -> PathBuf {
     {
         name = stem.to_string();
     }
+    // `game.z01` is the first segment of the split ZIP `game.zip`.
+    if let Some((stem, ext)) = name.rsplit_once('.')
+        && ext.len() >= 3
+        && ext.as_bytes()[0].eq_ignore_ascii_case(&b'z')
+        && ext.bytes().skip(1).all(|b| b.is_ascii_digit())
+    {
+        name = stem.to_string();
+    }
     let lower = name.to_ascii_lowercase();
     // `game.part2.rar` and `game.part02.rar` are volumes of `game`.
     if let Some(stem) = lower.strip_suffix(".rar")
@@ -496,7 +583,8 @@ pub fn default_output(primary: &Path) -> PathBuf {
         name.truncate(stem.len() - digits.len() - ".part".len());
     } else {
         for ext in [
-            ".zip", ".7z", ".tar.xz", ".txz", ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
+            ".zip", ".7z", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz", ".tar.zst", ".tzst",
+            ".tar", ".tar.gz", ".tgz", ".rar", ".exe",
         ] {
             if lower.ends_with(ext) && name.len() > ext.len() {
                 name.truncate(name.len() - ext.len());
@@ -592,6 +680,49 @@ impl SpacePlan {
     }
 }
 
+/// Refuses a destination that cannot become a folder: a file or a dangling
+/// link at its path, or where one of its folders would go. Called before
+/// anything is written, so a run cannot leave a journal that only promises a
+/// resume that would fail the same way.
+fn check_destination(out: &Path, resuming: bool) -> Result<()> {
+    let untouched = if resuming {
+        ""
+    } else {
+        ". Nothing was modified"
+    };
+    // Walk up until something exists. `exists` follows links, so a dangling
+    // one looks absent and `create_dir_all` would fail on it later; metadata
+    // that is not a folder stops the run here instead.
+    let mut path = out.to_path_buf();
+    loop {
+        match path.symlink_metadata() {
+            Ok(meta) => {
+                if path.is_dir() {
+                    return Ok(());
+                }
+                let what = if meta.is_file() {
+                    "is a file, not a folder"
+                } else {
+                    "is not a folder"
+                };
+                if path == out {
+                    bail!("the destination {} {what}{untouched}", out.display());
+                }
+                bail!(
+                    "the destination {} cannot be created: {} {what}{untouched}",
+                    out.display(),
+                    path.display()
+                );
+            }
+            Err(_) => {
+                if !path.pop() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
 /// The space plan for extracting `job` into `out`, keeping the archive or
 /// not. For a half-extracted archive, `keep_archive` must be what its
 /// journal says; see [`keeps_archive`].
@@ -603,6 +734,7 @@ pub fn plan(
     keep_archive: bool,
 ) -> Result<SpacePlan> {
     job.check_case(out)?;
+    check_destination(out, resuming)?;
     let reclaims = fsutil::same_filesystem(job.storage.primary(), out);
     let stale: u64 =
         job.uncommitted(out).iter().map(|(_, n)| n).sum::<u64>() + job.past_resume_point(out);
@@ -661,6 +793,7 @@ pub fn begin(
 ) -> Result<Journal> {
     // Front ends ask earlier; the folder may have changed since.
     job.check_case(&output)?;
+    check_destination(&output, false)?;
     let found = existing(job, &output)?;
     if let Some(first) = found.first()
         && replace.is_none()
@@ -677,6 +810,13 @@ pub fn begin(
         bail!(
             "{what}. Existing files are only replaced when that is requested. Move the files or \
              choose another destination. Nothing was modified"
+        );
+    }
+    if job.selection().is_some() && !keep_archive {
+        // Truncating would destroy the entries left out.
+        bail!(
+            "only some entries are selected, and those are extracted only while the archive is \
+             kept. Nothing was modified"
         );
     }
     if keep_archive {
@@ -705,6 +845,7 @@ pub fn begin(
             keep: only_found(&c.keep),
             both: only_found(&c.both),
         });
+    let folders = crate::folders::of(&job.units, &output);
     let plan = Plan {
         format: job.format_name,
         tail_start: job.tail_start,
@@ -714,6 +855,8 @@ pub fn begin(
         replace,
         case_folders: job.case_folders(),
         case_beyond_ascii: job.case_beyond_ascii(),
+        folders,
+        only: job.selection().map(<[PathBuf]>::to_vec),
     };
     Journal::create(paths, &job.storage, plan)
 }
@@ -726,9 +869,69 @@ pub fn check_sfv(storage: &Storage, cancelled: &dyn Fn() -> bool) -> Result<Opti
 /// Before continuing a crashed run, deletes what it wrote for batches it
 /// never committed.
 pub fn clear_uncommitted(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, false)
+}
+
+/// Discards a kept run's uncommitted output, including its open file. The
+/// untouched archive holds that file; normal resume must preserve it.
+pub(crate) fn clear_discarded(job: &Job, out: &Path) -> Result<()> {
+    clear_output(job, out, true)
+}
+
+fn clear_output(job: &Job, out: &Path, discard: bool) -> Result<()> {
     check_no_links_on_the_way(job, out)?;
-    for (p, _) in job.uncommitted(out) {
+    let found = if discard {
+        job.discarded_output(out)
+    } else {
+        job.uncommitted(out)
+    };
+    let mut listed = std::collections::HashMap::new();
+    for (p, _) in &found {
+        check_spelling(out, p, &mut listed)?;
+    }
+    for (p, _) in found {
         fs::remove_file(&p).with_context(|| format!("removing stale {}", p.display()))?;
+    }
+    Ok(())
+}
+
+/// Refuses to delete `path` unless every name from `out` down to it is
+/// spelled on disk as in the entry. Where the filesystem folds names,
+/// `makefile` also finds a `Makefile` that another program, or another
+/// archive, put there after this run began, and that one isn't this run's
+/// to delete. Spellings are compared decomposed and nothing else, since
+/// HFS+ stores names decomposed whatever they were created as.
+fn check_spelling(
+    out: &Path,
+    path: &Path,
+    listed: &mut std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
+) -> Result<()> {
+    use unicode_normalization::UnicodeNormalization;
+    let spelling = |n: &std::ffi::OsStr| n.to_string_lossy().nfd().collect::<String>();
+    let Ok(rel) = path.strip_prefix(out) else {
+        return Ok(());
+    };
+    let mut dir = out.to_path_buf();
+    for name in rel.iter() {
+        let names = match listed.entry(dir.clone()) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(
+                fs::read_dir(&dir)
+                    .with_context(|| format!("listing {}", dir.display()))?
+                    .map(|e| e.map(|e| spelling(&e.file_name())))
+                    .collect::<std::io::Result<_>>()
+                    .with_context(|| format!("listing {}", dir.display()))?,
+            ),
+        };
+        if !names.contains(&spelling(name)) {
+            bail!(
+                "{} is spelled differently on disk than in the archive, so it was not made by \
+                 this extraction and is left alone. Move it out of the way, then run the command \
+                 again",
+                dir.join(name).display()
+            );
+        }
+        dir.push(name);
     }
     Ok(())
 }
@@ -741,6 +944,23 @@ mod tests {
 
     use super::*;
 
+    /// A resume only deletes what is spelled as its entry: a `Makefile` on
+    /// disk isn't `makefile`'s, even where the filesystem would find it.
+    #[test]
+    fn a_resume_leaves_names_spelled_differently_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path();
+        fs::create_dir(out.join("Src")).unwrap();
+        fs::write(out.join("Src/Makefile"), b"theirs").unwrap();
+        fs::write(out.join("Src/caf\u{e9}.txt"), b"ours").unwrap();
+        let mut listed = std::collections::HashMap::new();
+        assert!(check_spelling(out, &out.join("Src/makefile"), &mut listed).is_err());
+        assert!(check_spelling(out, &out.join("src/Makefile"), &mut listed).is_err());
+        assert!(check_spelling(out, &out.join("Src/Makefile"), &mut listed).is_ok());
+        // HFS+ hands back the decomposed form of what was created composed.
+        assert!(check_spelling(out, &out.join("Src/cafe\u{301}.txt"), &mut listed).is_ok());
+    }
+
     #[test]
     fn output_folder_drops_the_volume_and_format_suffixes() {
         let name = |n: &str| default_output(Path::new(n));
@@ -751,6 +971,8 @@ mod tests {
         assert_eq!(name("game.rar"), Path::new("game"));
         assert_eq!(name("game.tar.xz"), Path::new("game"));
         assert_eq!(name("game.txz"), Path::new("game"));
+        assert_eq!(name("game.tar.zst"), Path::new("game"));
+        assert_eq!(name("game.tzst"), Path::new("game"));
         assert_eq!(name("game.part.rar"), Path::new("game.part"));
         assert_eq!(name("notes.txt"), Path::new("notes.txt-extracted"));
     }
@@ -843,7 +1065,8 @@ mod tests {
         let before = fs::read(&archive).unwrap();
         let (primary, paths) = locate(&archive).unwrap();
         let reads = Arc::default();
-        let State::Fresh(job, out) = open(&primary, &paths, None, true, None, &reads).unwrap()
+        let State::Fresh(job, out) =
+            open(&primary, &paths, None, None, true, None, &reads).unwrap()
         else {
             panic!("a new archive opens fresh");
         };

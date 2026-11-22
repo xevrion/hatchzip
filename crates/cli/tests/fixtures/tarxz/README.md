@@ -26,6 +26,6 @@ block. The compressed and uncompressed sizes, block counts, checks, and
 filter chains can be inspected with `xz -lvv`.
 
 The 1 MiB block size is intentional for the crash tests. The compressed
-fixtures are small, so on filesystems with large punch granules the tests
+fixtures are small, so on filesystems with large punch margins the tests
 check resume correctness and preserved bytes but do not require every
 individual crash to release disk space.

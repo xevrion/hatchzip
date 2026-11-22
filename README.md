@@ -15,6 +15,11 @@
 </h4>
 
 <p align="center">
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily" alt="#10 Repository Of The Day on Trendshift" width="250" height="55" /></a>
+  <a href="https://trendshift.io/repositories/316745"><img src="https://trendshift.io/api/badge/trendshift/repositories/316745/daily?language=Rust" alt="#2 Rust Repository Of The Day on Trendshift" width="250" height="55" /></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml"><img src="https://github.com/xevrion/hatchzip/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/xevrion/hatchzip"><img src="https://api.scorecard.dev/projects/github.com/xevrion/hatchzip/badge" alt="OpenSSF Scorecard" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0 licensed" /></a>
@@ -29,7 +34,7 @@ HatchZip is a free, open-source archive extractor for Windows, macOS and Linux, 
 
 A 180 GB game download that unpacks to 200 GB needs 380 GB of disk with WinRAR, 7-Zip or `unzip`, because the archive and everything extracted from it have to exist at the same time. HatchZip needs a little over 200 GB. It extracts the archive from the end and cuts each finished part off the archive file as it goes, so the space the archive gives back is reused for the next files.
 
-It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz`, `.tar.xz`, RAR volume sets and split archives.
+It checks that the extraction will fit before it changes anything, keeps a safety margin of free space the whole way through, and can be stopped or crash at any moment and pick up where it left off. It reads ZIP, 7z, tar, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, RAR volume sets and split archives.
 
 ### Get it
 
@@ -44,9 +49,31 @@ No coding needed. **[Download for Windows](https://github.com/xevrion/hatchzip/r
 
 HatchZip shows whether the files will fit before it changes anything. The archive is used up as the files come out, so when it finishes, only the extracted files are left.
 
-**Extract here** puts an archive with one folder or one file at its top next to the archive. An archive with several files or folders at its top goes into a new folder named after it, so its files never mix with what is already there. The progress window closes when the extraction completes; to keep it open, clear **Close the progress window when extraction completes** in the app's Settings menu.
+**Extract here** puts an archive with one folder or one file at its top next to the archive. An archive with several files or folders at its top goes into a new folder named after it, so its files never mix with what is already there. The progress window closes when the extraction completes; to keep it open, clear **Close the progress window when extraction completes** in the app's [settings](#settings).
 
-To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's Settings menu; every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
+To take only some files or folders out, select them in the app's contents list (Ctrl+click or Cmd+click adds a row, Shift+click a range, Space the row under the cursor), then choose **Extract selected…** and the destination folder. Only those are extracted, and the archive is always kept.
+
+To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's [settings](#settings); every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
+
+### Settings
+
+Open them with **File > Settings…** (Ctrl+, or Cmd+, on macOS), or the gear at the top right of the window. Every change applies at once and is saved; the main window's own controls and the right-click menu's windows use the same settings.
+
+| Section | Setting | Default |
+|---|---|---|
+| General | **Language**: the system's, or any of the app's translations | The system language |
+| General | **Appearance**: System, Light or Dark | System |
+| General | **After extracting**: do nothing, or open the destination folder | Do nothing |
+| General | **Close the progress window when extraction completes**, for the window the right-click menu opens | On |
+| Extraction | **Remove the archive during extraction** | On |
+| Extraction | **Verify archive before extracting** | Off |
+| Extraction | **Reserved space**: free space left untouched on the destination drive, in GB | 2 GB |
+| Extraction | **Default destination**: next to the archive, or always inside a chosen folder, each archive in a folder named after it. **Extract here** in the right-click menu still extracts next to the archive. A chosen folder that no longer exists, or is on a drive that is not connected, is not used: the archive is extracted next to itself | Next to the archive |
+| Extraction | **When a file already exists**: ask, replace (as `--replace`), or skip (as `--skip-existing`) | Ask |
+| Integration | **Show in the Explorer context menu** on Windows, **Show in the file manager's context menu** on Linux: the right-click menu entries | As installed |
+| Advanced | The settings file's location, and **Reset all settings** | |
+
+The settings file is `%APPDATA%\HatchZip\settings.json` on Windows, `~/Library/Application Support/HatchZip/settings.json` on macOS and `~/.config/hatchzip/settings.json` on Linux. A missing or damaged file, or a value the app does not recognize, means the default for that setting.
 
 ## When there is not enough disk space to extract
 
@@ -80,7 +107,7 @@ Download from the [latest release](https://github.com/xevrion/hatchzip/releases/
 |---|---|
 | Windows 10 and 11 (x64) | [`HatchZip-x64-setup.exe`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-setup.exe): installs per user, no admin rights, adds the right-click menu |
 | Windows 10 and 11 (x64), MSI | [`HatchZip-x64.msi`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64.msi): the same app and install as the setup, as a Windows Installer package for deployment tools and `msiexec /i HatchZip-x64.msi /qn`. Install one or the other |
-| Windows 10 and 11 (x64), portable | [`HatchZip-x64-portable.zip`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-portable.zip): the same app and command line tool with nothing to install. Unzip it anywhere and run `hatchzip-gui.exe`; Settings, "Show in the Explorer context menu" adds the right-click entries for that location |
+| Windows 10 and 11 (x64), portable | [`HatchZip-x64-portable.zip`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x64-portable.zip): the same app and command line tool with nothing to install. Unzip it anywhere and run `hatchzip-gui.exe`; Settings > Integration, "Show in the Explorer context menu" adds the right-click entries for that location |
 | macOS, Apple Silicon | [`HatchZip-aarch64.dmg`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-aarch64.dmg) |
 | macOS, Intel | [`HatchZip-x86_64.dmg`](https://github.com/xevrion/hatchzip/releases/latest/download/HatchZip-x86_64.dmg) |
 | Debian, Ubuntu | [`hatchzip_amd64.deb`](https://github.com/xevrion/hatchzip/releases/latest/download/hatchzip_amd64.deb) |
@@ -113,12 +140,13 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 
 ### Package managers
 
-Homebrew and Scoop are live. winget is in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
+Homebrew, Scoop and Chocolatey are live. winget is in review, and the AUR packages are coming soon; until they are listed as live here, a package under those names does not come from this project.
 
 | System | Command | Installs |
 |---|---|---|
 | Arch Linux (AUR) | Not published yet. Until then, use the AppImage or the install script | App and CLI |
 | Windows (winget) | In review; until it is accepted, use the setup | App and CLI, same as the setup |
+| Windows (Chocolatey) | `choco install hatchzip` | App and CLI, same as the setup |
 | Windows (Scoop) | `scoop bucket add xevrion https://github.com/xevrion/scoop-bucket`, then `scoop install xevrion/hatchzip` | CLI |
 | macOS and Linux (Homebrew) | `brew install xevrion/tap/hatchzip` | CLI |
 | macOS (Homebrew) | `brew install --cask xevrion/tap/hatchzip` | App and CLI |
@@ -180,6 +208,7 @@ game.zip  180.2 MB zip, 200.0 MB uncompressed in 22 entries
 hatchzip extract game.zip                 # into ./game/
 hatchzip extract game.zip -o D:\Games\Foo # somewhere else
 hatchzip x game.7z.001                    # split archive; any part's name works
+hatchzip x game.z01                       # split ZIP (game.z01, ..., game.zip); any part works
 ```
 
 HatchZip prints the same space plan, asks for confirmation, then extracts. When the extraction is complete, the archive has been removed and the files are in the output folder. For a split archive, each volume is deleted as soon as everything in it is extracted.
@@ -188,6 +217,7 @@ HatchZip prints the same space plan, asks for confirmation, then extracts. When 
 |---|---|
 | `-o, --output <dir>` | Output folder. Defaults to a folder named after the archive, next to it. It may hold other files, but none where the archive's files go, unless `--replace` is given. |
 | `--keep-archive` | Keep the archive: a normal extraction that removes nothing. Space is required for all extracted files. No confirmation is asked. |
+| `--only <path>` | Extract only this entry, or everything in this folder, and keep the archive. Repeat it for several. See [Extract some entries](#extract-some-entries). |
 | `--replace` | Replace files that already exist in the output folder. See [Extract over existing files](#extract-over-existing-files). |
 | `--skip-existing` | Keep files that already exist in the output folder instead of the archive's copies. |
 | `--keep-free <size>` | Free space HatchZip never uses, such as `500MB` or `10GB`. Default `2GB`, so the disk never fills to zero. |
@@ -204,6 +234,17 @@ hatchzip extract game.zip --keep-archive
 When the disk has room for the archive and all its files, `--keep-archive` extracts like any other tool and leaves the archive byte for byte as it was, for when it is needed again. The space check, path and collision checks, checksums and password handling are the same as for an extraction in place. If keeping the archive does not fit, HatchZip says so, by how much, and what extracting in place would require instead.
 
 An interrupted run resumes like any other, and goes on keeping the archive even when resumed without `--keep-archive`. An extraction that started in place cannot switch to keeping the archive, since part of it is already removed. `hatchzip restore` on an archive being kept only discards the progress: the archive was never changed.
+
+### Extract some entries
+
+```sh
+hatchzip list game.zip
+hatchzip extract game.zip --only docs --only bin/tool.exe
+```
+
+`--only` takes a path as `list` shows it: a file, or a folder with everything inside it. Only those entries are extracted, with the folders above them; nothing else is written. `--only` implies `--keep-archive`, since the entries left out stay in the archive, so the archive is left byte for byte as it was and the space check counts only the selected files. A path that is not in the archive is refused before anything is written.
+
+A hard link brings its target along, since the link is made from the extracted target. A symbolic link is extracted as it is, even when what it points to is left out. An interrupted run resumes with the same entries, with or without `--only`; resuming with entries that are not part of the selection is refused. It takes one archive at a time.
 
 ### Extract over existing files
 
@@ -237,7 +278,7 @@ Press `Ctrl+C` and HatchZip finishes the files it is writing, saves its progress
 hatchzip extract game.zip
 ```
 
-The same applies after a crash, a power cut, or running out of space because something else filled the disk. Progress lives in two small files next to the archive, `game.zip.hatchzip` and `game.zip.hatchzip-tail`. **Do not delete them while an extraction is unfinished**: they hold the archive's index, which is no longer inside the archive itself.
+The same applies after a crash, a power cut, or running out of space because something else filled the disk. Progress lives in small files next to the archive: `game.zip.hatchzip` and `game.zip.hatchzip-tail`, and `game.zip.hatchzip-folders` when the archive's folders have permissions or times to set. **Do not delete them while an extraction is unfinished**: they hold the archive's index, which is no longer inside the archive itself.
 
 Anyone who supplies an archive could also supply progress files next to it, so HatchZip follows them only to the archive's own files, and only for an extraction started on this computer. Every extraction notes its output folder in your user profile, outside the archive's folder, so a resume on the same computer needs no options. On another computer, or for an extraction that HatchZip 0.1.5 or earlier started in the default folder, name the folder again with `-o`; `restore` takes it too.
 
@@ -308,21 +349,22 @@ gh attestation verify HatchZip-x64-setup.exe --repo xevrion/hatchzip
 | Format | Status | Freed in steps of |
 |---|---|---|
 | ZIP, ZIP64, self-extracting `.exe` ZIPs | Supported. Tested: Stored, Deflate, Deflate64, bzip2, LZMA, PPMd, XZ and Zstandard, including archives made by 7-Zip itself, and entries past the 4 GiB mark. | One file |
-| 7z, solid and non-solid | Supported. Tested with archives made by 7-Zip 25.01: LZMA2 (its default), LZMA, BCJ with LZMA2, bzip2, Deflate and PPMd; Zstandard with an archive made by py7zr, since 7-Zip has no Zstandard coder for the 7z format. | One solid block |
+| 7z, solid and non-solid | Supported. Tested with archives made by 7-Zip 25.01: LZMA2 (its default), LZMA, BCJ with LZMA2, bzip2, Deflate and PPMd; Zstandard with an archive made by py7zr, since 7-Zip has no Zstandard coder for the 7z format; and LZ4 and Brotli with archives made by 7-Zip ZS 25.01, the 7-Zip build that adds those coders. A coder this build has no decoder for is refused before anything is touched. | One solid block |
 | tar (uncompressed) | Supported, including long names, symlinks and hard links | One file |
 | `.tar.gz`, `.tgz` | Supported, including multi-member gzip (`bgzip`, `pigz -i`) and split `.tar.gz.001` sets. Extracted from the front, freeing the compressed bytes behind the decoder where the filesystem can punch holes; every gzip CRC-32 and length is checked before anything is touched. Tested with archives from GNU tar with gzip, and pigz. Elsewhere (FAT32, exFAT) it still extracts and resumes, but needs room for the archive and every file at once, and `check` says so. | 256 MiB of output |
+| `.tar.bz2`, `.tbz2`, `.tbz` | Supported, including concatenated bzip2 streams and split `.tar.bz2.001` sets. Extracted from the front, freeing bytes at CRC-checked block boundaries where hole punching is available. Every block and combined stream CRC is checked before anything is touched. Damage and a bare bzip2 file without a tar are refused before extraction. On FAT32 and exFAT it needs room for the archive and every file at once. | 256 MiB of output |
 | `.tar.xz` | Supported when the xz stream holds more than one block, which is xz's multithreaded default and what `xz -T4 -6 --block-size=8MiB` writes. Each block is decoded on its own and its CRC-32 or CRC-64 checked; an LZMA2 dictionary is not carried between blocks, so a point needs no window. A one-block archive (`xz -T1`) is refused in place, since nothing can be freed while it decodes, and extracts with `--keep-archive`. Refused before anything is touched: SHA-256 or unknown checks, unknown filters, concatenated xz streams, and dictionaries over 1 GiB. A stream with no checks (`--check=none`) is refused in place, since damage inside it could not be caught before the bytes are freed, and extracts with `--keep-archive`. | 256 MiB of output |
+| `.tar.zst`, `.tzst` | Supported when the zstd stream holds more than one frame, as `pzstd` and concatenated files write. Each frame is independent and decoded on its own, with its XXH64 checksum verified before the frame behind it is freed, so a point needs no window. Skippable frames are skipped, including the one `pzstd` writes before every frame and the seekable format's table. The `zstd` CLI writes one frame even with `-T0`, so most `.tar.zst` files are refused in place and extract with `--keep-archive`. Refused before anything is touched: frames that name a dictionary, and windows over 1 GiB (`--long=31`). A stream whose frames carry no checksum is refused in place, since damage inside it could not be caught before the bytes are freed, and extracts with `--keep-archive`. On FAT32 and exFAT it needs room for the archive and every file at once. | 256 MiB of output |
 | Split archives (`.001`, `.002`, ...) of ZIP or 7z, as 7-Zip makes them | Supported | One file or block; each volume is deleted once emptied |
 | Password-protected ZIP (ZipCrypto and AES) and 7z (AES, including encrypted file lists) | Supported. HatchZip asks for the password, or takes `--password` or `HATCHZIP_PASSWORD`, and proves it on one file before anything is deleted. It is never saved, so a resumed run asks again. | Same as unencrypted |
-| `.tar.zst` | Refused before extraction, planned; see [the format notes](docs/formats.md#tarzst-and-tarxz). | |
 | One huge solid 7z block | Works, but needs free space for the whole block, as the table above shows. Freeing space inside a block is the same planned technique. | |
 | RAR, RAR 5 and RAR 4, single files and volume sets (`.part1.rar`, `.part2.rar`, ... or `.rar`, `.r00`, ...) | Supported in the release builds, decoded by UnRAR (see [License](#license)); builds without the `rar` feature, such as `cargo install hatchzip`, refuse RAR before anything is touched. Password-protected files work as for ZIP: a RAR 5 password is proven by its check value, a RAR 4 one by decoding the smallest encrypted file, which for a large file can take a while. Archives with encrypted file names ("Encrypt file names", `rar -hp`) need the password even to be listed, and are freed file by file like any other. A large stored file is freed while it is written, as in tar. Refused before anything is touched: links, dictionaries over 4 GB, and sets with a volume missing or a stray one after the last. `restore` works, except for archives with encrypted file names, since it takes no password; such an extraction can only be completed. Tested with archives made by RAR 6.24 (RAR 5 and RAR 4) and archives written by the test suite; sets made by WinRAR 7.23 were tested on Windows when RAR support was first written. | One file; a volume once every file that reaches into it is out |
 | Solid RAR | Extracted only while the archive is kept (`--keep-archive`): a solid archive decodes front to back in one pass and UnRAR can't save its state, so it can't be freed as it goes or resumed mid-way. In place, it is refused before anything is touched. | |
-| Native split ZIP (`.z01`) | Planned | |
+| Native split ZIP (`.z01`, `.z02`, ..., `.zip`), as Info-ZIP `zip -s`, WinZip and WinRAR write it | Supported. HatchZip reads the index in the last part itself, maps every offset in it to its part, and hands the zip library the same index for the joined parts, so decoding, CRC checks, passwords (ZipCrypto and AES) and freeing space inside a large file work as for any ZIP. Any part's name opens the set, `.zip` included. Refused before anything is touched: a part missing, a stray part after the last, the last part on its own, an empty part, an index that points outside its parts, and a part whose entries disagree with the index, such as one from another copy of the archive. `restore` works; once the `.zip` is gone, it writes a new `.zip` holding only the index. Sets on removable media whose parts all have the same name are not handled. The test suite builds sets itself and, where Info-ZIP is installed, with `zip -s`; sets from WinZip and WinRAR are not tested. | One file; a part once every file that reaches into it is out |
 
 ## How it works
 
-ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. RAR stores files one after another like tar, so it is freed file by file too, and a volume is deleted once every file reaching into it is out. A `.tar.gz` or `.tar.xz` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
+ZIP, 7z and tar all store their contents as a sequence of independent pieces: files for ZIP and tar, solid blocks for 7z. ZIP and 7z keep their index at the very end. HatchZip saves that index to a side file, then extracts pieces starting from the last one in the archive. After each batch it truncates the archive to where that batch began, which every operating system and filesystem supports; for a split archive, that means deleting whole volumes and shortening one. RAR stores files one after another like tar, so it is freed file by file too, and a volume is deleted once every file reaching into it is out. A `.tar.gz`, `.tar.bz2`, `.tar.xz` or `.tar.zst` is one compressed stream that can only be decoded from the front, so HatchZip extracts it front to back and punches holes in the compressed bytes it has used, at resume points it can restart from after a crash. The full design, including the exact order of writes that makes a crash safe, is in [How it works](docs/how-it-works.md).
 
 ## How it is built
 

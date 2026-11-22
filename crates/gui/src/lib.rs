@@ -5,12 +5,14 @@
 pub mod args;
 pub mod backend;
 mod entries;
+pub mod locale;
 pub mod main_window;
 mod password;
 mod platform;
 mod replace;
 mod runner;
 pub mod settings;
+mod settings_window;
 pub mod shell;
 mod task;
 pub mod task_window;

@@ -3,12 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://static.cloudflareinsights.com https://cloud.umami.is; connect-src https://cloudflareinsights.com https://cloud.umami.is https://gateway.umami.is https://api-gateway.umami.dev; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <title>HatchZip: extract archives without double the disk space</title>
 <meta name="description" content="HatchZip is a free, open-source extractor for ZIP, 7z, RAR and tar that works in place, so it needs free space for the files only, not the archive too.">
 <link rel="canonical" href="https://hatchzip.dev/">
+<link rel="alternate" hreflang="en" href="https://hatchzip.dev/">
+<link rel="alternate" hreflang="zh-Hans" href="https://hatchzip.dev/zh.html">
+<link rel="alternate" hreflang="x-default" href="https://hatchzip.dev/">
 <link rel="me" href="https://github.com/xevrion">
 <link rel="me" href="https://x.com/xevrion_the1">
 <meta property="og:url" content="https://hatchzip.dev/">
@@ -25,13 +28,13 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"WebSite","@id":"https://hatchzip.dev/#website","name":"HatchZip","alternateName":"hatchzip.dev","url":"https://hatchzip.dev/","inLanguage":"en"},
-{"@type":"SoftwareApplication","@id":"https://hatchzip.dev/#software","name":"HatchZip","alternateName":"hatchzip","description":"A free, open-source archive extractor that extracts ZIP, 7z, RAR, tar and split archives in place, so it needs free space for the extracted files only, not for the files and the archive together.","applicationCategory":"UtilitiesApplication","applicationSubCategory":"Archive extractor","operatingSystem":"Windows 10, Windows 11, macOS, Linux","softwareVersion":"0.1.9","url":"https://hatchzip.dev/","downloadUrl":"https://github.com/xevrion/hatchzip/releases/latest","installUrl":"https://hatchzip.dev/#download","license":["https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT","https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"image":"https://hatchzip.dev/img/og.png","screenshot":"https://hatchzip.dev/img/app-light.png","author":{"@type":"Person","@id":"https://hatchzip.dev/#author","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion","https://x.com/xevrion_the1"]},"codeRepository":"https://github.com/xevrion/hatchzip","sameAs":["https://github.com/xevrion/hatchzip","https://crates.io/crates/hatchzip"]},
+{"@type":"SoftwareApplication","@id":"https://hatchzip.dev/#software","name":"HatchZip","alternateName":"hatchzip","description":"A free, open-source archive extractor that extracts ZIP, 7z, RAR, tar and split archives in place, so it needs free space for the extracted files only, not for the files and the archive together.","applicationCategory":"UtilitiesApplication","applicationSubCategory":"Archive extractor","operatingSystem":"Windows 10, Windows 11, macOS, Linux","softwareVersion":"0.1.10","url":"https://hatchzip.dev/","downloadUrl":"https://github.com/xevrion/hatchzip/releases/latest","installUrl":"https://hatchzip.dev/#download","license":["https://github.com/xevrion/hatchzip/blob/main/LICENSE-MIT","https://github.com/xevrion/hatchzip/blob/main/LICENSE-APACHE"],"isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"image":"https://hatchzip.dev/img/og.png","screenshot":"https://hatchzip.dev/img/app-light.png","author":{"@type":"Person","@id":"https://hatchzip.dev/#author","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion","https://x.com/xevrion_the1"]},"codeRepository":"https://github.com/xevrion/hatchzip","sameAs":["https://github.com/xevrion/hatchzip","https://crates.io/crates/hatchzip"]},
 {"@type":"FAQPage","@id":"https://hatchzip.dev/#faq","mainEntity":[
 {"@type":"Question","name":"Is HatchZip safe?","acceptedAnswer":{"@type":"Answer","text":"HatchZip checks that the extraction fits before it changes anything. A file is written and flushed to disk before the part of the archive holding it is cut off, so a crash leaves each file either extracted or still in the archive. Every file's CRC-32 is checked, and a damaged file stops the run. To check a download is genuine, see Verify your download."}},
 {"@type":"Question","name":"Does HatchZip need internet access?","acceptedAnswer":{"@type":"Answer","text":"No. HatchZip has no networking code and no networking library, no telemetry and no accounts, and it never checks for updates itself. It reads the archive on your disk and writes the files next to it. Its CI fails if an HTTP, TLS or socket library enters the dependencies. The desktop app's two links, to the source code and to the latest release under Help, Check for updates, open in your web browser."}},
 {"@type":"Question","name":"Which archive formats does HatchZip extract?","acceptedAnswer":{"@type":"Answer","text":"HatchZip extracts ZIP (including ZIP64 and self-extracting .exe files), 7z, RAR 5 and RAR 4, plain tar, .tar.gz and .tgz, .tar.xz and .txz, split .001 archives of ZIP or 7z, and RAR volume sets. It opens password-protected ZIP, 7z and RAR archives. A solid RAR is extracted only while keeping the archive. .tar.zst is not supported yet."}},
 {"@type":"Question","name":"How much free space does HatchZip need?","acceptedAnswer":{"@type":"Answer","text":"HatchZip needs about the size of the extracted files, plus the largest part it can free at once: one file for ZIP, tar and RAR, one solid block for 7z. A 180 GB archive that unpacks to 200 GB needs a little over 200 GB, not 380 GB. It also keeps 2 GB free by default. hatchzip check shows the exact figure and changes nothing."}},
-{"@type":"Question","name":"What happens if HatchZip crashes or is stopped?","acceptedAnswer":{"@type":"Answer","text":"HatchZip saves its progress in two small files next to the archive. After a crash, a power cut or Ctrl+C, open the same archive in the app or run the same command again, and it continues where it stopped. To give up instead, hatchzip restore turns what is left into a normal archive holding the files not yet extracted."}},
+{"@type":"Question","name":"What happens if HatchZip crashes or is stopped?","acceptedAnswer":{"@type":"Answer","text":"HatchZip saves its progress in small files next to the archive. After a crash, a power cut or Ctrl+C, open the same archive in the app or run the same command again, and it continues where it stopped. To give up instead, hatchzip restore turns what is left into a normal archive holding the files not yet extracted."}},
 {"@type":"Question","name":"Does HatchZip work on FAT32 and exFAT drives?","acceptedAnswer":{"@type":"Answer","text":"Yes. ZIP, 7z, tar and RAR archives are freed by shortening the archive file, which works on every filesystem, including FAT32 and exFAT USB drives. A .tar.gz frees space as it goes only where the filesystem can free part of a file, such as NTFS, APFS, ext4, XFS and btrfs. On FAT32 and exFAT it still extracts, but needs room for the archive and the files at once."}}
 ]}
 ]}
@@ -61,6 +64,10 @@
 <li><a href="winrar-not-enough-space.html">WinRAR space errors</a></li>
 <li><a href="7zip-not-enough-space.html">7-Zip space errors</a></li>
 </ul>
+<p class="label">Language</p>
+<ul>
+<li><a href="zh.html" lang="zh-Hans" hreflang="zh-Hans">中文</a></li>
+</ul>
 </nav>
 </aside>
 
@@ -74,6 +81,7 @@
 <a class="gh" href="https://github.com/xevrion/hatchzip"><svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>Star on GitHub</span></a>
 <a class="gh" href="sponsor.html"><svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="#bf3989" d="M7.655 14.916v-.001h-.002l-.006-.003-.018-.01a22.066 22.066 0 0 1-3.744-2.584C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.044 5.231-3.886 6.818a22.094 22.094 0 0 1-3.433 2.414 7.152 7.152 0 0 1-.31.17l-.018.01-.008.004a.75.75 0 0 1-.69 0Z"/></svg><span>Sponsor</span></a>
 <a class="gh" href="https://buymeacoffee.com/xevrion"><span>Buy me a coffee</span></a>
+<a class="gh" href="zh.html" lang="zh-Hans" hreflang="zh-Hans"><span>中文</span></a>
 </div>
 </header>
 <main>
@@ -206,7 +214,7 @@
 <h3>How much free space does HatchZip need?</h3>
 <p>HatchZip needs about the size of the extracted files, plus the largest part it can free at once: one file for ZIP, tar and RAR, one solid block for 7z. A 180 GB archive that unpacks to 200 GB needs a little over 200 GB, not 380 GB. It also keeps 2 GB free by default. <code>hatchzip check</code> shows the exact figure and changes nothing.</p>
 <h3>What happens if HatchZip crashes or is stopped?</h3>
-<p>HatchZip saves its progress in two small files next to the archive. After a crash, a power cut or Ctrl+C, open the same archive in the app or run the same command again, and it continues where it stopped. To give up instead, <code>hatchzip restore</code> turns what is left into a normal archive holding the files not yet extracted.</p>
+<p>HatchZip saves its progress in small files next to the archive. After a crash, a power cut or Ctrl+C, open the same archive in the app or run the same command again, and it continues where it stopped. To give up instead, <code>hatchzip restore</code> turns what is left into a normal archive holding the files not yet extracted.</p>
 <h3>Does HatchZip work on FAT32 and exFAT drives?</h3>
 <p>Yes. ZIP, 7z, tar and RAR archives are freed by shortening the archive file, which works on every filesystem, including FAT32 and exFAT USB drives. A <code>.tar.gz</code> frees space as it goes only where the filesystem can free part of a file, such as NTFS, APFS, ext4, XFS and btrfs. On FAT32 and exFAT it still extracts, but needs room for the archive and the files at once.</p>
 </section>
@@ -229,5 +237,6 @@
 </div>
 </div>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "65b9369f91c942498d33c347e9710538"}'></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="dfefc9c5-aa3b-42fa-9074-391ccd0b23af"></script>
 </body>
 </html>

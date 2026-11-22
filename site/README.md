@@ -1,6 +1,6 @@
 # Website
 
-The HatchZip website: static pages, no build step. The only script is Cloudflare Web Analytics, which counts visits without cookies; the Content-Security-Policy on every page allows it and nothing else.
+The HatchZip website: static pages, no build step. The only scripts are Cloudflare Web Analytics and Umami, which count visits without cookies; the Content-Security-Policy on every page allows them and nothing else.
 
 | File | Purpose |
 |---|---|

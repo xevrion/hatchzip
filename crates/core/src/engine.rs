@@ -26,11 +26,17 @@
 //! batches, checks and commits, so it resumes the same way, but never
 //! truncates, punches or deletes: its storage is protected, and the run
 //! frees nothing, exactly like an output on another disk.
+//!
+//! An extraction of some entries only ([`Job::select`]) must keep the
+//! archive, since truncating it would destroy the entries left out. Units
+//! with nothing selected are dropped from the job; a unit that holds both,
+//! such as a solid 7z block, is still decoded whole, and what was not
+//! selected is read and discarded.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -44,7 +50,7 @@ use crate::archive::{
     self, Codec, Format, Item, Kind, PasswordCheck, Sink, SolidWalker, Stream, Unit,
 };
 use crate::journal::{Journal, Link, Paths, Resume, TarAt};
-use crate::{fsutil, platform, replace};
+use crate::{folders, fsutil, platform, replace};
 
 /// Larger batches extract in parallel better, smaller ones redo less work
 /// after a crash and keep the archive shrinking in fine steps.
@@ -102,9 +108,8 @@ pub struct Job {
     /// the last commit truncated it.
     pub top: u64,
     /// Whether the archive's filesystem can free bytes inside a file, and
-    /// how much of a punched range it may keep allocated at each end. Probed
-    /// once, on first use.
-    punch: OnceLock<Option<u64>>,
+    /// what punching costs around a range there. Probed once, on first use.
+    punch: OnceLock<Option<Punch>>,
     /// The streamed unit a previous run left half done, if any.
     resume: Option<Resume>,
     /// Whether a run may have extracted anything yet. Until it has, what
@@ -117,6 +122,49 @@ pub struct Job {
     /// recorded when it began, since a tar no longer lists the entries it
     /// has extracted.
     case_clashes: Box<CaseClashes>,
+    /// The entries chosen, when only some are extracted.
+    only: Option<Only>,
+}
+
+/// The entries an extraction is limited to. `units` then holds only units
+/// with something selected, and their items only what is selected.
+struct Only {
+    /// As the journal records them: every path chosen, and the targets of
+    /// the hard links among them.
+    paths: Vec<PathBuf>,
+    /// The unit as the archive has it, for each unit that also holds entries
+    /// left out: a solid block decodes only whole, in order.
+    whole: HashMap<u64, Unit>,
+}
+
+/// Whether `path` is one of `only` or lies inside a folder among them.
+pub fn picks(only: &[PathBuf], path: &Path) -> bool {
+    only.iter().any(|p| path.starts_with(p))
+}
+
+/// A path to select, as typed: `docs`, `docs/` and `./docs` are the same
+/// folder. Anything that could not be a path inside the archive is refused.
+pub fn selection_path(given: &Path) -> Result<PathBuf> {
+    let mut path = PathBuf::new();
+    for c in given.components() {
+        match c {
+            Component::Normal(n) => path.push(n),
+            Component::CurDir => {}
+            _ => bail!(
+                "'{}' is not a path inside the archive. Give it as the archive lists it, such as \
+                 docs/readme.txt. Nothing was modified",
+                given.display()
+            ),
+        }
+    }
+    if path.as_os_str().is_empty() {
+        bail!(
+            "'{}' names no entry. Give a path as the archive lists it, such as docs/readme.txt. \
+             Nothing was modified",
+            given.display()
+        );
+    }
+    Ok(path)
 }
 
 /// How many folders of one archive may hold names that differ only in case.
@@ -265,6 +313,17 @@ fn first_not_apart<'a>(
     None
 }
 
+/// What freeing an archive's bytes costs around a punched range: `margin` is
+/// the most the filesystem may keep allocated at each end, which the space
+/// estimate reserves; `overlap` is how far before the last punch ended the
+/// next one starts, to free the block it kept. They differ by orders of
+/// magnitude on btrfs, where an extent is 128 MiB but a block is 4 KiB.
+#[derive(Clone, Copy, Debug)]
+pub struct Punch {
+    pub margin: u64,
+    pub overlap: u64,
+}
+
 impl Job {
     /// `password` is only needed for encrypted archives. A missing one shows
     /// up as [`archive::PasswordNeeded`], from here or from
@@ -347,6 +406,17 @@ impl Job {
         let point = journal.resume.as_ref();
         let opened = archive::open(&storage, Some((&journal.format, tail, point)), password)?;
         let mut job = Self::build(storage, opened, journal.committed_len)?;
+        if let Some(only) = &journal.only {
+            // The selection never streams, so it never leaves a point.
+            if journal.resume.is_some() {
+                bail!(
+                    "the journal of {} records a partially extracted file in an extraction of \
+                     selected entries, which never has one. The archive will not be modified",
+                    job.storage.primary().display()
+                );
+            }
+            job.restrict(only.clone());
+        }
         job.started = journal.replace.as_ref().is_none_or(|r| r.moved);
         job.case_clashes.recorded.clone_from(&journal.case_folders);
         job.case_clashes.recorded_beyond_ascii = journal.case_beyond_ascii;
@@ -429,7 +499,91 @@ impl Job {
             resume: None,
             started: false,
             case_clashes: Box::default(),
+            only: None,
         })
+    }
+
+    /// Limits a fresh job to the entries at `given` and everything inside
+    /// the folders among them. Every path must name something in the
+    /// archive. A hard link brings its target along, since the link is made
+    /// from the extracted target and would otherwise point at whatever is at
+    /// that path in the output folder, or at nothing. Symbolic links are
+    /// extracted as they are, whether their targets are selected or not: a
+    /// link is only text and never reaches outside what it names.
+    ///
+    /// Nothing is touched here. Such a job may only be extracted while the
+    /// archive is kept, which [`crate::session::begin`] enforces.
+    pub fn select(&mut self, given: &[PathBuf]) -> Result<()> {
+        if self.only.is_some() {
+            bail!("the entries to extract were already chosen");
+        }
+        if given.is_empty() {
+            bail!("no entries were selected. Nothing was modified");
+        }
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for g in given {
+            let p = selection_path(g)?;
+            if !paths.contains(&p) {
+                paths.push(p);
+            }
+        }
+        let items = || self.units.iter().flat_map(|u| &u.items);
+        for p in &paths {
+            if !items().any(|i| i.path.starts_with(p)) {
+                bail!(
+                    "'{}' is not in the archive. Run `hatchzip list` on it to see its paths, and \
+                     give one as listed. Nothing was modified",
+                    p.display()
+                );
+            }
+        }
+        let targets: Vec<PathBuf> = items()
+            .filter(|i| picks(&paths, &i.path))
+            .filter_map(|i| match &i.kind {
+                Kind::HardLink(t) if !picks(&paths, t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        for t in targets {
+            if !paths.contains(&t) {
+                paths.push(t);
+            }
+        }
+        self.restrict(paths);
+        Ok(())
+    }
+
+    /// Drops every unit with nothing in `paths`, and every item outside it
+    /// from the units left, keeping the whole of a unit that loses some.
+    fn restrict(&mut self, paths: Vec<PathBuf>) {
+        let mut whole = HashMap::new();
+        self.units.retain_mut(|u| {
+            let picked = u.items.iter().filter(|i| picks(&paths, &i.path)).count();
+            if picked == 0 {
+                return false;
+            }
+            if picked < u.items.len() {
+                whole.insert(u.start, u.clone());
+                u.items.retain(|i| picks(&paths, &i.path));
+            }
+            true
+        });
+        self.only = Some(Only { paths, whole });
+    }
+
+    /// The entries this job is limited to, if it is: what the journal
+    /// records.
+    pub fn selection(&self) -> Option<&[PathBuf]> {
+        self.only.as_ref().map(|o| o.paths.as_slice())
+    }
+
+    /// `unit` as the decoder needs it: whole, with the entries left out of
+    /// the selection, which a sink then skips.
+    fn decodable<'a>(&'a self, unit: &'a Unit) -> &'a Unit {
+        self.only
+            .as_ref()
+            .and_then(|o| o.whole.get(&unit.start))
+            .unwrap_or(unit)
     }
 
     /// Refuses entries that differ only in case, unless the folder where
@@ -493,7 +647,7 @@ impl Job {
     /// entries it has extracted, and one an older release started on has to
     /// stay resumable and restorable.
     fn check_layout(&self) -> Result<CaseClashes> {
-        let key = |p: &Path| p.to_string_lossy().to_lowercase();
+        let key = |p: &Path| crate::fsutil::fold_name(&p.to_string_lossy());
         let items = || self.units.iter().flat_map(|u| &u.items);
         // Every file is first written under its name plus the suffix. An
         // entry named so would share that name with another entry's file,
@@ -568,11 +722,10 @@ impl Job {
         Ok(CaseClashes::of(&names))
     }
 
-    /// `Some(granule)` if holes punched in the archive give its space back,
-    /// where `granule` is how much may stay allocated at each end of a
-    /// punched range. `None` on filesystems that can only truncate, such as
-    /// FAT32 and exFAT, which keep today's whole-unit behavior.
-    pub fn punch_support(&self) -> Option<u64> {
+    /// `Some(punch)` if holes punched in the archive give its space back.
+    /// `None` on filesystems that can only truncate, such as FAT32 and
+    /// exFAT, which keep today's whole-unit behavior.
+    pub fn punch_support(&self) -> Option<Punch> {
         *self.punch.get_or_init(|| {
             if test_knob("HATCHZIP_NO_PUNCH").is_some() {
                 return None;
@@ -581,7 +734,10 @@ impl Job {
                 Some(d) if !d.as_os_str().is_empty() => d,
                 _ => Path::new("."),
             };
-            fsutil::can_punch(dir).then(|| platform::punch_granule(dir))
+            fsutil::can_punch(dir).then(|| Punch {
+                margin: platform::punch_margin(dir),
+                overlap: platform::punch_overlap(dir),
+            })
         })
     }
 
@@ -623,7 +779,7 @@ impl Job {
             left,
             buf: vec![0; BUF_SIZE],
         };
-        match worker.extract(unit, &mut sink) {
+        match worker.extract(self.decodable(unit), &mut sink) {
             Ok(()) => Ok(()),
             Err(e) if e.chain().any(|c| c.is::<ProbeDone>()) => Ok(()),
             Err(e) if e.chain().any(|c| c.is::<archive::PasswordNeeded>()) => Err(e),
@@ -765,7 +921,7 @@ impl Job {
     /// At any moment the unit holds the output written since the last resume
     /// point (at most a step, plus one read buffer or deflate block), the
     /// archive bytes at either end of the punched range the filesystem keeps
-    /// (a granule each), and however far the output so far has outgrown the
+    /// (a margin each), and however far the output so far has outgrown the
     /// input it came from. For stored data that last part is zero. For
     /// deflate it only grows as decoding goes on, since encoders fall back to
     /// stored blocks rather than expand data, so the end state bounds it; a
@@ -791,12 +947,12 @@ impl Job {
             out_left
         };
         let rise = match self.punch_support() {
-            Some(granule) if reclaims => {
+            Some(punch) if reclaims => {
                 let slack = match s.codec {
                     Codec::Stored => 0,
                     Codec::Deflate => out_left / 1024,
                 };
-                let step = (stream_step() + BUF_SIZE as u64 + 2 * granule) as i128;
+                let step = (stream_step() + BUF_SIZE as u64 + 2 * punch.margin) as i128;
                 ((out_left - data_left).max(0) + slack + step).min(out_left)
             }
             _ => out_left,
@@ -812,10 +968,14 @@ impl Job {
     /// up to it, plus what was written since: under a step, plus the output
     /// to the next point after the step is full, at most `gap`. The scan
     /// measured both at the very points the run will meet. A read buffer
-    /// and a granule at each end of the punched range come on top. Links are
+    /// and a margin at each end of the punched range come on top. Links are
     /// made at the end, once the archive is gone.
     fn solid_cost(&self, i: usize, p: &Profile, span: i128, reclaims: bool) -> (i128, i128) {
-        let out_left = (p.files + p.links) as i128;
+        // The profile measured every file; a selection writes its own.
+        let out_left = match self.only {
+            Some(_) => on_disk(&self.units[i]),
+            None => p.files + p.links,
+        } as i128;
         // Assumed punched already, as for a single streamed file.
         let freed = self.resumed(i).map_or(0, |r| r.bit / 8) as i128;
         let net = if reclaims {
@@ -824,8 +984,8 @@ impl Job {
             out_left
         };
         let rise = match self.punch_support() {
-            Some(granule) if reclaims => {
-                let ahead = stream_step() + p.gap + BUF_SIZE as u64 + 2 * granule;
+            Some(punch) if reclaims => {
+                let ahead = stream_step() + p.gap + BUF_SIZE as u64 + 2 * punch.margin;
                 (p.lead.max(0) + ahead as i128).min(p.files as i128)
             }
             // Nothing is freed until the run commits, so every file is on
@@ -857,10 +1017,21 @@ impl Job {
     /// is the entry its point is in; the files after the point are still in
     /// the archive.
     pub fn uncommitted(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, true)
+    }
+
+    /// A kept run being discarded has the whole archive, so its open file
+    /// can go too. Earlier files committed by a stream point stay out of
+    /// this list, just as they do on resume.
+    pub(crate) fn discarded_output(&self, out: &Path) -> Vec<(PathBuf, u64)> {
+        self.uncommitted_files(out, false)
+    }
+
+    fn uncommitted_files(&self, out: &Path, preserve_open: bool) -> Vec<(PathBuf, u64)> {
         if !self.started {
             return Vec::new();
         }
-        let open = self.open_entry().is_some();
+        let open = preserve_open && self.open_entry().is_some();
         let mut found = Vec::new();
         for (i, u) in self.units.iter().enumerate() {
             for (k, item) in u.items.iter().enumerate() {
@@ -925,7 +1096,7 @@ impl Job {
             .units
             .iter()
             .rev()
-            .filter_map(|u| worker.extract(u, &mut sink).err())
+            .filter_map(|u| worker.extract(self.decodable(u), &mut sink).err())
             .map(|e| format!("{e:#}"))
             .collect())
     }
@@ -947,7 +1118,7 @@ impl Job {
                 |(worker, sink), unit| {
                     let mut run = || -> Result<()> {
                         let w = worker.as_mut().map_err(|e| anyhow!("{e:#}"))?;
-                        w.extract(unit, sink)
+                        w.extract(self.decodable(unit), sink)
                     };
                     run().err().map(|e| format!("{e:#}"))
                 },
@@ -1066,7 +1237,8 @@ pub struct Progress {
 }
 
 pub enum Outcome {
-    Finished,
+    /// With a warning for the person if the folders could not be set.
+    Finished(Option<String>),
     Paused,
 }
 
@@ -1088,6 +1260,12 @@ impl Run<'_> {
 
         // Keeping the archive frees nothing, which is exactly the case of an
         // output on another disk: nothing is streamed or punched.
+        if self.job.only.is_some() && !self.journal.keep {
+            bail!(
+                "only some entries are selected, which are extracted only while the archive is \
+                 kept. Nothing was modified"
+            );
+        }
         let reclaims =
             !self.journal.keep && fsutil::same_filesystem(self.job.storage.primary(), &out);
         if self.journal.keep {
@@ -1108,7 +1286,11 @@ impl Run<'_> {
             }
             if let Some(solid) = self.job.format.solid() {
                 let walk = solid.walk(self.job.resumed(next))?;
-                let Some(links) = self.stream_solid(next, walk, reclaims, &out)? else {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                let Some(links) = self
+                    .stream_solid(next, walk, reclaims, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                else {
                     return Ok(Outcome::Paused);
                 };
                 self.commit(next, next + 1, links, &out)?;
@@ -1116,7 +1298,11 @@ impl Run<'_> {
                 continue;
             }
             if let Some(stream) = self.stream_now(next, reclaims, &out)? {
-                if !self.stream_unit(next, &stream, &out)? {
+                let what = describe(std::slice::from_ref(&self.job.units[next]));
+                if !self
+                    .stream_unit(next, &stream, &out)
+                    .map_err(|e| out_of_space(e, &what))?
+                {
                     return Ok(Outcome::Paused);
                 }
                 self.commit(next, next + 1, Vec::new(), &out)?;
@@ -1125,16 +1311,19 @@ impl Run<'_> {
             }
             let end = self.next_batch(next, &out, reclaims)?;
             let batch = &self.job.units[next..end];
+            let what = describe(batch);
 
-            let Some(links) = self.extract_batch(batch, &out)? else {
+            let Some(links) = self
+                .extract_batch(batch, &out)
+                .map_err(|e| out_of_space(e, &what))?
+            else {
                 return Ok(Outcome::Paused);
             };
             self.commit(next, end, links, &out)?;
             next = end;
         }
 
-        self.finish(&out)?;
-        Ok(Outcome::Finished)
+        Ok(Outcome::Finished(self.finish(&out)?))
     }
 
     /// Commits `units[start..end]`, all extracted, and truncates the archive
@@ -1362,8 +1551,8 @@ impl Run<'_> {
         out: &Path,
         point: Resume,
         stream: &Stream,
-        punching: Option<u64>,
-    ) -> Result<Option<u64>> {
+        punching: Option<Punch>,
+    ) -> Result<Option<Punch>> {
         file.sync_all()
             .context("flushing the extracted file to disk")?;
         // The part file and the folders above it may be new; a point that
@@ -1428,7 +1617,12 @@ impl Run<'_> {
             Some(s) => s.profile().clone(),
             None => bail!("the archive is not a compressed stream"),
         };
-        let mut left = profile.files;
+        let mut left = match self.job.only {
+            Some(_) => on_disk(&self.job.units[i]),
+            None => profile.files,
+        };
+        // A file left out of the selection is read past, not written.
+        let mut skipping = false;
         // This run hasn't punched anything yet. Its first punch starts at 0,
         // in case the last run stopped between journaling a point and
         // punching up to it.
@@ -1446,6 +1640,10 @@ impl Run<'_> {
             }
             match walk.next(BUF_SIZE)? {
                 Event::Entry { item, link, done } => {
+                    if self.job.selection().is_some_and(|o| !picks(o, &item.path)) {
+                        skipping = item.kind == Kind::File;
+                        continue;
+                    }
                     let dest = out.join(&item.path);
                     let what = || format!("extracting '{}'", item.path.display());
                     match &item.kind {
@@ -1484,6 +1682,7 @@ impl Run<'_> {
                         }
                     }
                 }
+                Event::Data(_) if skipping => {}
                 Event::Data(bytes) => {
                     let f = open
                         .as_mut()
@@ -1517,6 +1716,11 @@ impl Run<'_> {
                         }
                     }
                 }
+                Event::FileEnd if skipping => {
+                    skipping = false;
+                    // Inside the stream, past a file left out.
+                    crash_point("stream-skipped");
+                }
                 Event::FileEnd => {
                     let f = open
                         .take()
@@ -1531,7 +1735,11 @@ impl Run<'_> {
                     left = left.saturating_sub(pad);
                 }
                 Event::Point => {
-                    if since_point < step {
+                    // A selection is extracted while the archive is kept, so
+                    // nothing is freed at a point, and a crash starts the
+                    // stream over: a point inside a file left out would name
+                    // a file the run never writes.
+                    if since_point < step || self.job.only.is_some() {
                         continue;
                     }
                     let mut point = walk.point()?;
@@ -1568,9 +1776,9 @@ impl Run<'_> {
         links: &mut Vec<Link>,
         dirs: &mut HashSet<PathBuf>,
         out: &Path,
-        punching: Option<u64>,
+        punching: Option<Punch>,
         punched: &mut u64,
-    ) -> Result<Option<u64>> {
+    ) -> Result<Option<Punch>> {
         if let Some(f) = open {
             f.file
                 .sync_all()
@@ -1606,7 +1814,7 @@ impl Run<'_> {
         self.job.resume = Some(point);
         crash_point("stream-after-journal");
 
-        if let Some(granule) = punching {
+        if let Some(punch) = punching {
             if !self
                 .job
                 .storage
@@ -1615,11 +1823,11 @@ impl Run<'_> {
             {
                 return Ok(None);
             }
-            // A filesystem that rounds a punch inwards keeps the granule
-            // holding `byte` allocated. Starting the next punch one granule
+            // A filesystem that rounds a punch inwards keeps the block
+            // holding `byte` allocated. Starting the next punch one overlap
             // earlier covers it; it still never reaches `byte`, the point a
             // resume parses.
-            *punched = byte.saturating_sub(granule);
+            *punched = byte.saturating_sub(punch.overlap);
             (self.progress.on_commit)(self.job.top - byte);
         }
         crash_point("stream-after-punch");
@@ -1628,11 +1836,17 @@ impl Run<'_> {
 
     /// Stops a stream at a resume point, before it writes what doesn't fit.
     /// `left` is the output still to write.
-    fn ensure_room(&self, out: &Path, what: &str, left: u64, punching: Option<u64>) -> Result<()> {
+    fn ensure_room(
+        &self,
+        out: &Path,
+        what: &str,
+        left: u64,
+        punching: Option<Punch>,
+    ) -> Result<()> {
         let avail = fsutil::available_space(out)?.saturating_sub(self.keep_free);
         let left = left.next_multiple_of(4096);
         let need = match punching {
-            Some(granule) => (stream_step() + BUF_SIZE as u64 + 2 * granule).min(left),
+            Some(punch) => (stream_step() + BUF_SIZE as u64 + 2 * punch.margin).min(left),
             None => left,
         };
         if need > avail {
@@ -1660,10 +1874,7 @@ impl Run<'_> {
         if first > avail {
             // The upfront check makes this rare: it takes something else on
             // the machine filling the disk while we run.
-            let what = match units[start].items.as_slice() {
-                [one] => format!("'{}'", one.path.display()),
-                many => format!("the next block of {} files", many.len()),
-            };
+            let what = describe(std::slice::from_ref(&units[start]));
             bail!(
                 "not enough disk space to continue: {what} requires {} and {} is available \
                  ({} reserved).\n{} more is required. Progress is saved; free up space and \
@@ -1703,6 +1914,7 @@ impl Run<'_> {
                 on_bytes,
                 buf: vec![0; BUF_SIZE],
                 links: Vec::new(),
+                only: self.job.selection(),
             };
             let mut worker = self
                 .job
@@ -1711,7 +1923,7 @@ impl Run<'_> {
                 .map_err(|e| anyhow!("opening the archive: {e:#}"))?;
             // Lowest first, so the worker reads the archive front to back.
             for unit in batch.iter().rev() {
-                match worker.extract(unit, &mut sink) {
+                match worker.extract(self.job.decodable(unit), &mut sink) {
                     Ok(()) => {}
                     Err(e) if is_interrupt(&e) => return Ok(None),
                     Err(e) => return Err(e),
@@ -1730,6 +1942,7 @@ impl Run<'_> {
                         on_bytes,
                         buf: vec![0; BUF_SIZE],
                         links: Vec::new(),
+                        only: self.job.selection(),
                     };
                     (self.job.format.worker(threads), sink)
                 },
@@ -1737,7 +1950,7 @@ impl Run<'_> {
                     let w = worker
                         .as_mut()
                         .map_err(|e| anyhow!("opening the archive: {e:#}"))?;
-                    w.extract(unit, sink)?;
+                    w.extract(self.job.decodable(unit), sink)?;
                     Ok(std::mem::take(&mut sink.links))
                 },
             )
@@ -1755,17 +1968,15 @@ impl Run<'_> {
         Ok((!interrupted).then_some(links))
     }
 
-    fn finish(self, out: &Path) -> Result<()> {
-        make_final_links(&self.journal.links, out)?;
-        // Before the journal goes, so a crash in between deletes the rest
-        // on resume rather than leaving it.
-        if let Some(r) = &self.journal.replace {
-            replace::settle(out, r)?;
-            replace::remove(out)?;
-        }
+    fn finish(mut self, out: &Path) -> Result<Option<String>> {
+        make_links_and_settle(&mut self.journal, &self.paths, out)?;
+        // Last, since every file, link and put-back file changes its
+        // folder's time.
+        let warning = set_folders(&self.journal, &self.paths, out)?;
         if self.journal.keep {
             // The archive stays as it was; only the progress files go.
-            return self.paths.remove();
+            self.paths.remove()?;
+            return Ok(warning);
         }
         let Self { job, paths, .. } = self;
         let Job {
@@ -1778,7 +1989,8 @@ impl Run<'_> {
         // What is left is at most a self-extractor stub in front of the
         // first entry. The saved index goes with it.
         storage.remove()?;
-        paths.remove()
+        paths.remove()?;
+        Ok(warning)
     }
 }
 
@@ -1854,13 +2066,12 @@ fn remove_after_extract(batch: &[Unit], out: &Path) {
 }
 
 /// A run that crashed after deleting the archive but before cleaning up only
-/// has its links and side files left to deal with.
-pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
-    make_final_links(&journal.links, &journal.output)?;
-    if let Some(r) = &journal.replace {
-        replace::settle(&journal.output, r)?;
-        replace::remove(&journal.output)?;
-    }
+/// has its links and side files left to deal with. Returns a warning for the
+/// person if the folders could not be set.
+pub fn finish_orphaned(journal: &mut Journal, paths: &Paths) -> Result<Option<String>> {
+    let out = journal.output.clone();
+    make_links_and_settle(journal, paths, &out)?;
+    let warning = set_folders(journal, paths, &out)?;
     // The final commit was interrupted before the archive was removed, and
     // all of it is free to go now. A kept archive stays.
     if journal.done && !journal.keep {
@@ -1873,7 +2084,58 @@ pub fn finish_orphaned(journal: &Journal, paths: &Paths) -> Result<()> {
             }
         }
     }
-    paths.remove()
+    paths.remove()?;
+    Ok(warning)
+}
+
+/// Makes the links and puts the replaced files back, unless an earlier run
+/// got past them. With folders still to set, the journal then says only
+/// they are left, so a resume never makes a link again inside a folder
+/// whose mode no longer lets it.
+fn make_links_and_settle(journal: &mut Journal, paths: &Paths, out: &Path) -> Result<()> {
+    if journal.folders_left {
+        return Ok(());
+    }
+    make_final_links(&journal.links, out)?;
+    // Before the journal goes, so a crash in between deletes the rest on
+    // resume rather than leaving it.
+    if let Some(r) = &journal.replace {
+        replace::settle(out, r)?;
+        replace::remove(out)?;
+    }
+    if journal.folders.is_some() {
+        journal.folders_left = true;
+        journal.save(paths)?;
+    }
+    Ok(())
+}
+
+/// Sets the saved folders' permissions and times. The journal stays until
+/// they are set, so a crash before the end sets them again on resume. Every
+/// file is safe by now, so a list that can't be read doesn't stop the run: it
+/// gets a warning, which can only count the folders, since only the list names
+/// them.
+fn set_folders(journal: &Journal, paths: &Paths, out: &Path) -> Result<Option<String>> {
+    let Some(saved) = journal.folders else {
+        return Ok(None);
+    };
+    crash_point("before-folders");
+    let list = match folders::load(&paths.folders, saved) {
+        Ok(list) => list,
+        Err(e) => {
+            let folders = match saved.count {
+                1 => "1 folder".to_string(),
+                n => format!("{n} folders"),
+            };
+            return Ok(Some(format!(
+                "{e:#}, so {folders} in {} kept the default permissions and modified times",
+                out.display()
+            )));
+        }
+    };
+    folders::apply(&list, out)?;
+    crash_point("after-folders");
+    Ok(None)
 }
 
 /// The last step of a run, when every file is extracted and the archive is
@@ -1976,16 +2238,36 @@ struct DiskSink<'a> {
     on_bytes: &'a (dyn Fn(u64) + Sync),
     buf: Vec<u8>,
     links: Vec<Link>,
+    /// The selection, if only some entries are extracted.
+    only: Option<&'a [PathBuf]>,
 }
 
 impl Sink for DiskSink<'_> {
     fn item(&mut self, item: &Item, data: &mut dyn Read) -> Result<()> {
+        if self.only.is_some_and(|o| !picks(o, &item.path)) {
+            return self
+                .skip(data)
+                .with_context(|| format!("reading past '{}'", item.path.display()));
+        }
         self.write(item, data)
             .with_context(|| format!("extracting '{}'", item.path.display()))
     }
 }
 
 impl DiskSink<'_> {
+    /// Reads an entry left out of the selection to its end, so the decoder
+    /// still checks it and reaches the next one, and writes nothing.
+    fn skip(&mut self, data: &mut dyn Read) -> Result<()> {
+        loop {
+            if self.stop.load(Ordering::Relaxed) {
+                return Err(io::Error::from(io::ErrorKind::Interrupted).into());
+            }
+            if data.read(&mut self.buf)? == 0 {
+                return Ok(());
+            }
+        }
+    }
+
     fn write(&mut self, item: &Item, data: &mut dyn Read) -> Result<()> {
         let dest = self.out.join(&item.path);
         match &item.kind {
@@ -2129,6 +2411,43 @@ fn is_interrupt(e: &anyhow::Error) -> bool {
         .any(|io| io.kind() == io::ErrorKind::Interrupted)
 }
 
+/// A write error that means the volume ran out of room, however deep the
+/// decoder wrapped it. The next batch's pre-check can only see the space
+/// there was when it started, so a program filling the disk in between shows
+/// up here instead. Matched by kind, which std maps from `ENOSPC`,
+/// `ERROR_DISK_FULL` and `ERROR_HANDLE_DISK_FULL`; the raw numbers for those
+/// differ per system and clash with unrelated errors elsewhere.
+fn is_disk_full(e: &anyhow::Error) -> bool {
+    e.chain()
+        .filter_map(|c| c.downcast_ref::<io::Error>())
+        .any(|io| {
+            matches!(
+                io.kind(),
+                io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded
+            )
+        })
+}
+
+/// The batch never reached a commit, so its units are still whole in the
+/// archive and a rerun picks them up where this one stopped.
+fn out_of_space(e: anyhow::Error, what: &str) -> anyhow::Error {
+    if !is_disk_full(&e) {
+        return e;
+    }
+    e.context(format!(
+        "not enough disk space to continue: {what} could not be written because the disk filled \
+         up.\nProgress is saved; free up space and resume the extraction"
+    ))
+}
+
+fn describe(units: &[Unit]) -> String {
+    let items: usize = units.iter().map(|u| u.items.len()).sum();
+    match units {
+        [one] if one.items.len() == 1 => format!("'{}'", one.items[0].path.display()),
+        _ => format!("the next block of {items} files"),
+    }
+}
+
 /// Settings only the test suite uses. Release builds ignore them.
 fn test_knob(name: &str) -> Option<u32> {
     if !cfg!(debug_assertions) {
@@ -2199,10 +2518,28 @@ mod tests {
     fn clashes(paths: &[&'static str]) -> CaseClashes {
         let mut names: Vec<(String, &Path, bool)> = paths
             .iter()
-            .map(|p| (p.to_lowercase(), Path::new(*p), true))
+            .map(|p| (crate::fsutil::fold_name(p), Path::new(*p), true))
             .collect();
         names.sort_unstable();
         CaseClashes::of(&names)
+    }
+
+    /// Names that only full case folding or normalization makes one, which
+    /// lowercasing alone misses, still pair up, and outside ASCII.
+    #[test]
+    fn names_a_filesystem_folds_together_pair_up() {
+        for pair in [
+            ["stra\u{df}e.txt", "STRASSE.txt"],
+            ["s.txt", "\u{17f}.txt"],
+            ["\u{3c3}.txt", "\u{3c2}.txt"],
+            ["fi.txt", "\u{fb01}.txt"],
+            ["caf\u{e9}.txt", "cafe\u{301}.txt"],
+        ] {
+            let c = clashes(&pair);
+            assert_eq!(c.met_in.len(), 1, "{pair:?}");
+            assert!(c.beyond_ascii.is_some(), "{pair:?}");
+        }
+        assert!(clashes(&["\u{65e5}.txt", "\u{4e2d}.txt"]).met_in.is_empty());
     }
 
     /// Three that clash have to name every folder where any two meet, here
@@ -2521,5 +2858,45 @@ mod tests {
         assert_eq!(two.size(), u64::MAX);
         assert_eq!(on_disk(&two), u64::MAX);
         fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod space_errors {
+    use super::{is_disk_full, out_of_space};
+    use anyhow::Context;
+    use std::io;
+
+    #[test]
+    fn disk_full_errors_become_the_resume_stop() {
+        for kind in [io::ErrorKind::StorageFull, io::ErrorKind::QuotaExceeded] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(is_disk_full(&e), "{kind:?} not recognized as full");
+            let e = out_of_space(e, "'game/a'");
+            let msg = e.to_string();
+            assert!(msg.contains("not enough disk space to continue"), "{msg}");
+            assert!(msg.contains("Progress is saved"), "{msg}");
+            // The original error stays in the chain, so the OS text shows.
+            let full = format!("{e:#}");
+            assert!(full.contains("extracting 'game/a'"), "{full}");
+        }
+    }
+
+    #[test]
+    fn other_write_errors_pass_through() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::AlreadyExists,
+        ] {
+            let e: anyhow::Error = Err::<(), _>(io::Error::from(kind))
+                .context("extracting 'game/a'")
+                .unwrap_err();
+            assert!(!is_disk_full(&e), "{kind:?} taken for a full disk");
+            let msg = out_of_space(e, "'game/a'").to_string();
+            assert!(msg.contains("extracting 'game/a'"), "{msg}");
+            assert!(!msg.contains("Progress is saved"), "{msg}");
+        }
     }
 }

@@ -52,7 +52,7 @@ pub fn check(name: &str, data: &[u8]) {
         return;
     };
     let reads = Arc::new(Reads::default());
-    let Ok(State::Fresh(job, _)) = session::open(&primary, &paths, None, false, None, &reads)
+    let Ok(State::Fresh(job, _)) = session::open(&primary, &paths, None, None, false, None, &reads)
     else {
         return;
     };

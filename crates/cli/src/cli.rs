@@ -31,8 +31,8 @@ With --keep-archive, HatchZip extracts like any other tool and leaves the archiv
 unchanged; free space is then required for all extracted files.
 
 Supported: ZIP (including ZIP64 and self-extracting .exe), 7z, uncompressed tar, \
-gzip-compressed tar (.tar.gz, .tgz), xz-compressed tar (.tar.xz, .txz), split archives \
-(.001, .002, ...) of any of those",
+gzip-compressed tar (.tar.gz, .tgz), bzip2-compressed tar (.tar.bz2, .tbz2, .tbz), \
+xz-compressed tar (.tar.xz, .txz), zstd-compressed tar (.tar.zst, .tzst), split archives (.001, .002, ...) of any of those",
             $formats
         )
     };
@@ -62,13 +62,16 @@ Examples:
   hatchzip extract patch.zip -o Game --replace
                                        Extract over an existing folder, replacing its files
   hatchzip extract a.zip b.7z c.tar.gz Extract several archives, one after another
+  hatchzip extract game.zip --only docs --only bin/tool.exe
+                                       Extract only those entries, keeping game.zip
   hatchzip extract big.zip --verify-first --keep-free 10GB
   hatchzip test game.7z                Verify every entry without writing files
   hatchzip restore game.zip            Restore a partially extracted archive
 
 To resume an interrupted extraction, run the same command again. Progress is \
-stored in two files next to the archive (<archive>.hatchzip and \
-<archive>.hatchzip-tail); do not delete them while an extraction is incomplete. \
+stored in files next to the archive (<archive>.hatchzip, <archive>.hatchzip-tail \
+and, for an archive with folder entries, <archive>.hatchzip-folders); do not \
+delete them while an extraction is incomplete. \
 To stop permanently instead, run restore: the entries not yet extracted become a \
 standard archive again. An extraction with --keep-archive resumes the same way and \
 keeps the archive when resumed.
@@ -127,7 +130,17 @@ pub enum Command {
             took their path. A folder is never replaced.\n\n\
             Several archives are extracted one after another. The space for each one is \
             checked just before it starts, and the first one that does not complete stops \
-            the run."
+            the run.\n\n\
+            With --nested, once the archives given are done, the files each one wrote are \
+            checked by name and signature for archives, and those are extracted too, each in \
+            its own folder next to it. One level only: archives inside those are not scanned. \
+            A split set counts once, by its first volume, and only names with an archive \
+            extension are considered, so a .jar or a .docx is left alone.\n\n\
+            With --only, only the entries given, and everything inside the folders among \
+            them, are extracted, with paths as list shows them. The archive is kept, as with \
+            --keep-archive, which --only implies: the entries left out remain in it. A hard \
+            link given brings its target along. An interrupted extraction resumes with the \
+            same entries."
     )]
     Extract {
         #[command(flatten)]
@@ -145,6 +158,14 @@ pub enum Command {
         /// --keep-archive is given)
         #[arg(short, long)]
         yes: bool,
+        /// After extracting, extract the archives among the files it wrote,
+        /// one level deep
+        #[arg(long)]
+        nested: bool,
+        /// Extract only this entry, or everything inside this folder, as list
+        /// shows it. Repeat for several. Implies --keep-archive
+        #[arg(long, value_name = "PATH", conflicts_with = "nested")]
+        only: Vec<PathBuf>,
     },
     /// Show the space plan for an archive without modifying it
     #[command(visible_alias = "c")]

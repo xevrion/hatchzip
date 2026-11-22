@@ -58,8 +58,9 @@ HatchZip also needs:
 
 - to truncate the archive as each part is extracted, and delete it at the
   end;
-- to create `<archive>.hatchzip` and `<archive>.hatchzip-tail` next to the
-  archive, the progress files that let an extraction resume;
+- to create `<archive>.hatchzip`, `<archive>.hatchzip-tail` and
+  `<archive>.hatchzip-folders` next to the archive, the progress files that
+  let an extraction resume;
 - to read the other volumes of a split archive (`.001`, `.002`, `.z01` and
   so on) from the same folder;
 - to create the default output folder next to the archive.

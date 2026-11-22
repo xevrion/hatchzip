@@ -5,7 +5,7 @@ members = ["crates/core", "crates/cli", "crates/shell", "crates/gui"]
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 # sevenz-rust2 needs 1.93.
 rust-version = "1.93"
@@ -14,15 +14,17 @@ repository = "https://github.com/xevrion/hatchzip"
 homepage = "https://hatchzip.dev"
 
 [workspace.dependencies]
-hatchzip-core = { path = "crates/core", version = "0.1.9" }
+hatchzip-core = { path = "crates/core", version = "0.1.10" }
 anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-# Decoders, AES for password-protected archives, and `compress` for the
-# writer that `restore` builds a new header with.
-sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["aes256", "bzip2", "compress", "deflate", "ppmd", "zstd"] }
+# `compress` is for the writer that `restore` builds a new header with. The
+# decoders are chosen by `hatchzip-core`'s features, so the methods it
+# accepts and the ones compiled in come from one place.
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
 tar = "0.4.46"
 tempfile = "3.27.0"
+zstd = "0.14.3"
 zip = "9"
 
 [profile.release]
@@ -32,6 +34,18 @@ strip = true
 
 # Decompression in an unoptimised build is slow enough to drag the test
 # suite, and nobody steps through zstd in a debugger.
+#
+# ld 27 leaves the symbol string pool of a stripped proc-macro at an offset
+# macOS 27's dyld refuses to load, and rustc reports the failed dlopen as
+# "can't find crate" (rust-lang/rust#110536). Which build is hit depends on
+# its offsets, so any of them can be after a version bump; stripping dev
+# dependencies saves little, and this removes the class of failure. A
+# proc-macro only runs at compile time and never ships. Release strips
+# everything, so build-override turns it off there too.
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+strip = "none"
+
+[profile.release.build-override]
+strip = false

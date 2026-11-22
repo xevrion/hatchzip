@@ -3,7 +3,7 @@
 # updates. Build from this folder: `snapcraft pack`.
 name: hatchzip
 base: core24
-version: '0.1.9'
+version: '0.1.10'
 title: HatchZip
 summary: Extract huge archives in place
 description: |
@@ -16,7 +16,7 @@ description: |
   - Checks that the extraction fits before it changes anything
   - Keeps a margin of free space the whole way through
   - Can be stopped or crash at any moment and continues where it left off
-  - Reads ZIP, 7z, tar, tar.gz, tar.xz and split archives
+  - Reads ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz and split archives
 
   The archive is gone when the extraction finishes, unless you choose to
   keep it. For an archive that cannot be downloaded again, HatchZip can
@@ -37,9 +37,10 @@ donation: https://buymeacoffee.com/xevrion
 grade: stable
 # Strict, with write access through `home` and `removable-media`. HatchZip
 # truncates and deletes the archive it extracts, writes its progress files
-# (<archive>.hatchzip, <archive>.hatchzip-tail) next to it and reads the
-# other volumes of a split archive from the same folder, so it needs write
-# access where the archives are, not just to files picked in a dialog.
+# (<archive>.hatchzip, <archive>.hatchzip-tail, <archive>.hatchzip-folders)
+# next to it and reads the other volumes of a split archive from the same
+# folder, so it needs write access where the archives are, not just to files
+# picked in a dialog.
 # `home` covers non-hidden files in the home folder and is connected
 # automatically; `removable-media` covers /media, /run/media and /mnt and is
 # connected by the user (or automatically, if the store grants it). Classic
@@ -82,7 +83,7 @@ parts:
   hatchzip:
     plugin: rust
     source: https://github.com/xevrion/hatchzip.git
-    source-tag: v0.1.9
+    source-tag: v0.1.10
     source-depth: 1
     # rust-toolchain.toml in the source pins the compiler the release
     # builds use, and the plugin installs that version through rustup.
@@ -107,7 +108,7 @@ parts:
       # build can't open.
       desktop-file-edit \
         --set-key=MimeType \
-        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-xz-compressed-tar;' \
+        --set-value='application/zip;application/x-zip-compressed;application/x-7z-compressed;application/x-tar;application/x-compressed-tar;application/x-bzip2-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;' \
         "$desktop"
 
       for icon in packaging/linux/icons/hicolor/*/apps/io.github.xevrion.hatchzip.*; do

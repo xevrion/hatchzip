@@ -19,7 +19,11 @@
 //! 4. Save the journal with `restoring` set to the bytes step 6 overwrites.
 //!    From here on, any HatchZip run that finds the journal first cuts the
 //!    archive back to `committed_len` and puts those bytes back.
-//! 5. Append the new index at `committed_len` and flush it.
+//! 5. Append the new index at `committed_len` and flush it. A native split
+//!    ZIP whose `.zip` is gone gets a new `.zip` holding only the index
+//!    instead, created where nothing is, as the disk after the last one
+//!    left; undoing that is deleting it, as for any part past
+//!    `committed_len`.
 //! 6. Overwrite what has to change below it (only the 7z start header) and
 //!    flush it.
 //! 7. Open the result as a fresh archive with the same parsers extraction
@@ -93,6 +97,7 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
         bail!("every entry is already extracted; run extract to complete the cleanup");
     }
     if !journal.parts[0].0.exists() {
+        session::check_first_part_gone(&journal)?;
         bail!("all entries are already extracted. Run extract to complete the cleanup");
     }
     // A streamed entry gives its archive bytes back while it is extracted,
@@ -179,6 +184,23 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
         )?)
     };
 
+    // A split ZIP whose `.zip` the extraction deleted gets a new one holding
+    // only the index. Whatever is at that name now is someone else's.
+    let new_last = index
+        .as_ref()
+        .filter(|i| i.new_last)
+        .and_then(|_| job.storage.parts().last())
+        .map(|p| p.path.clone());
+    if let Some(last) = &new_last
+        && fs::symlink_metadata(last).is_ok()
+    {
+        bail!(
+            "{} exists, and restore writes the archive's new index there. Move it away and run \
+             restore again. The archive was not modified",
+            last.display()
+        );
+    }
+
     session::clear_uncommitted(&job, &out)?;
     let make: Vec<Link> = make.into_iter().cloned().collect();
     engine::make_links(&make, &out).map_err(|e| {
@@ -201,9 +223,31 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
         journal.restoring = Some(undo);
         journal.save(&paths)?;
 
-        job.storage
-            .write_at(keep, &index.append)
-            .context("writing the new index")?;
+        let written = match &new_last {
+            Some(last) => match write_new_part(last, &index.append) {
+                // Another program put a file there after the check above.
+                // Nothing was written, and undoing a restore cuts that name
+                // away, so the restore is called off before anything else.
+                Err(e)
+                    if e.chain().any(|c| {
+                        c.downcast_ref::<io::Error>()
+                            .is_some_and(|io| io.kind() == io::ErrorKind::AlreadyExists)
+                    }) =>
+                {
+                    journal.restoring = None;
+                    journal.save(&paths)?;
+                    bail!(
+                        "{} appeared while restore was starting, and restore writes the \
+                         archive's new index there. Move it away and run restore again. The \
+                         archive was not modified",
+                        last.display()
+                    );
+                }
+                r => r,
+            },
+            None => job.storage.write_at(keep, &index.append),
+        };
+        written.context("writing the new index")?;
         engine::crash_point("restore-appended");
         for (at, bytes) in &index.patches {
             job.storage
@@ -235,6 +279,8 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
     remove(&paths.journal)?;
     fsutil::sync_dir(paths.journal.parent().unwrap_or(Path::new(".")))?;
     remove(&paths.tail)?;
+    remove(&paths.folders)?;
+    paths.remove_stub()?;
     // Left behind, the record would vouch for whatever journal next turns up
     // next to an archive at this path.
     crate::chosen::forget(&paths.archive);
@@ -249,8 +295,8 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
 }
 
 /// An extraction that keeps the archive never changed it, so there is
-/// nothing to rebuild: what a crashed batch left half written is deleted, as
-/// a resume would, and the progress files go. Finished files stay, except
+/// nothing to rebuild: uncommitted output, including the open streamed file,
+/// is deleted, and the progress files go. Committed files stay, except
 /// where they replaced a file: the archive still holds them, so the
 /// replaced file goes back.
 fn discard(journal: &mut Journal, tail: Arc<Tail>, paths: &Paths) -> Result<Restored> {
@@ -268,7 +314,7 @@ fn discard(journal: &mut Journal, tail: Arc<Tail>, paths: &Paths) -> Result<Rest
     if primary.exists() {
         let job = Job::resume(journal, tail, true, None, Default::default())
             .map_err(|e| names_encrypted(e, &primary, "discarded"))?;
-        session::clear_uncommitted(&job, &journal.output)?;
+        session::clear_discarded(&job, &journal.output)?;
         restored.format = job.format_name;
         restored.entries = job.item_count();
     }
@@ -341,6 +387,20 @@ pub(crate) fn recover(journal: &mut Journal, paths: &Paths) -> Result<()> {
     }
     drop(storage);
     journal.save(paths)
+}
+
+/// Creates the new last segment of a split ZIP at `path`, never over
+/// anything already there, and flushes it and its folder. Undoing it is
+/// deleting it, which [`recover`] does with every recorded part past
+/// `committed_len`.
+fn write_new_part(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut f = crate::platform::create_new_no_follow(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    io::Write::write_all(&mut f, bytes).with_context(|| format!("writing {}", path.display()))?;
+    f.sync_all()
+        .with_context(|| format!("flushing {}", path.display()))?;
+    drop(f);
+    fsutil::sync_dir(path.parent().unwrap_or(Path::new(".")))
 }
 
 fn remove(path: &Path) -> Result<()> {

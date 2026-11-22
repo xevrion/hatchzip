@@ -6,10 +6,11 @@ export component AboutWindow inherits Window {
     callback open-link();
     callback dismiss();
 
-    title: "About HatchZip";
+    title: @tr("About HatchZip");
     preferred-width: 420px;
     min-width: 380px;
     background: Palette.background;
+    default-font-family: Theme.font-family;
 
     VerticalLayout {
         padding: 24px;
@@ -34,17 +35,23 @@ export component AboutWindow inherits Window {
                     font-weight: 600;
                 }
                 Text {
-                    text: "Version " + root.version;
+                    text: @tr("Version {}", root.version);
                     color: Theme.muted;
                 }
             }
         }
-        Text {
-            text: "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required.";
-            wrap: word-wrap;
+        // A little short of the padding: some Devanagari runs draw wider
+        // than they are measured, and the last letters ran past the edge.
+        HorizontalLayout {
+            padding-right: 8px;
+            Text {
+                text: @tr("Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required.");
+                wrap: word-wrap;
+                height: self.preferred-height;
+            }
         }
         Text {
-            text: "Licensed under MIT or Apache-2.0";
+            text: @tr("Licensed under MIT or Apache-2.0");
             color: Theme.muted;
             wrap: word-wrap;
         }
@@ -62,13 +69,14 @@ export component AboutWindow inherits Window {
             height: 6px;
         }
         Line { }
+        // The licence asks for it; it shouldn't outweigh the app's own name.
         AboutSlint {
-            max-height: 160px;
+            max-height: 110px;
         }
         HorizontalLayout {
             alignment: end;
             Button {
-                text: "Close";
+                text: @tr("Close");
                 clicked => {
                     root.dismiss();
                 }

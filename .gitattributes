@@ -4,9 +4,11 @@
 
 # Binary, never diffed or line-ending normalised. A zip fixture with its line
 # endings rewritten is a corrupt archive.
+*.bz2 binary
 *.zip binary
 *.rar binary
 *.r[0-9][0-9] binary
 
 # Generated. Collapsed in pull request diffs and excluded from language stats.
 Cargo.lock linguist-generated=true -diff
+*.zst binary

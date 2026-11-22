@@ -12,9 +12,31 @@ use crate::text::{Rate, count, plan_view, reading_text};
 use crate::work::{Counters, Update};
 use crate::{Phase, PlanView, TaskView};
 
+/// Where this archive sits when several were queued from one right-click.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Queue {
+    #[default]
+    Single,
+    Of {
+        at: usize,
+        of: usize,
+    },
+    All {
+        of: usize,
+    },
+    Waiting {
+        at: usize,
+        of: usize,
+        left: usize,
+    },
+}
+
 pub struct Task {
     pub view: TaskView,
     pub plan: PlanView,
+    /// The "Required / Available" line, kept from the plan until a run
+    /// starts or is given back. `None` hides it.
+    pub space: Option<(String, String)>,
     pub output: Option<PathBuf>,
     pub progress_bytes: Option<(u64, u64)>,
     pub remaining_archive_bytes: Option<u64>,
@@ -23,6 +45,16 @@ pub struct Task {
     pub rate_estimate: Option<(u64, u64)>,
     pub restore_result: Option<(usize, PathBuf, bool, usize)>,
     pub resumable_failure: Option<String>,
+    /// What the finished run could not do, shown after its result.
+    pub warning: Option<String>,
+    /// The person closed the password or replace prompt, so the run never
+    /// started.
+    pub cancelled: bool,
+    /// The reserve the no-space state offers to go on with, when lowering it
+    /// would fit. The window shows it in the button.
+    pub lower_reserve: Option<u64>,
+    /// Where this one sits among several, for "Archive 2 of 3".
+    pub queue: Queue,
     name: String,
     is_test: bool,
     restoring: bool,
@@ -31,6 +63,8 @@ pub struct Task {
     /// The extraction keeps the archive: nothing to count down, nothing to
     /// restore.
     keep: bool,
+    /// Only the entries chosen in the tree are extracted.
+    selected: bool,
     rate: Rate,
     /// When the current check began, as the ticks saw it.
     checking_since: Option<Instant>,
@@ -65,6 +99,18 @@ impl Task {
         task
     }
 
+    /// An extraction of the entries chosen in the tree, which always keeps
+    /// the archive.
+    pub fn selecting(mut self) -> Self {
+        self.selected = true;
+        self.keep = true;
+        self
+    }
+
+    pub fn extracts_selection(&self) -> bool {
+        self.selected
+    }
+
     pub fn test(name: &str) -> Self {
         let mut task = Self::new(true, name);
         task.view.detail = "Verifying every entry. No files are written.".into();
@@ -80,6 +126,7 @@ impl Task {
                 ..Default::default()
             },
             plan: PlanView::default(),
+            space: None,
             output: None,
             progress_bytes: None,
             remaining_archive_bytes: None,
@@ -88,11 +135,16 @@ impl Task {
             rate_estimate: None,
             restore_result: None,
             resumable_failure: None,
+            warning: None,
+            cancelled: false,
+            lower_reserve: None,
+            queue: Queue::Single,
             name: name.to_string(),
             is_test,
             restoring: false,
             resumable: false,
             keep: false,
+            selected: false,
             rate: Rate::default(),
             checking_since: None,
         };
@@ -173,6 +225,9 @@ impl Task {
         v.message = "".into();
         v.can_retry = false;
         v.can_open_folder = false;
+        v.lower_reserve = false;
+        v.reserve_amount = "".into();
+        self.lower_reserve = None;
         match update {
             Update::Checking => {
                 v.phase = Phase::Checking;
@@ -185,28 +240,43 @@ impl Task {
                 self.rate_estimate = None;
                 self.restore_result = None;
                 self.resumable_failure = None;
+                self.warning = None;
+                self.space = None;
+                self.cancelled = false;
                 v.fraction = 0.0;
                 v.amounts = "".into();
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.space = "".into();
             }
             // The runner keeps the password; nothing to show.
             Update::Unlocked(_) => {}
             Update::Planned(plan) => {
                 self.plan = plan_view(&plan);
-                v.space = format!(
-                    "Required: {}. Available: {}.",
-                    human(plan.needed),
-                    human(plan.free)
-                )
-                .into();
+                self.space = Some((self.plan.needed.to_string(), self.plan.free.to_string()));
             }
             Update::NoSpace(plan) => {
                 self.plan = plan_view(&plan);
+                // The space panel carries the shortfall; a second heading
+                // with the same numbers would only repeat it.
+                self.space = None;
                 v.phase = Phase::NoSpace;
-                v.message = self.plan.verdict.clone();
+                // The verdict is shown from the plan itself, where it can be
+                // translated; nothing left for the message.
                 v.can_retry = true;
+                // The reserve is the only thing in the way: offer the largest
+                // one that still fits, in round numbers a person would type.
+                if !self.is_test && plan.free >= plan.needed {
+                    const STEP: u64 = 100_000_000;
+                    let offer = (plan.free - plan.needed) / STEP * STEP;
+                    self.lower_reserve = Some(offer);
+                    v.lower_reserve = true;
+                    // Empty means none at all: the button says so in words.
+                    v.reserve_amount = if offer == 0 {
+                        "".into()
+                    } else {
+                        human(offer).into()
+                    };
+                }
             }
             Update::Verifying => {
                 v.phase = Phase::Verifying;
@@ -226,13 +296,23 @@ impl Task {
                 v.rate = "".into();
                 v.message = "Progress is saved. The extraction can be resumed now or later.".into();
             }
-            Update::Extracted { output, keep } => {
+            Update::Extracted {
+                output,
+                keep,
+                selected,
+                warning,
+            } => {
                 self.keep = keep;
+                // A right-click resume of a selection learns it only here.
+                self.selected |= selected;
+                self.warning = warning;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.message = if keep {
+                v.message = if self.selected {
+                    "The selected entries were extracted. The archive was kept."
+                } else if keep {
                     "All entries were extracted. The archive was kept."
                 } else {
                     "All entries were extracted. The archive was removed."
@@ -264,7 +344,7 @@ impl Task {
                 v.amounts = "".into();
                 v.rate = "".into();
                 v.archive_left = "".into();
-                v.space = "".into();
+                self.space = None;
                 let held = match entries {
                     1 => "the 1 entry".to_string(),
                     n => format!("the {} entries", count(n)),
@@ -289,6 +369,7 @@ impl Task {
                 v.message = message.into();
             }
             Update::Failed(f) => {
+                self.cancelled = f.cancelled;
                 self.resumable_failure = f.resumable.then(|| f.message.clone());
                 v.phase = Phase::Failed;
                 v.rate = "".into();
@@ -406,7 +487,9 @@ mod tests {
             2_000_000_000,
             41_500_000,
         )));
-        assert_eq!(t.view.space, "Required: 3.5 MB. Available: 7.8 GB.");
+        assert_eq!(t.space, Some(("3.5 MB".to_string(), "7.8 GB".to_string())));
+        assert_eq!(t.plan.needed, "3.5 MB");
+        assert_eq!(t.plan.free, "7.8 GB");
         assert_eq!(t.view.phase, Phase::Checking, "it fits, so it carries on");
 
         t.apply(working(false));
@@ -441,6 +524,8 @@ mod tests {
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: false,
+            selected: false,
+            warning: None,
         });
         assert_eq!(t.view.phase, Phase::Done);
         assert_eq!(t.view.heading, "Extraction complete");
@@ -469,12 +554,15 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "Disk full.".into(),
             resumable: true,
+            cancelled: false,
         }));
         assert!(!t.view.can_give_back);
         assert!(t.view.can_retry);
         t.apply(Update::Extracted {
             output: "/games/game".into(),
             keep: true,
+            selected: false,
+            warning: None,
         });
         assert_eq!(
             t.view.message,
@@ -571,12 +659,96 @@ mod tests {
         t.apply(Update::NoSpace(plan));
         assert_eq!(t.view.phase, Phase::NoSpace);
         assert!(t.view.can_retry);
-        assert_eq!(
-            t.view.message,
-            "Insufficient disk space. 6.0 GB more is required."
-        );
-        assert!(t.plan.note.contains("solid block"));
+        // The plan carries the verdict now, and the window shows it from there.
+        assert_eq!(t.view.message, "");
+        assert_eq!(t.plan.short, "6.0 GB");
+        assert!(t.plan.note_solid);
         assert!(!t.running());
+    }
+
+    /// The Required/Available line belongs to the plan the run started
+    /// with: a new check or a give-back drops it, and a no-space stop shows
+    /// the shortfall once, in the panel.
+    #[test]
+    fn the_space_line_lives_until_the_run_starts_or_is_given_back() {
+        let mut t = Task::extract("game.zip", None, false);
+        let plan = || space(7_800_000_000, 3_500_000, 2_000_000_000, 41_500_000);
+        t.apply(Update::Planned(plan()));
+        assert_eq!(t.space, Some(("3.5 MB".to_string(), "7.8 GB".to_string())));
+
+        t.apply(Update::Checking);
+        assert_eq!(t.space, None, "a retry checks again before it plans");
+
+        t.apply(Update::Planned(plan()));
+        t.apply(Update::NoSpace(space(
+            1_000_000_000,
+            5_000_000_000,
+            2_000_000_000,
+            9_000_000_000,
+        )));
+        assert_eq!(t.space, None, "the panel already says the shortfall");
+
+        t.apply(Update::Planned(plan()));
+        t.apply(Update::Restored {
+            entries: 12,
+            output: "/games/game".into(),
+            kept: false,
+            set_aside: 0,
+        });
+        assert_eq!(t.space, None, "the run it described is gone");
+    }
+
+    #[test]
+    fn a_plan_short_only_of_its_reserve_offers_a_smaller_one() {
+        let mut t = Task::extract("game.zip", Some(Path::new("/games")), false);
+        // 842.5 MB needed, 1.4 GB free, 2 GB reserved: 557.5 MB of room.
+        t.apply(Update::NoSpace(space(
+            1_400_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.view.phase, Phase::NoSpace);
+        assert_eq!(t.lower_reserve, Some(500_000_000));
+        assert!(t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "500.0 MB");
+
+        // Less than a step of room left: run without a reserve instead.
+        t.apply(Update::NoSpace(space(
+            842_500_001,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.lower_reserve, Some(0));
+        assert!(t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "");
+
+        // The space itself is short, so lowering the reserve is no help.
+        t.apply(Update::NoSpace(space(
+            500_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert_eq!(t.lower_reserve, None);
+        assert!(!t.view.lower_reserve);
+        assert_eq!(t.view.reserve_amount, "");
+
+        // The offer belongs to the state that showed it.
+        t.apply(Update::NoSpace(space(
+            1_400_000_000,
+            842_500_000,
+            2_000_000_000,
+            900_000_000,
+        )));
+        assert!(t.lower_reserve.is_some());
+        t.apply(Update::Working {
+            output: "/games/game".into(),
+            keep: false,
+        });
+        assert_eq!(t.lower_reserve, None);
+        assert!(!t.view.lower_reserve);
     }
 
     #[test]
@@ -585,6 +757,7 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "Disk full.".into(),
             resumable: true,
+            cancelled: false,
         }));
         assert_eq!(t.view.phase, Phase::Failed);
         assert_eq!(t.view.heading, "Extraction failed");
@@ -598,6 +771,7 @@ mod tests {
         t.apply(Update::Failed(Failure {
             message: "The archive is damaged".into(),
             resumable: false,
+            cancelled: false,
         }));
         assert!(!t.view.can_retry);
         assert_eq!(t.view.message, "The archive is damaged");
@@ -625,6 +799,8 @@ mod tests {
             task.apply(Update::Extracted {
                 output: "out".into(),
                 keep,
+                selected: false,
+                warning: None,
             });
             assert_eq!(task.keeps_archive(), keep);
         }

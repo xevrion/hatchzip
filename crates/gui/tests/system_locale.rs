@@ -18,12 +18,17 @@ fn system_locale_selects_hindi_or_falls_back_to_english() {
         let ui = MainWindow::new().unwrap();
         match expected.as_str() {
             "hi" => assert!(ui.get_formats().contains("समर्थित फ़ॉर्मैट")),
+            "zh" => assert!(ui.get_formats().contains("支持的格式")),
             "fallback" => assert!(ui.get_formats().starts_with("Or drag an archive")),
             other => panic!("unexpected test case: {other}"),
         }
         return;
     }
-    for (locale, expected) in [("hi_IN.UTF-8", "hi"), ("fr_FR.UTF-8", "fallback")] {
+    for (locale, expected) in [
+        ("hi_IN.UTF-8", "hi"),
+        ("zh_CN.UTF-8", "zh"),
+        ("fr_FR.UTF-8", "fallback"),
+    ] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",

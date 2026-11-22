@@ -1,8 +1,12 @@
 // Everything the Rust side builds on. Each window is its own top-level
 // component, so a task window doesn't pay for the main window's tree.
 export { MainWindow, Screen, Mode, EntryRow } from "main-window.slint";
+export { SettingsWindow, FileManager } from "settings-window.slint";
+export { Messages } from "messages.slint";
 export { TaskWindow } from "task-window.slint";
 export { AboutWindow } from "about.slint";
 export { Phase, PlanView, TaskView } from "parts.slint";
 // Lets the integration test render both light and dark.
 export { Palette } from "std-widgets.slint";
+// The font and script settings Rust picks for the language on screen.
+export { Theme } from "theme.slint";

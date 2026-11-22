@@ -8,12 +8,15 @@ pub mod resumable;
 mod sevenz;
 pub mod storage;
 mod tar;
+mod tarbz2;
 pub mod targz;
 pub mod tarxz;
+pub mod tarzst;
 mod xz;
 mod zip;
 
-use std::io::Read;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -73,6 +76,7 @@ pub struct Item {
     pub mtime: Option<SystemTime>,
 }
 
+#[derive(Clone)]
 pub struct Unit {
     /// Where the unit's bytes begin. Once it is committed the archive is
     /// truncated to this offset.
@@ -139,6 +143,9 @@ impl std::error::Error for Unsupported {}
 
 /// The format name of RAR archives in the journal.
 pub const RAR: &str = "rar";
+
+/// The format name of native split ZIPs (`.z01`, ..., `.zip`) in the journal.
+pub const SPLIT_ZIP: &str = zip::SPLIT;
 
 /// Whether this build extracts RAR archives. Builds without UnRAR refuse
 /// them before anything is touched.
@@ -273,6 +280,7 @@ pub fn open(
     };
     match name.as_str() {
         "zip" => zip::open(storage, tail, password),
+        zip::SPLIT => zip::open_split(storage, tail, password),
         "7z" => sevenz::open(storage, tail, password),
         "tar" => tar::open(storage, tail),
         #[cfg(feature = "rar")]
@@ -280,7 +288,9 @@ pub fn open(
         #[cfg(not(feature = "rar"))]
         RAR => Err(no_rar()),
         targz::NAME => targz::open(storage, point),
+        tarbz2::NAME => tarbz2::open(storage, point),
         tarxz::NAME => tarxz::open(storage, point),
+        tarzst::NAME => tarzst::open(storage, point),
         other => bail!("unknown archive format '{other}' in the journal"),
     }
 }
@@ -293,6 +303,10 @@ pub struct NewIndex {
     /// Written over bytes below `keep`: the 7z start header, which has to
     /// point at the new header.
     pub patches: Vec<(u64, Vec<u8>)>,
+    /// `append` is a new last volume of its own, created at the last
+    /// recorded part's path, which the extraction deleted, instead of being
+    /// written at `keep`: a native split ZIP whose `.zip` is gone.
+    pub new_last: bool,
 }
 
 /// Lists the entries of a [`SolidStream`]'s walk from `from` once to the
@@ -351,6 +365,14 @@ pub fn rebuild_index(
     keep: u64,
     hard_links: &[(&Path, &Path)],
 ) -> Result<NewIndex> {
+    if format == zip::SPLIT {
+        let (append, new_last) = zip::rebuild_split_index(storage.parts(), &tail, keep)?;
+        return Ok(NewIndex {
+            append,
+            patches: Vec::new(),
+            new_last,
+        });
+    }
     let (append, patches) = match format {
         "zip" => (zip::rebuild_index(&tail, keep)?, Vec::new()),
         "tar" => (tar::closing(hard_links)?, Vec::new()),
@@ -365,10 +387,20 @@ pub fn rebuild_index(
         RAR => return Err(no_rar()),
         other => bail!("unknown archive format '{other}' in the journal"),
     };
-    Ok(NewIndex { append, patches })
+    Ok(NewIndex {
+        append,
+        patches,
+        new_last: false,
+    })
 }
 
 fn sniff(storage: &Storage) -> Result<&'static str> {
+    // Named `.z01` and opened with its `.zip`: the first segment of a native
+    // split ZIP. Its index is in the last segment, in a form only `zip`'s
+    // split reader takes.
+    if storage.parts().len() > 1 && storage::is_split_zip(storage.primary()) {
+        return Ok(zip::SPLIT);
+    }
     let mut head = [0u8; 512];
     let mut r = storage.reader(None);
     let n = read_up_to(&mut r, &mut head)?;
@@ -384,26 +416,10 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     let ext = storage.primary().to_string_lossy().to_ascii_lowercase();
     if starts(b"\x1F\x8B") {
         // Look inside: a plain .gz of one file is not an archive.
-        let mut gz = resumable::Gzip::new(
-            storage.reader(None),
-            storage.original_len(),
-            &resumable::GzPoint::start(),
-        )?;
-        let mut first = [0u8; 512];
-        let mut n = 0;
-        while n < first.len() {
-            match gz
-                .read(&mut first[n..])
-                .context("reading the start of the compressed stream")?
-            {
-                0 => break,
-                k => n += k,
-            }
-        }
         let named = [".tar.gz", ".tgz", ".taz"]
             .iter()
             .any(|e| ext.ends_with(e) || ext.contains(&format!("{e}.")));
-        if is_tar(&first[..n]) || named {
+        if gzip_holds_tar(storage)? || named {
             return Ok(targz::NAME);
         }
         bail!(
@@ -416,10 +432,65 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
         // refused once the stream opens.
         return Ok(tarxz::NAME);
     }
-    if starts(b"\x28\xB5\x2F\xFD") || starts(b"BZh") {
+    if starts(b"BZh") {
+        let first = (|| -> Result<_> {
+            let mut bz = tarbz2::Bzip2::new(
+                storage.reader(None),
+                storage.original_len(),
+                &tarbz2::BzPoint::start(),
+            )?;
+            let mut first = [0; 512];
+            let mut n = 0;
+            while n < first.len() {
+                let k = bz.read(&mut first[n..])?;
+                if k == 0 {
+                    break;
+                }
+                n += k;
+            }
+            Ok((first, n))
+        })()
+        // A volume that can't be read is not damage in the stream.
+        .map_err(|e| {
+            if e.downcast_ref::<std::io::Error>().is_some() {
+                e
+            } else {
+                anyhow::Error::new(Damaged(e))
+            }
+        })
+        .context(
+            "checking the bzip2 archive (nothing was changed); if it is damaged, download it again",
+        )?;
+        // Like a .tar.gz, a stream that doesn't start with a ustar header is
+        // still taken as a tar when its own name says so.
+        let named = named_bzip2(
+            &storage
+                .primary()
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        if is_tar(&first.0[..first.1]) || named {
+            return Ok(tarbz2::NAME);
+        }
         bail!(
-            "this is a compressed stream (.zst or .bz2). In-place extraction of these \
-             compressed streams is not supported yet"
+            "this is a bzip2-compressed file that does not contain a tar archive; the file was not changed. Decompress it with bzip2, or use a .tar.bz2 archive"
+        );
+    }
+    let zstd_magic = head.len() >= 4 && {
+        let magic = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
+        magic == 0xFD2F_B528 || (magic & 0xFFFF_FFF0) == 0x184D_2A50
+    };
+    if zstd_magic {
+        // Look inside, as for gzip: a plain .zst of one file is not an
+        // archive. pzstd puts a skippable frame first, so the magic alone
+        // does not say where the first real frame is.
+        if named_zstd(&ext) || tarzst::holds_tar(storage)? {
+            return Ok(tarzst::NAME);
+        }
+        bail!(
+            "this is a zstd-compressed file that does not contain a tar archive. Only \
+             compressed tar archives (.tar.zst) can be extracted"
         );
     }
     if starts(b"Rar!\x1A\x07") {
@@ -431,6 +502,173 @@ fn sniff(storage: &Storage) -> Result<&'static str> {
     // Anything else gets a ZIP parse: self-extracting archives put an
     // executable in front, so the signature isn't at the start.
     Ok("zip")
+}
+
+/// The file's own name says `.tar.bz2`, alone or before a numeric split
+/// suffix such as `.001`. The folders it sits in don't count.
+fn named_bzip2(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let base = match name.rsplit_once('.') {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => &name,
+    };
+    [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| base.ends_with(e))
+}
+
+/// The file's own name says `.tar.zst`, alone or before a numeric split
+/// suffix such as `.001`. The folders it sits in don't count.
+fn named_zstd(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let base = match name.rsplit_once('.') {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => &name,
+    };
+    [".tar.zst", ".tzst"].iter().any(|e| base.ends_with(e))
+}
+
+/// Whether the gzip stream `storage` opens with a tar header.
+fn gzip_holds_tar(storage: &Storage) -> Result<bool> {
+    let mut gz = resumable::Gzip::new(
+        storage.reader(None),
+        storage.original_len(),
+        &resumable::GzPoint::start(),
+    )?;
+    let mut first = [0u8; 512];
+    let mut n = 0;
+    while n < first.len() {
+        match gz
+            .read(&mut first[n..])
+            .context("reading the start of the compressed stream")?
+        {
+            0 => break,
+            k => n += k,
+        }
+    }
+    Ok(first[..n].len() >= 263 && &first[257..262] == b"ustar")
+}
+
+/// Whether the bzip2 stream `storage` opens with a tar header.
+fn bzip2_holds_tar(storage: &Storage) -> Result<bool> {
+    let mut bz = tarbz2::Bzip2::new(
+        storage.reader(None),
+        storage.original_len(),
+        &tarbz2::BzPoint::start(),
+    )?;
+    let mut first = [0u8; 512];
+    let mut n = 0;
+    while n < first.len() {
+        match bz.read(&mut first[n..])? {
+            0 => break,
+            k => n += k,
+        }
+    }
+    Ok(first[..n].len() >= 263 && &first[257..262] == b"ustar")
+}
+
+/// Whether a ZIP's end record sits in its last 64 KiB, which every archive
+/// this crate can open has.
+fn zip_has_an_index(path: &Path) -> bool {
+    const MAX: u64 = 22 + 0xFFFF;
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let Ok(len) = file.metadata().map(|m| m.len()) else {
+        return false;
+    };
+    if len < 22 {
+        return false;
+    }
+    let start = len.saturating_sub(MAX);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return false;
+    }
+    let mut tail = Vec::with_capacity((len - start) as usize);
+    if file.take(len - start).read_to_end(&mut tail).is_err() {
+        return false;
+    }
+    let has = |magic: &[u8]| tail.windows(magic.len()).any(|w| w == magic);
+    has(b"PK\x05\x06") || has(b"PK\x06\x06")
+}
+
+/// The format `path` holds, from its signature, or `None` when it is not a
+/// file this build can extract. Links and folders are not considered.
+pub fn detect(path: &Path) -> Option<&'static str> {
+    let meta = fs::symlink_metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let mut head = [0u8; 512];
+    let n = read_up_to(&mut fs::File::open(path).ok()?, &mut head).ok()?;
+    let head = &head[..n];
+    let starts = |magic: &[u8]| head.starts_with(magic);
+    if starts(b"7z\xBC\xAF\x27\x1C") {
+        return Some("7z");
+    }
+    if head.len() >= 263 && &head[257..262] == b"ustar" {
+        return Some("tar");
+    }
+    if starts(b"\xFD7zXZ\x00") {
+        let storage = Arc::new(Storage::open(path, false).ok()?);
+        return tarxz::holds_tar(&storage).then_some(tarxz::NAME);
+    }
+    if starts(b"Rar!\x1A\x07") {
+        return cfg!(feature = "rar").then_some(RAR);
+    }
+    if starts(b"\x1F\x8B") {
+        let storage = Storage::open(path, false).ok()?;
+        return gzip_holds_tar(&storage).ok()?.then_some(targz::NAME);
+    }
+    if starts(b"BZh") {
+        let storage = Storage::open(path, false).ok()?;
+        return bzip2_holds_tar(&storage).ok()?.then_some(tarbz2::NAME);
+    }
+    let zstd = head.len() >= 4 && {
+        let magic = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
+        magic == 0xFD2F_B528 || (magic & 0xFFFF_FFF0) == 0x184D_2A50
+    };
+    if zstd {
+        let storage = Arc::new(Storage::open(path, false).ok()?);
+        return tarzst::holds_tar(&storage).ok()?.then_some(tarzst::NAME);
+    }
+    if starts(b"PK\x03\x04") || starts(b"PK\x05\x06") {
+        return zip_has_an_index(path).then_some("zip");
+    }
+    None
+}
+
+/// The format `path` holds if its name claims an archive format and its
+/// signature agrees. Both matter: `.jar`, `.docx`, `.pk3` and `.apk` are
+/// ZIPs, and `.ova` and `.gem` are tars, and none of them should be offered.
+pub fn nested_kind(path: &Path) -> Option<&'static str> {
+    let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    let expected = if name.ends_with(".zip") {
+        "zip"
+    } else if name.ends_with(".7z") {
+        "7z"
+    } else if name.ends_with(".tar") {
+        "tar"
+    } else if [".tar.gz", ".tgz", ".taz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        targz::NAME
+    } else if [".tar.xz", ".txz"].iter().any(|e| name.ends_with(e)) {
+        tarxz::NAME
+    } else if [".tar.zst", ".tzst"].iter().any(|e| name.ends_with(e)) {
+        tarzst::NAME
+    } else if [".tar.bz2", ".tbz2", ".tbz"]
+        .iter()
+        .any(|e| name.ends_with(e))
+    {
+        tarbz2::NAME
+    } else if name.ends_with(".rar") {
+        RAR
+    } else {
+        return None;
+    };
+    (detect(path)? == expected).then_some(expected)
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -445,8 +683,8 @@ fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
 }
 
 /// Turns an archive member name into a relative path that can't leave the
-/// output folder. Leading slashes are dropped, as tar does; `..`, drive
-/// letters and NUL bytes are refused.
+/// output folder. Leading slashes are dropped, as tar does; `..`, NUL bytes
+/// and drive letters are refused.
 pub fn safe_path(name: &str) -> Option<PathBuf> {
     if name.contains('\0') {
         return None;
@@ -456,7 +694,16 @@ pub fn safe_path(name: &str) -> Option<PathBuf> {
         match part {
             "" | "." => {}
             ".." => return None,
-            p if p.contains(':') => return None,
+            // A leading `C:` names a drive. Any other `:` is left to
+            // `platform::name_problem`, as it is a normal name character
+            // outside Windows, like in `10:30.txt`.
+            p if out.as_os_str().is_empty()
+                && p.len() == 2
+                && p.as_bytes()[0].is_ascii_alphabetic()
+                && p.ends_with(':') =>
+            {
+                return None;
+            }
             p => out.push(p),
         }
     }
@@ -475,4 +722,25 @@ const S_IFLNK: u32 = 0o120000;
 
 fn is_symlink_mode(mode: Option<u32>) -> bool {
     mode.is_some_and(|m| m & S_IFMT == S_IFLNK)
+}
+
+#[cfg(test)]
+mod named_tests {
+    use super::named_bzip2;
+
+    #[test]
+    fn only_the_file_name_and_a_split_number_select_bzip2() {
+        for yes in ["a.tar.bz2", "A.TBZ2", "a.tbz", "a.tar.bz2.001", "a.tbz2.12"] {
+            assert!(named_bzip2(yes), "{yes}");
+        }
+        for no in [
+            "a.zip",
+            "a.tar.bz2.old",
+            "a.tar.bz2.",
+            "a.bz2",
+            "a.tar.gz.001",
+        ] {
+            assert!(!named_bzip2(no), "{no}");
+        }
+    }
 }

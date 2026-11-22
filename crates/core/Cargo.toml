@@ -12,6 +12,7 @@ categories = ["compression", "filesystem"]
 
 [dependencies]
 anyhow.workspace = true
+bzip2 = "0.6.1"
 crc32fast = "1.5.3"
 fs4 = "1.1.0"
 # Pure Rust zlib with the C API, for inflatePrime, inflateSetDictionary and
@@ -23,12 +24,21 @@ libz-rs-sys = "0.6.8"
 # sevenz-rust2. The container itself is parsed in archive/xz.rs, since the
 # crate's container types are private. Core only decodes: the encoder and
 # lzip halves stay out of this build.
-lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "optimization"] }
+lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "optimization"] }
+# A zstd stream is a sequence of independent frames, so a frame start is a
+# resume point that needs no window. The frame structure is parsed in
+# archive/tarzst.rs; this crate decodes one bounded frame at a time. Already
+# in the tree through sevenz-rust2, but named directly so a change to that
+# dependency's features cannot remove it.
+zstd.workspace = true
 rayon = "1.12.0"
 serde.workspace = true
 serde_json.workspace = true
 sevenz-rust2.workspace = true
 tar.workspace = true
+# Comparing names the way filesystems fold them: APFS, HFS+ and casefolded
+# ext4 folders treat the NFC and NFD forms of a name as one.
+unicode-normalization = "0.1.24"
 # The UnRAR decoder, bound without the safe wrapper: it needs the data
 # callback, which the safe crates don't expose. The bindings are MIT or
 # Apache; the UnRAR C++ source they build is under its own license, see
@@ -48,6 +58,27 @@ zip.workspace = true
 tempfile.workspace = true
 
 [features]
+# Which 7z coders this build decodes. Each one turns on the decoder in
+# sevenz-rust2 and lets `archive::sevenz` accept the method, so a coder can
+# never be accepted without a decoder behind it. The workspace dependency
+# itself enables none, leaving this list as the only place to change.
+default = [
+    "sevenz-aes256",
+    "sevenz-bzip2",
+    "sevenz-brotli",
+    "sevenz-deflate",
+    "sevenz-lz4",
+    "sevenz-ppmd",
+    "sevenz-zstd",
+]
+sevenz-aes256 = ["sevenz-rust2/aes256"]
+sevenz-bzip2 = ["sevenz-rust2/bzip2"]
+sevenz-brotli = ["sevenz-rust2/brotli"]
+sevenz-deflate = ["sevenz-rust2/deflate"]
+sevenz-lz4 = ["sevenz-rust2/lz4"]
+sevenz-ppmd = ["sevenz-rust2/ppmd"]
+sevenz-zstd = ["sevenz-rust2/zstd"]
+
 # RAR archives, decoded by UnRAR. Off by default: without it the build is
 # open source throughout and needs no C++ compiler, and a RAR archive is
 # refused before anything is touched. The release builds turn it on.

@@ -1,6 +1,7 @@
 //! The contents tree. An archive can hold a million entries, so the list view
 //! builds rows on demand for what is visible instead of keeping a model per row.
-//! The tree changes only the display, not the extraction plan.
+//! The tree changes only the display, not the extraction plan. Rows can be
+//! chosen for "Extract selected…", which extracts only those.
 
 use crate::EntryRow;
 use hatchzip_core::{archive::Kind, engine::Job, human};
@@ -35,12 +36,16 @@ struct Node {
     dir: bool,
     link: bool,
     expanded: bool,
+    /// Chosen for "Extract selected…". A folder brings everything inside.
+    selected: bool,
     children: Vec<usize>,
 }
 
 pub struct Entries {
     nodes: Vec<Node>,
     visible: Vec<(usize, i32)>,
+    /// The row a Shift-click selects from: the last one clicked.
+    anchor: Option<usize>,
 }
 
 impl Entries {
@@ -51,6 +56,7 @@ impl Entries {
                 ..Default::default()
             }],
             visible: Vec::new(),
+            anchor: None,
         };
         let mut folders: HashMap<(usize, String), usize> = HashMap::new();
         for entry in entries {
@@ -182,6 +188,87 @@ impl Entries {
         }
     }
 
+    /// Changes the selection with the row at `row`: `mode` 0 chooses
+    /// nothing and only makes it where a Shift-click starts, 1 adds it or
+    /// takes it out, 2 selects every row from the last one clicked to it,
+    /// and 3 empties the selection. Returns the visible rows whose look
+    /// changed.
+    pub fn choose(&mut self, row: usize, mode: i32) -> Vec<usize> {
+        let node = self.visible.get(row).map(|&(n, _)| n);
+        if mode == 0 {
+            self.anchor = node.or(self.anchor);
+            return Vec::new();
+        }
+        let node = match (mode, node) {
+            (3, _) => 0,
+            (_, Some(n)) => n,
+            (_, None) => return Vec::new(),
+        };
+        let before: Vec<bool> = self
+            .visible
+            .iter()
+            .map(|&(n, _)| self.nodes[n].selected)
+            .collect();
+        match mode {
+            1 => {
+                self.nodes[node].selected = !self.nodes[node].selected;
+                self.anchor = Some(node);
+            }
+            2 => {
+                // The anchor may be inside a folder closed since; the range
+                // then starts here.
+                let from = self
+                    .anchor
+                    .and_then(|a| self.visible.iter().position(|&(n, _)| n == a))
+                    .unwrap_or(row);
+                self.clear_selection();
+                for i in from.min(row)..=from.max(row) {
+                    let n = self.visible[i].0;
+                    self.nodes[n].selected = true;
+                }
+            }
+            _ => self.clear_selection(),
+        }
+        before
+            .iter()
+            .enumerate()
+            .filter(|&(i, was)| self.nodes[self.visible[i].0].selected != *was)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn clear_selection(&mut self) {
+        for n in &mut self.nodes {
+            n.selected = false;
+        }
+    }
+
+    /// How many paths [`Self::chosen`] gives, without building them.
+    pub fn chosen_count(&self) -> usize {
+        (1..self.nodes.len())
+            .filter(|&i| self.nodes[i].selected && !self.inside_chosen(i))
+            .count()
+    }
+
+    /// The paths to extract: every chosen row, except those inside a chosen
+    /// folder, which comes with everything in it anyway.
+    pub fn chosen(&self) -> Vec<String> {
+        (1..self.nodes.len())
+            .filter(|&i| self.nodes[i].selected && !self.inside_chosen(i))
+            .map(|i| self.path(i))
+            .collect()
+    }
+
+    fn inside_chosen(&self, mut node: usize) -> bool {
+        while node != 0 {
+            node = self.nodes[node].parent;
+            if self.nodes[node].selected {
+                return true;
+            }
+        }
+        false
+    }
+
     // Only rows requested by ListView allocate a full path for accessibility.
     fn path(&self, mut node: usize) -> String {
         let mut parts = Vec::new();
@@ -211,6 +298,7 @@ impl Entries {
                     link: n.link,
                     expanded: n.expanded,
                     depth,
+                    selected: n.selected,
                 }
             })
             .collect()
@@ -228,6 +316,43 @@ impl EntriesModel {
             tree: RefCell::new(tree),
             notify: ModelNotify::default(),
         }
+    }
+
+    pub fn navigate(&self, row: usize, right: bool) -> usize {
+        let tree = self.tree.borrow();
+        let Some(&(node, depth)) = tree.visible.get(row) else {
+            return row;
+        };
+        let current = &tree.nodes[node];
+        match (right, current.expanded) {
+            (true, true) if !current.children.is_empty() => row + 1,
+            (false, false) if depth > 0 => {
+                // Walk the visible indices without building any display rows.
+                tree.visible[..row]
+                    .iter()
+                    .rposition(|&(id, _)| id == current.parent)
+                    .unwrap_or(row)
+            }
+            _ if current.dir && right != current.expanded => {
+                drop(tree);
+                self.toggle(row, Some(right));
+                row
+            }
+            _ => row,
+        }
+    }
+
+    /// See [`Entries::choose`]. Returns how many rows are chosen now.
+    pub fn choose(&self, row: usize, mode: i32) -> usize {
+        let changed = self.tree.borrow_mut().choose(row, mode);
+        for r in changed {
+            self.notify.row_changed(r);
+        }
+        self.tree.borrow().chosen_count()
+    }
+
+    pub fn chosen(&self) -> Vec<String> {
+        self.tree.borrow().chosen()
     }
 
     pub fn toggle(&self, row: usize, expand: Option<bool>) {
@@ -268,6 +393,7 @@ impl Model for EntriesModel {
             link: n.link,
             expanded: n.expanded,
             depth,
+            selected: n.selected,
         })
     }
 
@@ -286,6 +412,22 @@ mod tests {
             size,
             kind: Kind::File,
         }
+    }
+
+    #[test]
+    fn right_on_an_expanded_empty_folder_keeps_selection() {
+        let model = EntriesModel::new(Entries::new(vec![
+            Entry {
+                path: "empty".into(),
+                size: 0,
+                kind: Kind::Dir,
+            },
+            file("sibling", 1),
+        ]));
+        assert_eq!(model.navigate(0, true), 0);
+        assert!(model.row_data(0).unwrap().expanded);
+        assert_eq!(model.navigate(0, true), 0);
+        assert_eq!(model.row_data(1).unwrap().path, "sibling");
     }
 
     #[test]
@@ -401,6 +543,48 @@ mod tests {
         assert!(!model.row_data(0).unwrap().link);
         assert!(!model.row_data(1).unwrap().link);
         assert!(model.row_data(2).unwrap().link);
+    }
+
+    #[test]
+    fn rows_are_added_by_range_and_cleared() {
+        let model = EntriesModel::new(Entries::new(vec![
+            file("a.txt", 1),
+            file("b.txt", 1),
+            file("c.txt", 1),
+            file("d/e.txt", 1),
+        ]));
+        let names = || {
+            (0..model.row_count())
+                .filter(|&r| model.row_data(r).unwrap().selected)
+                .map(|r| model.row_data(r).unwrap().path.to_string())
+                .collect::<Vec<_>>()
+        };
+        // The folder sorts first: d, a.txt, b.txt, c.txt.
+        assert_eq!(model.choose(1, 0), 0, "a plain click chooses nothing");
+        assert_eq!(model.choose(1, 1), 1);
+        assert_eq!(model.choose(3, 1), 2);
+        assert_eq!(names(), ["a.txt", "c.txt"]);
+        assert_eq!(model.choose(3, 1), 1, "a second Ctrl-click takes it out");
+        assert_eq!(model.choose(1, 0), 1, "nor does it clear the selection");
+        assert_eq!(model.choose(3, 2), 3, "Shift selects from the click");
+        assert_eq!(names(), ["a.txt", "b.txt", "c.txt"]);
+        assert_eq!(model.choose(0, 3), 0, "Escape empties it");
+        assert!(names().is_empty());
+        assert_eq!(model.choose(0, 1), 1);
+        assert_eq!(names(), ["d"]);
+        // Inside a chosen folder, a chosen file adds nothing to extract.
+        model.toggle(0, Some(true));
+        assert_eq!(model.choose(1, 1), 1);
+        assert_eq!(names(), ["d", "d/e.txt"]);
+        assert_eq!(model.chosen(), ["d"]);
+        // A closed folder keeps what was chosen inside it.
+        model.choose(0, 1);
+        model.toggle(0, Some(false));
+        assert_eq!(model.chosen(), ["d/e.txt"]);
+        assert!(names().is_empty());
+        // Escape works with no row under the cursor too.
+        assert_eq!(model.choose(99, 3), 0);
+        assert!(model.chosen().is_empty());
     }
 
     #[test]

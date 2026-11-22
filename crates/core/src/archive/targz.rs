@@ -52,11 +52,11 @@ pub struct StreamPoint {
     /// codec then.
     #[serde(default, skip_serializing_if = "CodecKind::is_gzip")]
     pub kind: CodecKind,
-    /// Gzip: the point is where a gzip member's header begins, not a
-    /// deflate block boundary inside a member. Written even at its default,
-    /// and so are the three below: 0.1.8 reads this journal structure and
-    /// has no defaults, so a field left out makes it report the journal as
-    /// damaged. Only fields added after 0.1.8 may be omitted.
+    /// Gzip or bzip2: the point is where a gzip member's or a bzip2
+    /// stream's header begins, not a block boundary inside one. Written even
+    /// at its default, and so are the three below: 0.1.8 reads this journal
+    /// structure and has no defaults, so a field left out makes it report
+    /// the journal as damaged. Only fields added after 0.1.8 may be omitted.
     #[serde(default)]
     pub member_start: bool,
     /// Gzip: CRC-32 and length of the member's output before the point,
@@ -73,9 +73,17 @@ pub struct StreamPoint {
     #[serde(default, with = "hex")]
     pub window: Vec<u8>,
     /// Xz: which block of the stream the point is at, where its header
-    /// begins. The blocks before it never need decoding again.
+    /// begins. Zstd: how many frames preceded the point, so a resumed run
+    /// still knows the stream had more than one. The pieces before it never
+    /// need decoding again.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub block: u64,
+    /// Bzip2: the stream's level digit and the combined CRC of its blocks
+    /// before the point, which the stream trailer is checked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combined_crc: Option<u32>,
     /// Offset of the point in the uncompressed tar.
     pub tar_pos: u64,
     pub at: TarAt,
@@ -90,6 +98,8 @@ pub enum CodecKind {
     #[default]
     Gzip,
     Xz,
+    Bzip2,
+    Zstd,
 }
 
 impl CodecKind {
@@ -242,6 +252,8 @@ impl Feed for Gzip {
                 member_len: point.len,
                 window: point.window,
                 block: 0,
+                level: None,
+                combined_crc: None,
                 tar_pos,
                 at,
             })),
@@ -296,6 +308,30 @@ impl<F: Feed> TarStream<F> {
         })
     }
 
+    /// Turns header records already held into an entry, when enough of them
+    /// arrived to tell. `None` means more bytes are needed, the bytes are a
+    /// zero block (the state moved to the trailer), or the entry extracts to
+    /// nothing (the state moved past it).
+    fn held_header(&mut self) -> Result<Option<Event<'static>>> {
+        let State::Header(held) = &self.state else {
+            return Ok(None);
+        };
+        match group(held)? {
+            Group::Need(_) => Ok(None),
+            Group::End => {
+                self.state = State::Trailer;
+                Ok(None)
+            }
+            Group::Complete => {
+                let held = match std::mem::replace(&mut self.state, State::Header(Vec::new())) {
+                    State::Header(held) => held,
+                    _ => unreachable!("held_header saw a header state"),
+                };
+                begin_entry(&mut self.tar_pos, &mut self.state, &held)
+            }
+        }
+    }
+
     /// The next event. `Data` is at most `max` bytes.
     pub(super) fn next(&mut self, max: usize) -> Result<Event<'_>> {
         if let Some((item, done)) = self.resumed.take() {
@@ -318,6 +354,13 @@ impl<F: Feed> TarStream<F> {
                 _ => {}
             }
             if self.pos == self.len {
+                // A fill can end exactly after the last byte of a header
+                // record. The bytes are all here, so finish the entry before
+                // asking for more: otherwise a point at this offset is lost
+                // and a frame or block boundary cannot be used.
+                if let Some(event) = self.held_header()? {
+                    return Ok(event);
+                }
                 if std::mem::take(&mut self.restartable) && self.state.at_rest() {
                     return Ok(Event::Point);
                 }
@@ -580,6 +623,8 @@ impl Walker {
                         match s.kind {
                             CodecKind::Gzip => "a gzip member of",
                             CodecKind::Xz => "an xz block of",
+                            CodecKind::Bzip2 => "a bzip2 block of",
+                            CodecKind::Zstd => "a zstd frame of",
                         }
                     );
                 }
@@ -787,6 +832,8 @@ mod tests {
             member_len: 0,
             window: Vec::new(),
             block: 0,
+            level: None,
+            combined_crc: None,
             tar_pos: 0,
             at: TarAt::Boundary,
         };
@@ -802,5 +849,10 @@ mod tests {
         }
         assert!(json.get("kind").is_none(), "kind is new and stays out");
         assert!(json.get("block").is_none(), "block is new and stays out");
+        assert!(json.get("level").is_none(), "level is new and stays out");
+        assert!(
+            json.get("combined_crc").is_none(),
+            "combined_crc is new and stays out"
+        );
     }
 }
