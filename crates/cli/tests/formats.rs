@@ -967,8 +967,19 @@ fn a_native_split_zip_with_a_part_missing_or_extra_is_refused() {
 
     let tmp = TempDir::new().unwrap();
     let first = fresh(&tmp);
-    fs::remove_file(first.with_extension("z02")).unwrap();
-    assert_split_refused(&first, &first, "game.z02 is missing");
+    let mut before = split_zip_snapshot(&first);
+    let missing = first.with_extension("z02");
+    let later = first.with_extension("z03");
+    assert!(later.exists());
+    let says = format!(
+        "game.z02 is missing: this split ZIP has {} parts. Put the missing parts",
+        before.len()
+    );
+    fs::remove_file(&missing).unwrap();
+    before.retain(|(path, _)| path != &missing);
+    assert_split_refused(&later, &first, &says);
+    assert_unchanged(&before);
+    assert!(!tmp.path().join("out").exists());
 
     let tmp = TempDir::new().unwrap();
     let first = fresh(&tmp);
