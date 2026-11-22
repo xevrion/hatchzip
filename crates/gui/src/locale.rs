@@ -7,7 +7,7 @@
 
 /// The folders under `translations/`. `every_translation_folder_is_listed`
 /// below checks that they match.
-pub const LANGUAGES: &[&str] = &["es", "hi", "zh_CN"];
+pub const LANGUAGES: &[&str] = &["es", "hi", "tr", "zh_CN"];
 
 /// Settings > Language lists these, each in its own language and script so
 /// a reader finds theirs whatever the app is showing. `en` is the source
@@ -16,6 +16,7 @@ pub const NAMES: &[(&str, &str)] = &[
     ("en", "English"),
     ("es", "Español"),
     ("hi", "हिन्दी"),
+    ("tr", "Türkçe"),
     ("zh_CN", "简体中文"),
 ];
 
@@ -221,6 +222,7 @@ mod tests {
         assert_eq!(first(&["en-US", "zh-CN"]), "");
         assert_eq!(first(&["hi-IN"]), "hi");
         assert_eq!(first(&["es-MX"]), "es");
+        assert_eq!(first(&["tr-TR"]), "tr");
         assert_eq!(first(&["fr-FR"]), "");
         assert_eq!(first(&[]), "");
     }
