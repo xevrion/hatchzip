@@ -4,6 +4,7 @@
 //! after another, each checked just before it starts; one that doesn't
 //! finish stops the rest until it is resumed.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -180,17 +181,22 @@ fn build_in(
     });
     ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
     let open_folder = settings.after_extracting == AfterExtracting::OpenFolder;
+    // The folder this window's run wrote to, recorded when "Extract inside"
+    // replaces the queue: the last nested task's output is a folder inside
+    // it, not the one to show.
+    let parent_output: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
     if settings.close_when_done || open_folder {
         let (weak, r) = (ui.as_weak(), Rc::downgrade(&runner));
         let close = settings.close_when_done;
+        let parent_output = parent_output.clone();
         runner.when_extracted(move || {
-            // The last archive's folder, which for several archives from
-            // one folder is where all of them went.
-            if open_folder
-                && let Some(out) = r
-                    .upgrade()
-                    .and_then(|r| r.task.borrow().as_ref().and_then(|t| t.output.clone()))
-            {
+            // Several archives queued from one folder each have their own
+            // output; the last one is where the run ended.
+            let out = parent_output
+                .borrow()
+                .clone()
+                .or_else(|| r.upgrade()?.task.borrow().as_ref()?.output.clone());
+            if open_folder && let Some(out) = out {
                 let _ = open::that_detached(out);
             }
             // Hiding the only window ends the app, as the close button does.
@@ -213,7 +219,10 @@ fn build_in(
     });
     let r = runner.clone();
     let keep = args.keep_archive || settings.keep_archive;
+    let parent_output = parent_output.clone();
     ui.on_extract_inside(move || {
+        // Remember the parent before the queue below replaces it.
+        *parent_output.borrow_mut() = r.task.borrow().as_ref().and_then(|t| t.output.clone());
         let keep = r.task.borrow().as_ref().map_or(keep, |t| t.keeps_archive());
         let keep_free = r.keep_free().unwrap_or(settings.keep_free);
         let nested = r

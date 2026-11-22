@@ -1,6 +1,7 @@
 //! Opening an archive for extraction and working out whether it fits. Shared
 //! by the command line and the GUI, so the two never disagree.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,6 +20,45 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
         .with_context(|| format!("resolving {}", archive.display()))?;
     let paths = Paths::for_archive(&primary);
     Ok((primary, paths))
+}
+
+/// Whether every volume of the set whose first volume is `primary` that
+/// exists on disk is in `written`. A set that is not split has one volume.
+///
+/// Extracting a set in place removes every volume, so an offer to extract it
+/// must not take in one the run did not write: a `.zip` next to the person's
+/// own `.z01` is the last segment of their set, not of the run's.
+pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
+    let mut volumes = Vec::new();
+    if storage::is_split_zip(primary) {
+        for disk in 0.. {
+            let Some(segment) = storage::split_zip_segment(primary, disk) else {
+                break;
+            };
+            if !segment.exists() {
+                break;
+            }
+            volumes.push(segment);
+        }
+        if let Some(last) = storage::split_zip_last(primary) {
+            volumes.push(last);
+        }
+    } else {
+        for index in 0.. {
+            let Some(volume) = storage::volume_path(primary, index) else {
+                break;
+            };
+            if index > 0 && !volume.exists() {
+                break;
+            }
+            volumes.push(volume);
+        }
+    }
+    volumes
+        .iter()
+        .filter(|v| v.exists())
+        .all(|v| written.contains(v))
+        && written.contains(primary)
 }
 
 // Made once per open and taken apart at once, so the size of the largest

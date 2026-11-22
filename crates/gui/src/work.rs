@@ -319,6 +319,15 @@ fn extract(
         only,
         nested: nested_run,
     } = choices;
+    // The file was an archive when the offer was made. It may have been
+    // replaced since, so it is checked again before anything is opened.
+    if nested_run && hatchzip_core::archive::nested_kind(archive).is_none() {
+        bail!(
+            "'{}' is no longer an archive that can be extracted inside, so it may have \
+             been replaced. Extract it from its folder instead. Nothing was modified",
+            archive.display()
+        );
+    }
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
     // Refused before the writable open, which would finish a truncation
@@ -490,6 +499,11 @@ fn extract(
         Outcome::Finished(warning) => {
             counters.archive.store(0, Ordering::Relaxed);
             let parent_primary = session::locate(archive).ok().map(|(p, _)| p);
+            let written: HashSet<PathBuf> = candidates
+                .iter()
+                .filter(|path| !kept.contains(*path))
+                .filter_map(|path| std::path::absolute(output.join(path)).ok())
+                .collect();
             let mut seen = HashSet::new();
             let nested: Vec<PathBuf> = candidates
                 .into_iter()
@@ -500,7 +514,10 @@ fn extract(
                     // A split set is one archive, named by its first volume;
                     // the parent archive is never offered back.
                     let (primary, _) = session::locate(&path).ok()?;
-                    if parent_primary.as_ref() == Some(&primary) || !seen.insert(primary.clone()) {
+                    if parent_primary.as_ref() == Some(&primary)
+                        || !seen.insert(primary.clone())
+                        || !session::volumes_written(&primary, &written)
+                    {
                         return None;
                     }
                     Some(primary)
@@ -907,6 +924,63 @@ mod tests {
             .expect("the extraction finished");
         assert!(nested.is_empty(), "the person's file is not offered");
         assert_eq!(std::fs::read(out.join("inner.zip")).unwrap(), person);
+    }
+
+    /// A `.zip` this run wrote next to the person's own `.z01` names a split
+    /// set whose first part is theirs. Extracting it in place would remove
+    /// their file, so it is not offered.
+    #[test]
+    fn a_set_whose_first_part_was_already_there_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let theirs = b"the first part of someone else's set".to_vec();
+        std::fs::write(out.join("set.z01"), &theirs).unwrap();
+
+        let inner = inner_zip();
+        let archive = zip_with(dir.path(), "game.zip", &[("set.zip", &inner)]);
+        let request = extract(&archive, Some(out.clone()), false);
+        let counters = Arc::new(Counters::default());
+        let seen = Mutex::new(Vec::new());
+        run(
+            &request,
+            &counters,
+            &|u| seen.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |_, _, _| panic!("nothing is replaced in a fresh folder"),
+        );
+        let nested = seen
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted { nested, .. } => Some(nested),
+                _ => None,
+            })
+            .expect("the extraction finished");
+        assert!(nested.is_empty(), "the person's set is not offered");
+        assert_eq!(std::fs::read(out.join("set.z01")).unwrap(), theirs);
+        assert_eq!(std::fs::read(out.join("set.zip")).unwrap(), inner);
+    }
+
+    /// The file was an archive when it was offered. If it is replaced before
+    /// the nested job starts, the job refuses it rather than opening the new
+    /// file.
+    #[test]
+    fn a_nested_archive_replaced_before_it_starts_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("inner.zip");
+        let replaced = b"no longer an archive".to_vec();
+        std::fs::write(&path, &replaced).unwrap();
+        let mut request = extract(&path, Some(dir.path().join("out")), false);
+        if let Request::Extract { nested, .. } = &mut request {
+            *nested = true;
+        }
+        let counters = Arc::new(Counters::default());
+        let updates = collect(&request, &counters);
+        assert_eq!(updates.len(), 1, "{updates:?}");
+        assert!(updates[0].contains("no longer an archive"), "{updates:?}");
+        assert_eq!(std::fs::read(&path).unwrap(), replaced);
     }
 
     fn make_zip(dir: &Path, password: Option<&str>) -> PathBuf {

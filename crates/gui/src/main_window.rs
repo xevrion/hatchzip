@@ -195,6 +195,9 @@ struct App {
     /// The folder it returns is still wanted: choosing "Next to the
     /// archive" or resetting while it is open turns this off.
     pick_wanted: Cell<bool>,
+    /// "After extracting" opened the parent's folder for this run, so a
+    /// nested queue finishing inside it doesn't open it a second time.
+    folder_opened: Cell<bool>,
 }
 
 /// Answers the folder picker of "Extract selected…" in tests.
@@ -295,6 +298,7 @@ pub fn build(
         summary: RefCell::new(None),
         picking: Cell::new(false),
         pick_wanted: Cell::new(false),
+        folder_opened: Cell::new(false),
     });
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
 
@@ -303,7 +307,9 @@ pub fn build(
     // already going.
     app.runner.when_extracted(|| {
         with_app(|app| {
-            if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder {
+            if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder
+                && !app.folder_opened.replace(true)
+            {
                 // The parent's output, once, even when a nested queue just
                 // finished in folders inside it.
                 app.open_parent_folder();
@@ -1126,6 +1132,8 @@ impl App {
 
     fn start_extraction(&self, task: Task, request: Request) {
         self.runner.clear_queue();
+        // A new run may open the folder once more.
+        self.folder_opened.set(false);
         // On Windows our read handle would block the exclusive one the
         // extraction takes, so the worker closes it first, waiting out any
         // plan still being worked out.
