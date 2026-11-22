@@ -223,7 +223,7 @@ msgid "Enter the password for {}."
 msgstr "{} için şifreyi giriniz."
 
 msgid "Available"
-msgstr "Mevcut"
+msgstr "Kullanılabilir"
 
 msgid "Required, archive removed"
 msgstr "Gerekli, arşiv silindi"
