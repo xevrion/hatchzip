@@ -1,3 +1,5 @@
 /target
 # Agent worktrees and local tool state.
 /.claude/
+/result
+/result-*
