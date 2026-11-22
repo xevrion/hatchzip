@@ -565,6 +565,9 @@ msgid_plural "Archive {} of {}. {} more archives have not started."
 msgstr[0] "{1} में से आर्काइव {0}। 1 और आर्काइव शुरू नहीं हुआ।"
 msgstr[1] "{1} में से आर्काइव {0}। {2} और आर्काइव शुरू नहीं हुए।"
 
+msgid "Not started: {}."
+msgstr "शुरू नहीं हुए: {}।"
+
 msgid "Required: {}. Available: {}."
 msgstr "ज़रूरी: {}। उपलब्ध: {}।"
 

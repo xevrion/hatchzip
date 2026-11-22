@@ -52,6 +52,8 @@ export struct TaskView {
     detail: string,
     // "Archive 2 of 3" when a right-click queued several.
     step: string,
+    // "Not started: b.zip, c.zip." when a stop leaves archives queued.
+    rest: string,
     // What the spinner says while checking: "Checking disk space…", or
     // "Reading archive… 37%" while a long open reads through it.
     busy: string,

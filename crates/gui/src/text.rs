@@ -372,15 +372,21 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
         };
         view.rate = messages.invoke_task_rate(human(speed).into(), duration.into());
     }
-    view.step = match task.queue {
+    view.step = match &task.queue {
         crate::task::Queue::Single => SharedString::new(),
         crate::task::Queue::Of { at, of } => {
-            messages.invoke_queue_of(plural_count(at), plural_count(of))
+            messages.invoke_queue_of(plural_count(*at), plural_count(*of))
         }
-        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(of)),
-        crate::task::Queue::Waiting { at, of, left } => {
-            messages.invoke_queue_waiting(plural_count(at), plural_count(of), plural_count(left))
+        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(*of)),
+        crate::task::Queue::Waiting { at, of, left, .. } => {
+            messages.invoke_queue_waiting(plural_count(*at), plural_count(*of), plural_count(*left))
         }
+    };
+    view.rest = match &task.queue {
+        crate::task::Queue::Waiting { rest, .. } if !rest.is_empty() => {
+            messages.invoke_queue_rest(rest.join(", ").into())
+        }
+        _ => SharedString::new(),
     };
     view
 }

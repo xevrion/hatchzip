@@ -59,6 +59,11 @@ export component TaskWindow inherits Window {
                 color: Theme.muted;
                 overflow: elide;
             }
+            if root.task.rest != "": Text {
+                text: root.task.rest;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
             if root.task.space != "": Text {
                 text: root.task.space;
                 color: Theme.muted;

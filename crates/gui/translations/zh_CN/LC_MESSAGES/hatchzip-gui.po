@@ -556,6 +556,9 @@ msgid "Archive {} of {}. 1 more archive has not started."
 msgid_plural "Archive {} of {}. {} more archives have not started."
 msgstr[0] "压缩包 {0} / {1}。还有 {2} 个压缩包未开始。"
 
+msgid "Not started: {}."
+msgstr "未开始：{}。"
+
 msgid "Required: {}. Available: {}."
 msgstr "所需：{}。可用：{}。"
 

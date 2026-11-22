@@ -488,7 +488,7 @@ fn nested_flow() {
     let spanish = ui
         .global::<hatchzip_gui::Messages>()
         .invoke_inside_count_remove(1, "1".into());
-    assert_eq!(spanish, "Extraer y eliminar el 1 archivo que contiene");
+    assert_eq!(spanish, "Extraer y eliminar el archivo que contiene");
     let mut view = ui.get_task();
     view.inside = spanish.clone();
     ui.set_task(view);
@@ -564,17 +564,15 @@ fn nested_task_window_flow() {
     );
     assert_eq!(
         ui.get_task().inside,
-        "Extraer y eliminar el 1 archivo que contiene"
+        "Extraer y eliminar el archivo que contiene"
     );
     let _ = ui.window().take_snapshot().unwrap();
     ui.window().set_size(LogicalSize::new(420.0, 270.0));
     let _ = ui.window().take_snapshot().unwrap();
-    let button = ElementHandle::find_by_accessible_label(
-        &ui,
-        "Extraer y eliminar el 1 archivo que contiene",
-    )
-    .next()
-    .expect("the offer is visible");
+    let button =
+        ElementHandle::find_by_accessible_label(&ui, "Extraer y eliminar el archivo que contiene")
+            .next()
+            .expect("the offer is visible");
     let p = button.absolute_position();
     let s = button.size();
     let window = ui.window().size().to_logical(ui.window().scale_factor());

@@ -165,7 +165,17 @@ impl Runner {
         if task.running() || left == 0 {
             return Queue::Of { at, of };
         }
-        Queue::Waiting { at, of, left }
+        Queue::Waiting {
+            at,
+            of,
+            left,
+            rest: self
+                .queue
+                .borrow()
+                .iter()
+                .map(|(task, _)| task.name().to_string())
+                .collect(),
+        }
     }
 
     /// Starts the next queued archive if the current one is done.
@@ -314,7 +324,13 @@ impl Runner {
             }
             self.timer.stop();
             if self.quit_when_stopped.get() {
-                let _ = slint::quit_event_loop();
+                if self.queue.borrow().is_empty() {
+                    let _ = slint::quit_event_loop();
+                } else {
+                    // Keep the stopped run on screen so the archives that
+                    // never started are named; closing again quits.
+                    self.quit_when_stopped.set(false);
+                }
             } else if self.task.borrow().as_ref().is_some_and(Task::extracted)
                 && let Some(f) = self.when_extracted.borrow().as_ref()
             {
@@ -351,5 +367,24 @@ mod tests {
         runner.clear_queue();
         assert!(runner.queue.borrow().is_empty());
         assert_eq!(runner.place.get(), (1, 1));
+    }
+
+    #[test]
+    fn a_stopped_queue_names_the_archives_left() {
+        let runner = Runner::install(|_| {});
+        runner.place.set((1, 2));
+        runner.queue.borrow_mut().push_back((
+            Task::test("b.zip"),
+            Request::Test {
+                archive: "b.zip".into(),
+                password: None,
+            },
+        ));
+        let mut task = Task::test("a.zip");
+        task.view.phase = crate::Phase::Paused;
+        match runner.step(&task) {
+            Queue::Waiting { rest, .. } => assert_eq!(rest, ["b.zip"]),
+            other => panic!("a stopped queue is waiting, not {other:?}"),
+        }
     }
 }

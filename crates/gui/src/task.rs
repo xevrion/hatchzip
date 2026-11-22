@@ -13,7 +13,7 @@ use crate::work::{Counters, Update};
 use crate::{Phase, PlanView, TaskView};
 
 /// Where this archive sits when several were queued from one right-click.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Queue {
     #[default]
     Single,
@@ -28,6 +28,8 @@ pub enum Queue {
         at: usize,
         of: usize,
         left: usize,
+        /// The archives after this one, by name: what a stop leaves out.
+        rest: Vec<String>,
     },
 }
 

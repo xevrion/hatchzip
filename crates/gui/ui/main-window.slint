@@ -734,6 +734,11 @@ export component MainWindow inherits Window {
             if root.task.phase == Phase.verifying || root.task.phase == Phase.working || root.task.phase == Phase.pausing || root.task.phase == Phase.paused: Progress {
                 task: root.task;
             }
+            if root.task.rest != "": Text {
+                text: root.task.rest;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
             HorizontalLayout {
                 spacing: 12px;
                 Outcome {

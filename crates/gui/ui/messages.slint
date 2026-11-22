@@ -76,6 +76,7 @@ export global Messages {
     public function queue-of(at: int, of: int) -> string { return @tr("Archive {} of {}", at, of); }
     public function queue-all(of: int) -> string { return @tr("All {} archives completed.", of); }
     public function queue-waiting(at: int, of: int, left: int) -> string { return @tr("Archive {} of {}. 1 more archive has not started." | "Archive {} of {}. {} more archives have not started." % left, at, of, left); }
+    public function queue-rest(names: string) -> string { return @tr("Not started: {}.", names); }
 
     public function replace-question(file: string, folder: string) -> string { return @tr("'{}' already exists in {}.", file, folder); }
     public function replace-instructions(removing: bool) -> string { return removing ? @tr("Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name.") : @tr("Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."); }
