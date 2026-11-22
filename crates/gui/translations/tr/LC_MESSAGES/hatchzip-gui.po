@@ -65,7 +65,7 @@ msgid "Extract to"
 msgstr "Şuraya çıkar"
 
 msgid "Browse…"
-msgstr "Ara…"
+msgstr "Gözat…"
 
 msgid "Reserved space"
 msgstr "Ayrılmış alan"
@@ -153,14 +153,14 @@ msgstr "{} arşiv"
 
 msgid "{} entry"
 msgid_plural "{} entries"
-msgstr[0] "{} öğre"
+msgstr[0] "{} öğe"
 msgstr[1] "{} öğeler"
 
 msgid "{} in {} remaining"
-msgstr "{0} içinde {1} kaldı"
+msgstr "{0} kaldı ({1})"
 
 msgid "{} uncompressed"
-msgstr "Sıkıştırılmadı: {}"
+msgstr "Sıkıştırılmamış boyut: {}"
 
 msgid "Disk space"
 msgstr "Disk alanı"
@@ -190,7 +190,7 @@ msgid "Check again"
 msgstr "Tekrar kontrol et"
 
 msgid "Retry"
-msgstr "Tekrar deneरें"
+msgstr "Tekrar dene"
 
 msgid "Open folder"
 msgstr "Klasörü aç"
@@ -211,7 +211,7 @@ msgid "Replace or skip files"
 msgstr "Dosyaları değiştir ya da atla"
 
 msgid "Keep both"
-msgstr "İkisinide tut"
+msgstr "İkisini de tut"
 
 msgid "Skip"
 msgstr "Atla"
@@ -223,7 +223,7 @@ msgid "Enter the password for {}."
 msgstr "{} için şifreyi giriniz."
 
 msgid "Available"
-msgstr "उपलब्ध"
+msgstr "Mevcut"
 
 msgid "Required, archive removed"
 msgstr "Gerekli, arşiv silindi"
@@ -238,13 +238,13 @@ msgid "Available after extraction"
 msgstr "Çıkardıktan sonra kullanılabilir"
 
 msgid "Restore complete"
-msgstr "Restore etme tamamlandı"
+msgstr "Geri yükleme tamamlandı"
 
 msgid "Restore failed"
-msgstr "Restore etme başarısız oldu"
+msgstr "Geri yükleme başarısız oldu"
 
 msgid "Restoring {}"
-msgstr "{} restore ediliyor"
+msgstr "{} geri yükleniyor"
 
 msgid "Test complete"
 msgstr "Test tamamlandı"
@@ -355,7 +355,7 @@ msgid "Extraction progress discarded. The archive was not modified. Extracted fi
 msgstr "Çıkartma iptal edildi. Arşive dokunulmadı. Çıkarılan dosyalar {} dizininde tutuldu."
 
 msgid "Archive restored. It contains {} not yet extracted. Extracted files remain in {}."
-msgstr "Arşiv restore edildi. {} barındırıyor, hala çıkarılmadı. Çıkarılan dosyalar {} dizininde tutuldu."
+msgstr "Arşiv geri yüklendi. {} barındırıyor, hala çıkarılmadı. Çıkarılan dosyalar {} dizininde tutuldu."
 
 msgid "1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive."
 msgid_plural "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive."
