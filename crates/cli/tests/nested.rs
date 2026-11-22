@@ -179,6 +179,33 @@ fn a_skipped_file_is_not_extracted() {
     assert_eq!(fs::read(out.join("first.zip")).unwrap(), user);
 }
 
+/// A `.zip` this run wrote next to the person's own `.z01` names a split set
+/// whose first part is theirs. Extracting it in place would remove their
+/// file, so it is not offered.
+#[test]
+fn a_set_whose_first_part_was_already_there_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let theirs = b"the first part of someone else's set".to_vec();
+    fs::write(out.join("set.z01"), &theirs).unwrap();
+
+    let inner = zip_bytes(&[("inside.txt", b"one")]);
+    let outer = zip_bytes(&[("set.zip", &inner)]);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer).unwrap();
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("No archives among the extracted files."),
+        "{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    assert_eq!(fs::read(out.join("set.z01")).unwrap(), theirs);
+    assert_eq!(fs::read(out.join("set.zip")).unwrap(), inner);
+}
+
 /// A link inside the output can point anywhere; the scan must not follow it.
 #[cfg(unix)]
 #[test]
