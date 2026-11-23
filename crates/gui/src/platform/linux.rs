@@ -10,6 +10,9 @@ pub const SHELL_MENU: bool = true;
 /// edge under it.
 pub const IN_WINDOW_MENU: bool = true;
 
+/// Let Slint pick its default renderer (FemtoVG) when SLINT_BACKEND is unset.
+pub const DEFAULT_RENDERER: Option<&str> = None;
+
 /// fontconfig already picks a face with the script's glyphs and weights.
 pub fn font_family(_language: &str) -> &'static str {
     ""

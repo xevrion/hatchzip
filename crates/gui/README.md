@@ -33,7 +33,7 @@ The task forms are what file manager menus call, and installers run the two shel
 | | |
 |---|---|
 | Style | Picked at build time in `build.rs`: Fluent on Windows and Linux, Cupertino on macOS. `SLINT_STYLE` overrides it. |
-| Renderer | FemtoVG (OpenGL) first. Without a working OpenGL driver the app restarts itself with Slint's software renderer, see `src/backend.rs`. `SLINT_BACKEND=winit-software` forces the software renderer. |
+| Renderer | FemtoVG (OpenGL) first on Linux and macOS; software renderer on Windows. `SLINT_BACKEND=winit-femtovg` uses OpenGL on Windows; `SLINT_BACKEND=winit-software` forces the software renderer anywhere. |
 | Theme | Light or dark, following the system. |
 
 Files dropped on the window open on Windows, macOS and X11. winit 0.30 doesn't report drops on Wayland, nor files opened from the Finder on macOS, which arrive as Apple Events; only the command line works there.
