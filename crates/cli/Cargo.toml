@@ -22,6 +22,9 @@ clap_mangen = "0.3.3"
 ctrlc = "3.5.2"
 indicatif = "0.18.6"
 rpassword = "7.5.4"
+serde.workspace = true
+serde_json.workspace = true
+time = { version = "0.3.55", features = ["formatting"] }
 
 [features]
 # RAR archives, through UnRAR's C++ source and its own license; see
@@ -82,7 +85,6 @@ lzma-rust2 = { version = "0.24.0", default-features = false, features = [
     "encoder",
     "xz",
 ] }
-serde_json.workspace = true
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
 tar.workspace = true
 tempfile.workspace = true

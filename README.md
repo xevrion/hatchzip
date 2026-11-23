@@ -301,6 +301,117 @@ hatchzip test game.7z    # read every file and verify its checksum, writing noth
 
 Plain tar has no checksums for file contents, so `test` on a tar only proves every file can be read in full.
 
+### Machine-readable output (JSON)
+
+The `list` and `check` commands support `--json` for scripts and
+other tools:
+
+```sh
+hatchzip list game.zip --json
+hatchzip check game.zip --json
+```
+
+Both commands emit one JSON document on stdout, using the same
+top-level envelope. The following is an example of a successful
+`list --json` result. A `check --json` result uses `space_plan`
+instead of `entries`:
+
+```json
+{
+  "version": 1,
+  "archives": [
+    {
+      "archive_path": "game.zip",
+      "state": "fresh",
+      "format": "zip",
+      "archive_size_bytes": 123456,
+      "entry_count": 1,
+      "remaining_uncompressed_size_bytes": 4096,
+      "entries": [
+        {
+          "path": "readme.txt",
+          "kind": "file",
+          "size_bytes": 4096,
+          "mode": null,
+          "modified_at": null,
+          "encrypted": false,
+          "hard_link_target": null
+        }
+      ],
+      "error": null
+    }
+  ]
+}
+```
+
+`version` identifies the JSON schema. `archives` contains one
+result for each distinct archive, in input order. A split archive
+appears once, with `archive_path` naming its first volume.
+
+The archive metadata fields are:
+
+| Field | Meaning |
+|---|---|
+| `archive_path` | Archive path, or the first volume of a split archive |
+| `state` | `fresh` or `resuming`; `null` when the archive could not be opened |
+| `format` | Archive format, or `null` when unavailable |
+| `archive_size_bytes` | Original archive size in bytes; `null` when resuming or unavailable |
+| `entry_count` | Number of entries still to extract |
+| `remaining_uncompressed_size_bytes` | Uncompressed size still to extract, in bytes |
+
+Fields that are unavailable are present as `null`, rather than
+omitted. For a resumed archive, `entry_count` and
+`remaining_uncompressed_size_bytes` describe only the entries
+and data still to extract. The original archive size is not
+reported because parts may already have been removed.
+
+`list --json` adds an `entries` array. Each entry has:
+
+| Field | Meaning |
+|---|---|
+| `path` | Safe archive member path, using `/` separators |
+| `kind` | `file`, `directory`, `symlink` or `hard_link` |
+| `size_bytes` | The size recorded by HatchZip's archive model, in bytes |
+| `mode` | File mode, or `null` when unavailable |
+| `modified_at` | Modification time in RFC 3339 UTC, or `null` |
+| `encrypted` | Whether the entry is encrypted |
+| `hard_link_target` | Target path for a hard link, otherwise `null` |
+
+`size_bytes` reports the archive model's value without estimating
+or recalculating it. Its meaning can depend on the format and
+entry type. TAR and RAR directory entries have a size of zero.
+TAR symbolic links use the byte length of their target path.
+TAR hard links use the target file's size when it can be found,
+otherwise zero. ZIP and 7z report the size supplied by their
+respective archive readers.
+
+`check --json` adds a `space_plan` object:
+
+| Field | Meaning |
+|---|---|
+| `needed_bytes` | Space required by the selected extraction mode |
+| `available_bytes` | Usable available space |
+| `reserved_bytes` | Space reserved by `--keep-free` |
+| `fits_in_place` | Whether extraction fits while removing the archive |
+| `fits_with_archive_kept` | Whether extraction fits while keeping the archive |
+| `in_place_refusal_reason` | Why in-place extraction is unavailable, or `null` |
+
+A fit field is `null` when that extraction mode cannot be
+selected. For example, a resumed extraction must continue in
+the mode recorded in its journal, so the alternative mode is
+`null`. An orphaned archive has no remaining space plan and
+reports `space_plan: null`.
+
+Each archive result has an `error` field containing an error
+message or `null`. If one archive in a multi-archive command
+cannot be read, the other results are still emitted. The
+command continues through the inputs and exits with the status
+of the first archive that did not succeed.
+
+JSON output is written only to stdout. Progress messages and
+errors are written to stderr. Existing exit codes are preserved,
+including exit code `3` for insufficient disk space.
+
 ### Exit status
 
 | Code | Meaning |

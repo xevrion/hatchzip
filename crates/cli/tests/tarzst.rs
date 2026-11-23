@@ -83,6 +83,17 @@ fn copy_fixture(dir: &Path, name: &str) -> PathBuf {
 }
 
 #[test]
+fn list_json_supports_tar_zst() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build(tmp.path(), &sample_files());
+    let before = fs::read(&archive).unwrap();
+
+    assert_json_listing(&archive, &archive);
+
+    assert_eq!(fs::read(&archive).unwrap(), before);
+}
+
+#[test]
 fn extracts_multi_frame_tar_byte_identical() {
     let files = sample_files();
     let tmp = TempDir::new().unwrap();
@@ -129,6 +140,44 @@ fn real_pzstd_frames_extract() {
     );
     assert!(out.join("game/README.txt").is_file());
     assert_consumed(&archive);
+}
+
+#[test]
+fn check_json_reports_in_place_refusal() {
+    let files = sample_files();
+    let tmp = TempDir::new().unwrap();
+    let archive = single_frame(tmp.path(), &files);
+
+    let run = hatchzip(
+        &[
+            "check",
+            archive.to_str().unwrap(),
+            "--json",
+            "--keep-free",
+            "0",
+        ],
+        &[],
+    );
+
+    assert_eq!(run.status.code(), Some(1));
+    assert!(!run.stderr.is_empty());
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+
+    assert_eq!(document["version"], 1);
+
+    let archives = document["archives"].as_array().unwrap();
+    assert_eq!(archives.len(), 1);
+
+    let result = &archives[0];
+    let plan = &result["space_plan"];
+
+    assert!(result["error"].is_null());
+    assert!(plan["fits_in_place"].is_null());
+    assert!(plan["fits_with_archive_kept"].is_boolean());
+
+    let refusal = plan["in_place_refusal_reason"].as_str().unwrap();
+    assert!(refusal.contains("one zstd frame"), "{refusal}");
 }
 
 #[test]

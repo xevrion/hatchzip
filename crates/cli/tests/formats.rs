@@ -64,6 +64,41 @@ fn build_tar(dir: &Path, files: &Files) -> PathBuf {
     path
 }
 
+#[test]
+fn list_json_supports_7z_tar_and_native_split_zip() {
+    let tmp = TempDir::new().unwrap();
+    let files = sample_files();
+
+    let sevenz = build_7z(tmp.path(), &files, false);
+    let tar = build_tar(tmp.path(), &files);
+
+    let split_first = split_zip_of(tmp.path(), &files, &Split::default());
+    let split_parts = split_zip_parts(&split_first);
+
+    assert!(split_parts.len() > 1);
+
+    let split_last = split_parts.last().unwrap();
+
+    let sevenz_before = fs::read(&sevenz).unwrap();
+    assert_json_listing(&sevenz, &sevenz);
+    assert_eq!(fs::read(&sevenz).unwrap(), sevenz_before);
+
+    let tar_before = fs::read(&tar).unwrap();
+    assert_json_listing(&tar, &tar);
+    assert_eq!(fs::read(&tar).unwrap(), tar_before);
+
+    let split_before: Vec<_> = split_parts
+        .iter()
+        .map(|path| fs::read(path).unwrap())
+        .collect();
+
+    assert_json_listing(split_last, &split_first);
+
+    for (path, before) in split_parts.iter().zip(split_before) {
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
+}
+
 /// A file name over 100 bytes, which tar can only store in an extra record.
 fn long_name() -> String {
     format!("game/{}/deep.txt", "very-long-folder-name".repeat(8))
