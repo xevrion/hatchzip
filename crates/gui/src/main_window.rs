@@ -310,9 +310,9 @@ pub fn build(
             if app.settings.borrow().after_extracting == AfterExtracting::OpenFolder
                 && !app.folder_opened.replace(true)
             {
-                // The parent's output, once, even when a nested queue just
+                // The run's output, once, even when a nested queue just
                 // finished in folders inside it.
-                app.open_parent_folder();
+                app.open_folder();
             }
         });
     });
@@ -1322,18 +1322,11 @@ impl App {
         }
     }
 
+    /// The run's output, not the last nested archive's folder. The "After
+    /// extracting" setting opens this once per run.
     fn open_folder(&self) {
         let task = self.runner.task.borrow();
         if let Some(out) = task.as_ref().and_then(|t| t.output.clone()) {
-            let _ = open::that_detached(out);
-        }
-    }
-
-    /// The main window's output, not the last nested archive's folder. The
-    /// "After extracting" setting opens this once per run.
-    fn open_parent_folder(&self) {
-        let out = self.output.borrow().clone();
-        if !out.as_os_str().is_empty() {
             let _ = open::that_detached(out);
         }
     }

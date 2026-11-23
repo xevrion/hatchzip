@@ -4,7 +4,7 @@
 //! after another, each checked just before it starts; one that doesn't
 //! finish stops the rest until it is resumed.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -189,6 +189,9 @@ fn build_in(
         let (weak, r) = (ui.as_weak(), Rc::downgrade(&runner));
         let close = settings.close_when_done;
         let parent_output = parent_output.clone();
+        // A nested queue runs after the parent, so "when extracted" fires
+        // again; open the parent's folder only the first time.
+        let folder_opened = Cell::new(false);
         runner.when_extracted(move || {
             // Several archives queued from one folder each have their own
             // output; the last one is where the run ended.
@@ -196,7 +199,10 @@ fn build_in(
                 .borrow()
                 .clone()
                 .or_else(|| r.upgrade()?.task.borrow().as_ref()?.output.clone());
-            if open_folder && let Some(out) = out {
+            if open_folder
+                && let Some(out) = out
+                && !folder_opened.replace(true)
+            {
                 let _ = open::that_detached(out);
             }
             // Hiding the only window ends the app, as the close button does.
