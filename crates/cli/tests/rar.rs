@@ -716,6 +716,22 @@ fn a_set_in_a_folder_with_a_non_ascii_name() {
 }
 
 #[test]
+fn rar5_list_json_reports_archive_metadata_and_entries() {
+    let tmp = TempDir::new().unwrap();
+    let archive = copy_set("rar5", tmp.path());
+
+    assert_json_listing(&archive, &archive);
+}
+
+#[test]
+fn rar4_list_json_reports_archive_metadata_and_entries() {
+    let tmp = TempDir::new().unwrap();
+    let archive = copy_set("rar4", tmp.path());
+
+    assert_json_listing(&archive, &archive);
+}
+
+#[test]
 fn test_reads_every_file() {
     let tmp = TempDir::new().unwrap();
     let archive = copy_set("rar4", tmp.path());
@@ -1329,6 +1345,79 @@ fn a_kept_solid_archive_resumes_after_a_crash() {
     assert_unchanged(&before);
 }
 
+#[test]
+fn rar5_solid_check_json_reports_in_place_refusal() {
+    let tmp = TempDir::new().unwrap();
+    let archive = copy_set("rar5-solid", tmp.path());
+
+    let run = hatchzip(
+        &[
+            "check",
+            archive.to_str().unwrap(),
+            "--json",
+            "--keep-free",
+            "0",
+        ],
+        &[],
+    );
+
+    assert_eq!(run.status.code(), Some(1));
+    assert!(!run.stderr.is_empty());
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+
+    assert_eq!(document["version"], 1);
+
+    let archives = document["archives"].as_array().unwrap();
+    assert_eq!(archives.len(), 1);
+
+    let result = &archives[0];
+    let plan = &result["space_plan"];
+
+    assert!(result["error"].is_null());
+    assert!(plan["fits_in_place"].is_null());
+    assert!(plan["fits_with_archive_kept"].is_boolean());
+
+    let refusal = plan["in_place_refusal_reason"].as_str().unwrap();
+    assert!(refusal.contains("solid"), "{refusal}");
+}
+
+#[test]
+fn rar4_solid_check_json_reports_in_place_refusal() {
+    let tmp = TempDir::new().unwrap();
+    let archive = copy_set("rar4-solid", tmp.path());
+
+    let run = hatchzip(
+        &[
+            "check",
+            archive.to_str().unwrap(),
+            "--json",
+            "--keep-free",
+            "0",
+        ],
+        &[],
+    );
+
+    assert_eq!(run.status.code(), Some(1));
+    assert!(!run.stderr.is_empty());
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+
+    assert_eq!(document["version"], 1);
+
+    let archives = document["archives"].as_array().unwrap();
+    assert_eq!(archives.len(), 1);
+
+    let result = &archives[0];
+    let plan = &result["space_plan"];
+
+    assert!(result["error"].is_null());
+    assert!(plan["fits_in_place"].is_null());
+    assert!(plan["fits_with_archive_kept"].is_boolean());
+
+    let refusal = plan["in_place_refusal_reason"].as_str().unwrap();
+    assert!(refusal.contains("solid"), "{refusal}");
+}
 #[test]
 fn a_missing_volume_is_refused_untouched() {
     let tmp = TempDir::new().unwrap();
