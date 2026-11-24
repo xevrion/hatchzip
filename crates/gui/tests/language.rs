@@ -51,6 +51,10 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
         renderer_name: Some("software".into()),
     })))
     .unwrap();
+    // The windows follow the system language, and this flow reads English
+    // labels. Slint registers its bundled catalogs with the first component.
+    drop(MainWindow::new().unwrap());
+    slint::select_bundled_translation("en").unwrap();
     let dir = tempfile::tempdir().unwrap();
     let archive = dir.path().join("sample.zip");
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
