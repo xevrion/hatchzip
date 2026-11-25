@@ -265,6 +265,84 @@ fn thunar_keeps_every_action_that_is_not_hatchzips() {
     assert!(dirs.data.join("kio/servicemenus/hatchzip.desktop").exists());
 }
 
+/// Ubuntu's packaged `uca.xml` translates the stock action's name and
+/// description, and Thunar saves only the ones for its own locale. It also
+/// writes `<range/>` as `<range></range>`. A copy that changed only that way
+/// goes on unregister; one the user edited stays.
+#[cfg(target_os = "linux")]
+#[test]
+fn thunar_removes_its_rewrite_of_the_stock_file() {
+    use hatchzip_shell::unregister;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let system = tmp.path().join("xdg");
+    std::fs::create_dir_all(system.join("Thunar")).unwrap();
+    let stock = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE actions [\n\
+                 <!ATTLIST name xml:lang CDATA #IMPLIED>\n\
+                 <!ATTLIST description xml:lang CDATA #IMPLIED>\n]>\n<actions>\n<action>\n\
+                 \t<icon>utilities-terminal</icon>\n\t<name>Open Terminal Here</name>\n\
+                 \t<name xml:lang=\"de\">Terminal hier \u{f6}ffnen</name>\n\
+                 \t<name xml:lang=\"fr\">Ouvrir un terminal ici</name>\n\
+                 \t<command>exo-open --working-directory %f --launch TerminalEmulator</command>\n\
+                 \t<description>Example for a custom action</description>\n\
+                 \t<description xml:lang=\"de\">Beispiel f\u{fc}r eine benutzerdefinierte Aktion</description>\n\
+                 \t<description xml:lang=\"fr\">Exemple d&apos;une action personnalis\u{e9}e</description>\n\
+                 \t<range/>\n\t<patterns>*</patterns>\n\t<startup-notify/>\n\t<directories/>\n\
+                 </action>\n</actions>\n";
+    std::fs::write(system.join("Thunar/uca.xml"), stock).unwrap();
+    let dirs = Dirs {
+        data: tmp.path().join("data"),
+        config: tmp.path().join("config"),
+        system_config: vec![system],
+    };
+    let uca = dirs.config.join("Thunar/uca.xml");
+    let gui = Path::new("/usr/bin/hatchzip-gui");
+    // What Thunar 4.18 in the C locale saves: no translations, `<range>` with
+    // an end tag, and an id for the action that had none.
+    let thunar_saves = |text: &str| {
+        text.lines()
+            .filter(|l| !l.contains("xml:lang=\""))
+            .map(|l| {
+                l.replace("<range/>", "<range></range>").replace(
+                    "<name>Open Terminal Here</name>",
+                    "<name>Open Terminal Here</name>\n\t<unique-id>1700000000-1</unique-id>",
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    };
+
+    register(&dirs, gui).unwrap();
+    let text = std::fs::read_to_string(&uca).unwrap();
+    let rewritten = thunar_saves(&text);
+    assert!(!rewritten.contains("xml:lang=\"") && rewritten.contains("<range></range>"));
+    std::fs::write(&uca, &rewritten).unwrap();
+    unregister(&dirs).unwrap();
+    assert!(!uca.exists(), "Thunar's rewrite of an untouched copy goes");
+    assert!(!dirs.config.join("hatchzip/thunar-uca-created").exists());
+
+    // The same rewrite, with a change of the user's on top, is kept with it.
+    for (from, to) in [
+        (
+            "<description>Example for a custom action</description>",
+            "<description>My terminal</description>",
+        ),
+        ("<range></range>", "<range>1-1</range>"),
+    ] {
+        register(&dirs, gui).unwrap();
+        let text = std::fs::read_to_string(&uca).unwrap();
+        let edited = thunar_saves(&text).replacen(from, to, 1);
+        std::fs::write(&uca, &edited).unwrap();
+        unregister(&dirs).unwrap();
+        let left = std::fs::read_to_string(&uca).unwrap();
+        assert!(left.contains(to), "the user's edit stays");
+        assert!(!left.contains("hatchzip-"));
+        assert_eq!(left.matches("<action>").count(), 1);
+        std::fs::remove_file(&uca).unwrap();
+    }
+}
+
 /// A Thunar file HatchZip can't read or edit skips only Thunar, and says
 /// which file it was.
 #[cfg(target_os = "linux")]

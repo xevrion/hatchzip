@@ -679,11 +679,10 @@ fn check_part_count(parts: &[Part], this: u64) -> Result<()> {
     if this > n as u64 {
         let missing = storage::split_zip_segment(first, n).unwrap_or_else(|| first.clone());
         bail!(
-            "{} is missing: this split ZIP has {} parts, and {} of them are here. Put the \
+            "{} is missing: this split ZIP has {} parts. Put the \
              missing parts next to {} and try again. Nothing was modified",
             missing.display(),
             this + 1,
-            n + 1,
             first.display()
         );
     }
