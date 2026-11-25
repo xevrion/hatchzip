@@ -129,7 +129,8 @@ jobs:
   windows:
     name: windows x86_64
     runs-on: windows-2025
-    timeout-minutes: 45
+    # GitHub's limit: room for both signing requests to wait 2.5 hours.
+    timeout-minutes: 360
     permissions:
       contents: read
       # SignPath downloads the files to sign from this run's artifacts.
@@ -200,6 +201,9 @@ jobs:
           artifact-configuration-slug: programs
           github-artifact-id: ${{ steps.unsigned-programs.outputs.artifact-id }}
           wait-for-completion: true
+          # The production certificate needs a person to approve each
+          # request in SignPath, so there is time to do it.
+          wait-for-completion-timeout-in-seconds: 9000
           output-artifact-directory: signed-programs
       - name: sign the programs (Azure Artifact Signing)
         if: env.SIGNER == 'azure'
@@ -288,6 +292,7 @@ jobs:
           artifact-configuration-slug: installers
           github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 9000
           output-artifact-directory: signed-installers
       - name: sign the installers (Azure Artifact Signing)
         if: env.SIGNER == 'azure'
