@@ -83,7 +83,7 @@ lzma-rust2 = { version = "0.25.0", default-features = false, features = [
     "xz",
 ] }
 serde_json.workspace = true
-sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
+sevenz-rust2 = { version = "0.25.0", default-features = false, features = ["compress"] }
 tar.workspace = true
 tempfile.workspace = true
 # Writes the .tar.zst test archives, same crate the format decodes with.

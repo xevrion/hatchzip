@@ -21,7 +21,7 @@ serde_json = "1.0.154"
 # `compress` is for the writer that `restore` builds a new header with. The
 # decoders are chosen by `hatchzip-core`'s features, so the methods it
 # accepts and the ones compiled in come from one place.
-sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }
+sevenz-rust2 = { version = "0.25.0", default-features = false, features = ["compress"] }
 tar = "0.4.46"
 tempfile = "3.27.0"
 zstd = "0.14.3"
