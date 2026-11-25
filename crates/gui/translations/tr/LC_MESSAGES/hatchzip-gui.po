@@ -128,7 +128,7 @@ msgid " The archive is kept."
 msgstr " Arşiv muhafaza edildi."
 
 msgid "All entries have been extracted to {}. Select Finish to remove the remaining temporary files."
-msgstr "Tüm öğeler {} dizinine çıkartıldı. Bitir'e tıklayarak geçici dosyaları silin."
+msgstr "Tüm öğeler {} dizinine çıkarıldı. Bitir'e tıklayarak geçici dosyaları silin."
 
 msgid "Show in the Explorer context menu"
 msgstr "Dosya Gezgini sağ-tık menüsünde göster"
@@ -193,7 +193,7 @@ msgid "Close"
 msgstr "Kapat"
 
 msgid "Pausing…"
-msgstr "Durduruluyor…"
+msgstr "Duraklatılıyor…"
 
 msgid "Pause"
 msgstr "Duraklat"
@@ -277,7 +277,7 @@ msgid "Extraction complete"
 msgstr "Çıkarma tamamlandı"
 
 msgid "Extraction paused"
-msgstr "Çıkarma durduruldu"
+msgstr "Çıkarma duraklatıldı"
 
 msgid "Extraction failed"
 msgstr "Çıkarma başarısız oldu"
@@ -298,13 +298,13 @@ msgid "Verifying every entry. No files are written."
 msgstr "Tüm öğeler test ediliyor. Dosya yazılmayacak."
 
 msgid "Pausing after the current batch…"
-msgstr "Şu anki parçadan sonra durduruluyor…"
+msgstr "Şu anki parçadan sonra duraklatılıyor…"
 
 msgid "Verifying archive before extracting…"
 msgstr "Arşiv çıkarmadan önce doğrulanıyor..."
 
 msgid "Progress is saved. The extraction can be resumed now or later."
-msgstr "İlerleme kaydedildi. Arşiv çıkartma şu anda ya da daha sonra devam ettirilebilir."
+msgstr "İlerleme kaydedildi. Arşiv çıkarma şu anda ya da daha sonra devam ettirilebilir."
 
 msgid "All entries were extracted. The archive was kept."
 msgstr "Tüm öğeler çıkarıldı. Arşive dokunulmadı."
@@ -321,10 +321,10 @@ msgid "'{}' already exists in {}."
 msgstr "'{}' zaten {} dizininde var"
 
 msgid "Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name."
-msgstr "Değiştirme zaten olan dosyayı çıkartma işlemi bitince siler. Atla dosyaya dokunmaz, ve arşivden çıkarılan dosya diske yazılmaz. İkisini de tut iki dosyayı da tutar ve arşivden çıkarılan versiyonun sonuna belli olması için sayı ekler."
+msgstr "Değiştirme zaten olan dosyayı çıkarma işlemi bitince siler. Atla dosyaya dokunmaz, ve arşivden çıkarılan dosya diske yazılmaz. İkisini de tut iki dosyayı da tutar ve arşivden çıkarılan versiyonun sonuna belli olması için sayı ekler."
 
 msgid "Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."
-msgstr "Değiştirme zaten olan dosyayı çıkartma işlemi bitince siler. Atla dosyaya dokunmaz. İkisini de tut iki dosyayı da tutar ve arşivden çıkarılan versiyonun sonuna belli olması için sayı ekler."
+msgstr "Değiştirme zaten olan dosyayı çıkarma işlemi bitince siler. Atla dosyaya dokunmaz. İkisini de tut iki dosyayı da tutar ve arşivden çıkarılan versiyonun sonuna belli olması için sayı ekler."
 
 msgid "Do the same for the next file"
 msgid_plural "Do the same for the next {} files"
@@ -370,7 +370,7 @@ msgstr[0] "1 öğe"
 msgstr[1] "{} öğe"
 
 msgid "Extraction progress discarded. The archive was not modified. Extracted files remain in {}."
-msgstr "Çıkartma iptal edildi. Arşive dokunulmadı. Çıkarılan dosyalar {} dizininde tutuldu."
+msgstr "Çıkarma iptal edildi. Arşive dokunulmadı. Çıkarılan dosyalar {} dizininde tutuldu."
 
 msgid "Archive restored. It contains {} not yet extracted. Extracted files remain in {}."
 msgstr "Arşiv geri yüklendi. {} barındırıyor, hala çıkarılmadı. Çıkarılan dosyalar {} dizininde tutuldu."
@@ -384,7 +384,7 @@ msgid "link"
 msgstr "link"
 
 msgid "Progress is saved; the extraction can be resumed."
-msgstr "İlerleme kaydedildi; çıkartma devam ettirilebilir."
+msgstr "İlerleme kaydedildi; çıkarma devam ettirilebilir."
 
 msgid "Folder"
 msgstr "Klasör"
