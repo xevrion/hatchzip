@@ -24,7 +24,7 @@ libz-rs-sys = "0.6.8"
 # sevenz-rust2. The container itself is parsed in archive/xz.rs, since the
 # crate's container types are private. Core only decodes: the encoder and
 # lzip halves stay out of this build.
-lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "optimization"] }
+lzma-rust2 = { version = "0.25.0", default-features = false, features = ["std", "optimization"] }
 # A zstd stream is a sequence of independent frames, so a frame start is a
 # resume point that needs no window. The frame structure is parsed in
 # archive/tarzst.rs; this crate decodes one bounded frame at a time. Already
