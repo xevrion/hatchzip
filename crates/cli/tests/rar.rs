@@ -716,19 +716,34 @@ fn a_set_in_a_folder_with_a_non_ascii_name() {
 }
 
 #[test]
+fn rar5_list_json_from_later_volume_reports_first_volume() {
+    let tmp = TempDir::new().unwrap();
+    let first = copy_set("rar5", tmp.path());
+    let later = tmp.path().join("set.part2.rar");
+    let before = snapshot_dir(tmp.path());
+
+    assert_json_listing(&later, &first);
+    assert_unchanged(&before);
+}
+
+#[test]
 fn rar5_list_json_reports_archive_metadata_and_entries() {
     let tmp = TempDir::new().unwrap();
     let archive = copy_set("rar5", tmp.path());
+    let before = snapshot_dir(tmp.path());
 
     assert_json_listing(&archive, &archive);
+    assert_unchanged(&before);
 }
 
 #[test]
 fn rar4_list_json_reports_archive_metadata_and_entries() {
     let tmp = TempDir::new().unwrap();
     let archive = copy_set("rar4", tmp.path());
+    let before = snapshot_dir(tmp.path());
 
     assert_json_listing(&archive, &archive);
+    assert_unchanged(&before);
 }
 
 #[test]
