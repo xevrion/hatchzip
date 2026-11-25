@@ -28,28 +28,39 @@
           src = self;
           enableRar = true;
         };
+
+        hatchzip-gui = pkgs.callPackage ./packaging/nix/gui.nix {
+          src = self;
+        };
+
+        hatchzip-gui-rar = pkgs.callPackage ./packaging/nix/gui.nix {
+          src = self;
+        };
       in {
         default = hatchzip;
-        inherit hatchzip hatchzip-rar;
+        inherit hatchzip hatchzip-rar hatchzip-gui hatchzip-gui-rar;
       }
     );
 
     apps = forAllSystems (
       system: let
         packages = self.packages.${system};
-        hatchzip = {
+        mkApp = package: {
           type = "app";
-          program = "${packages.hatchzip}/bin/hatchzip";
+          program = "${package}/bin/${package.meta.mainProgram}";
+          inherit (package) meta;
         };
-      in {
-        default = hatchzip;
-        inherit hatchzip;
-
-        hatchzip-rar = {
-          type = "app";
-          program = "${packages.hatchzip-rar}/bin/hatchzip";
-        };
-      }
+        cli = mkApp packages.hatchzip;
+      in
+        {
+          default = cli;
+          hatchzip = cli;
+          hatchzip-rar = mkApp packages.hatchzip-rar;
+          hatchzip-gui = mkApp packages.hatchzip-gui;
+          hatchzip-gui-rar = mkApp packages.hatchzip-gui-rar;
+        }
+        // nixpkgs.lib.optionalAttrs (builtins.hasAttr "hatchzip-gui" packages) {
+        }
     );
   };
 }
