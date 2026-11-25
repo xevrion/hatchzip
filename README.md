@@ -59,11 +59,11 @@ To keep the archive when there is room for both, choose **Extract here (keep arc
 
 Open them with **File > Settings…** (Ctrl+, or Cmd+, on macOS), or the gear at the top right of the window. Every change applies at once and is saved; the main window's own controls and the right-click menu's windows use the same settings.
 
-The app is in English, Spanish, Hindi and Simplified Chinese. It follows the system language until another is chosen under **Language**.
+The app is in English, Spanish, Hindi, Simplified Chinese and Turkish. It follows the system language until another is chosen under **Language**.
 
 | Section | Setting | Default |
 |---|---|---|
-| General | **Language**: the system's, or English, Spanish, Hindi or Simplified Chinese | The system language |
+| General | **Language**: the system's, or English, Spanish, Hindi, Simplified Chinese or Turkish | The system language |
 | General | **Appearance**: System, Light or Dark | System |
 | General | **After extracting**: do nothing, or open the destination folder | Do nothing |
 | General | **Close the progress window when extraction completes**, for the window the right-click menu opens | On |
