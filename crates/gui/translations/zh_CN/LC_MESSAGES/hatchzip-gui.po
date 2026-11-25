@@ -556,6 +556,9 @@ msgid "Archive {} of {}. 1 more archive has not started."
 msgid_plural "Archive {} of {}. {} more archives have not started."
 msgstr[0] "压缩包 {0} / {1}。还有 {2} 个压缩包未开始。"
 
+msgid "Not started: {}."
+msgstr "未开始：{}。"
+
 msgid "Required: {}. Available: {}."
 msgstr "所需：{}。可用：{}。"
 
@@ -583,3 +586,14 @@ msgstr "所选条目均已解压。压缩包已保留。"
 
 msgid "Extract all"
 msgstr "全部解压"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "解压里面的 {} 个压缩包"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "解压并删除里面的 {} 个压缩包"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "只检查了本次运行写出的文件。"

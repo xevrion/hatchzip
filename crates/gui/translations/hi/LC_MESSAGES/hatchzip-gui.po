@@ -565,6 +565,9 @@ msgid_plural "Archive {} of {}. {} more archives have not started."
 msgstr[0] "{1} में से आर्काइव {0}। 1 और आर्काइव शुरू नहीं हुआ।"
 msgstr[1] "{1} में से आर्काइव {0}। {2} और आर्काइव शुरू नहीं हुए।"
 
+msgid "Not started: {}."
+msgstr "शुरू नहीं हुए: {}।"
+
 msgid "Required: {}. Available: {}."
 msgstr "ज़रूरी: {}। उपलब्ध: {}।"
 
@@ -593,3 +596,16 @@ msgstr "चयनित प्रविष्टियाँ एक्सट्�
 
 msgid "Extract all"
 msgstr "सब एक्सट्रैक्ट करें"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "अंदर का {} आर्काइव एक्सट्रैक्ट करें"
+msgstr[1] "अंदर के {} आर्काइव एक्सट्रैक्ट करें"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "अंदर का {} आर्काइव एक्सट्रैक्ट और हटाएँ"
+msgstr[1] "अंदर के {} आर्काइव एक्सट्रैक्ट और हटाएँ"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "इस रन में लिखी गई फ़ाइलों में ही आर्काइव खोजे गए।"

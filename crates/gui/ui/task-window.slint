@@ -18,6 +18,7 @@ export component TaskWindow inherits Window {
     callback pause();
     callback resume();
     callback open-folder();
+    callback extract-inside();
     callback dismiss();
     callback give-back();
     callback lower-reserve();
@@ -57,6 +58,11 @@ export component TaskWindow inherits Window {
                 text: root.task.step;
                 color: Theme.muted;
                 overflow: elide;
+            }
+            if root.task.rest != "": Text {
+                text: root.task.rest;
+                color: Theme.muted;
+                wrap: word-wrap;
             }
             if root.task.space != "": Text {
                 text: root.task.space;
@@ -106,6 +112,9 @@ export component TaskWindow inherits Window {
             }
             open-folder => {
                 root.open-folder();
+            }
+            extract-inside => {
+                root.extract-inside();
             }
             close => {
                 root.dismiss();
