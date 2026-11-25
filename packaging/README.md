@@ -218,9 +218,15 @@ through the [SignPath Foundation](https://signpath.org)):
 
 The workflow uploads the files to sign as the artifacts `signing-programs`
 and `signing-installers`, which SignPath downloads (the Windows job has
-`actions: read` for that), and waits up to 10 minutes for each request. The
+`actions: read` for that), and waits up to 2.5 hours for each request. The
 publish job leaves those two artifacts out, since they hold unsigned
 copies.
+
+With the SignPath Foundation's production certificate, a person approves
+each signing request in the SignPath web app; the test certificate signs at
+once. A release sends two requests, the programs first and then the
+installers built from them, so watch for the second one too. A request left
+unapproved for 2.5 hours fails the Windows job, and with it the release.
 
 **Azure Artifact Signing** (formerly Trusted Signing): an Artifact Signing
 account with a certificate profile, and an app registration with a client
