@@ -482,13 +482,39 @@ fn action_set(xml: &str, uca: &Uca) -> Vec<Vec<(String, String)>> {
     set
 }
 
+/// Elements Thunar writes for every action, empty or not, so an empty one
+/// says the same as none. The rest, such as `<directories/>`, are flags that
+/// count by being there.
+const THUNAR_TEXT_FIELDS: &[&str] = &[
+    "icon",
+    "name",
+    "submenu",
+    "unique-id",
+    "command",
+    "description",
+    "range",
+    "patterns",
+];
+
 /// An action's child elements and their text, sorted, leaving out what
-/// Thunar fills in on its own: the `<unique-id>` and empty elements. Flags
-/// such as `<directories/>` are kept.
+/// Thunar changes on its own when it saves the file: the `<unique-id>`, text
+/// fields left empty, and the translations (`xml:lang`) of the name and
+/// description, which it keeps only for the locale it runs in. `<range/>`
+/// and `<range></range>` are the same element.
 fn action_fingerprint(action: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
+    let mut keep = |tag: &str, text: &str| {
+        let mut words = tag.split_whitespace();
+        let name = words.next().unwrap_or("");
+        let localized = words.any(|w| w.starts_with("xml:lang"));
+        let filled_in = text.is_empty() && THUNAR_TEXT_FIELDS.contains(&name);
+        if !localized && !filled_in && name != "unique-id" {
+            let key = tag.split_whitespace().collect::<Vec<_>>().join(" ");
+            out.push((key, text.to_owned()));
+        }
+    };
     let mut depth = 0;
-    let mut open: Option<(String, usize)> = None;
+    let mut open: Option<(&str, usize)> = None;
     let mut i = 0;
     while let Some(off) = action[i..].find('<') {
         let at = i + off;
@@ -499,29 +525,21 @@ fn action_fingerprint(action: &str) -> Vec<(String, String)> {
         }
         let Some(len) = tag_len(rest) else { break };
         let tag = &action[at + 1..at + len - 1];
-        let key = tag
-            .trim_end_matches('/')
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
         if tag.starts_with('/') {
             depth -= 1;
             if depth == 1
-                && let Some((name, from)) = open.take()
+                && let Some((tag, from)) = open.take()
             {
-                let text = action[from..at].trim();
-                if !text.is_empty() && !name.starts_with("unique-id") {
-                    out.push((name, text.to_owned()));
-                }
+                keep(tag, action[from..at].trim());
             }
-        } else if tag.ends_with('/') {
+        } else if let Some(tag) = tag.strip_suffix('/') {
             if depth == 1 {
-                out.push((key, String::new()));
+                keep(tag, "");
             }
         } else {
             depth += 1;
             if depth == 2 {
-                open = Some((key, at + len));
+                open = Some((tag, at + len));
             }
         }
         i = at + len;

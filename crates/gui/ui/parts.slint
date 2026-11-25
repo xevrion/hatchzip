@@ -52,6 +52,8 @@ export struct TaskView {
     detail: string,
     // "Archive 2 of 3" when a right-click queued several.
     step: string,
+    // "Not started: b.zip, c.zip." when a stop leaves archives queued.
+    rest: string,
     // What the spinner says while checking: "Checking disk space…", or
     // "Reading archive… 37%" while a long open reads through it.
     busy: string,
@@ -68,6 +70,9 @@ export struct TaskView {
     // What the finished run could not do, in the engine's words. Shown after
     // the message, as its own sentence.
     warning: string,
+    // "Extract 3 archives inside" when the run left archives to offer.
+    // Empty hides the offer.
+    inside: string,
     can-open-folder: bool,
     can-retry: bool,
     // Paused or stopped halfway: offer to undo it.
@@ -328,6 +333,7 @@ export component TaskButtons inherits HorizontalLayout {
     callback pause();
     callback resume();
     callback open-folder();
+    callback extract-inside();
     callback close();
     callback back();
     callback give-back();
@@ -383,6 +389,12 @@ export component TaskButtons inherits HorizontalLayout {
         primary: true;
         clicked => {
             root.lower-reserve();
+        }
+    }
+    if root.task.phase == Phase.done && root.task.inside != "": Button {
+        text: root.task.inside;
+        clicked => {
+            root.extract-inside();
         }
     }
     if root.task.phase == Phase.done && root.task.can-open-folder: Button {
