@@ -1,10 +1,10 @@
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use hatchzip_core::archive::{Item, Kind};
 use serde::Serialize;
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use time::{OffsetDateTime, UtcOffset};
 
 pub const VERSION: u8 = 1;
 
@@ -121,8 +121,49 @@ pub fn member_path(path: &Path) -> String {
 }
 
 fn format_modified_at(value: SystemTime) -> Option<String> {
-    OffsetDateTime::from(value)
-        .to_offset(UtcOffset::UTC)
+    let (seconds, nanoseconds) = match value.duration_since(UNIX_EPOCH) {
+        Ok(duration) => (
+            i64::try_from(duration.as_secs()).ok()?,
+            duration.subsec_nanos(),
+        ),
+        Err(error) => {
+            let duration = error.duration();
+            let seconds = i64::try_from(duration.as_secs()).ok()?;
+
+            if duration.subsec_nanos() == 0 {
+                (seconds.checked_neg()?, 0)
+            } else {
+                (
+                    seconds.checked_neg()?.checked_sub(1)?,
+                    1_000_000_000 - duration.subsec_nanos(),
+                )
+            }
+        }
+    };
+
+    OffsetDateTime::from_unix_timestamp(seconds)
+        .ok()?
+        .replace_nanosecond(nanoseconds)
+        .ok()?
         .format(&Rfc3339)
         .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_modified_at;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn modified_at_preserves_subsecond_precision_on_both_sides_of_epoch() {
+        assert_eq!(
+            format_modified_at(UNIX_EPOCH + Duration::new(1, 250_000_000)).as_deref(),
+            Some("1970-01-01T00:00:01.25Z")
+        );
+
+        assert_eq!(
+            format_modified_at(UNIX_EPOCH - Duration::new(1, 250_000_000)).as_deref(),
+            Some("1969-12-31T23:59:58.75Z")
+        );
+    }
 }

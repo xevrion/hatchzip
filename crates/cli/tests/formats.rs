@@ -64,6 +64,32 @@ fn build_tar(dir: &Path, files: &Files) -> PathBuf {
     path
 }
 
+fn append_pax_mtime_entry(archive: &mut tar::Builder<Vec<u8>>, name: &str, mtime: i64) {
+    let suffix = format!(" mtime={mtime}\n");
+    let mut length = suffix.len() + 1;
+
+    let record = loop {
+        let record = format!("{length}{suffix}");
+        if record.len() == length {
+            break record;
+        }
+        length = record.len();
+    };
+
+    let mut pax = tar::Header::new_ustar();
+    pax.set_entry_type(tar::EntryType::XHeader);
+    pax.set_size(record.len() as u64);
+    archive
+        .append_data(&mut pax, format!("PaxHeaders/{name}"), record.as_bytes())
+        .unwrap();
+
+    let mut entry = tar::Header::new_ustar();
+    entry.set_size(4);
+    entry.set_mode(0o644);
+    entry.set_mtime(0);
+    archive.append_data(&mut entry, name, &b"data"[..]).unwrap();
+}
+
 #[test]
 fn list_json_supports_7z_tar_and_native_split_zip() {
     let tmp = TempDir::new().unwrap();
@@ -222,6 +248,42 @@ fn tar_links_are_made_after_their_targets() {
     assert_eq!(fs::read(out.join("bin/soft")).unwrap(), b"hello\n");
 }
 
+#[test]
+fn list_json_reports_tar_hard_link_target() {
+    let tmp = TempDir::new().unwrap();
+    let mut b = tar::Builder::new(Vec::new());
+
+    let mut file = tar::Header::new_gnu();
+    file.set_size(6);
+    file.set_mode(0o644);
+    b.append_data(&mut file, "bin/real", &b"hello\n"[..])
+        .unwrap();
+
+    let mut link = tar::Header::new_gnu();
+    link.set_entry_type(tar::EntryType::Link);
+    link.set_size(0);
+    link.set_mode(0o644);
+    b.append_link(&mut link, "bin/hard", "bin/real").unwrap();
+
+    let archive = tmp.path().join("links.tar");
+    fs::write(&archive, b.into_inner().unwrap()).unwrap();
+
+    let run = hatchzip(&["list", archive.to_str().unwrap(), "--json"], &[]);
+    assert_ok(&run);
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    let entries = document["archives"][0]["entries"].as_array().unwrap();
+
+    let hard_link = entries
+        .iter()
+        .find(|entry| entry["path"] == "bin/hard")
+        .unwrap();
+
+    assert_eq!(hard_link["kind"], "hard_link");
+    assert_eq!(hard_link["hard_link_target"], "bin/real");
+    assert_eq!(hard_link["size_bytes"], 6);
+}
+
 /// GNU tar stores a time before 1970 as a negative base-256 number.
 #[test]
 fn tar_keeps_a_modified_time_before_1970() {
@@ -279,6 +341,37 @@ fn tar_reads_the_modified_time_from_a_pax_record() {
         modified,
         std::time::UNIX_EPOCH - std::time::Duration::from_secs(152_391_233)
     );
+}
+
+#[test]
+fn list_json_handles_pax_timestamps_outside_rfc3339_range() {
+    let tmp = TempDir::new().unwrap();
+    let mut b = tar::Builder::new(Vec::new());
+
+    append_pax_mtime_entry(&mut b, "future.txt", 900_000_000_000);
+    append_pax_mtime_entry(&mut b, "old.txt", -152_391_233);
+
+    let archive = tmp.path().join("timestamps.tar");
+    fs::write(&archive, b.into_inner().unwrap()).unwrap();
+
+    let run = hatchzip(&["list", archive.to_str().unwrap(), "--json"], &[]);
+    assert_ok(&run);
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    let entries = document["archives"][0]["entries"].as_array().unwrap();
+
+    let future = entries
+        .iter()
+        .find(|entry| entry["path"] == "future.txt")
+        .unwrap();
+
+    let old = entries
+        .iter()
+        .find(|entry| entry["path"] == "old.txt")
+        .unwrap();
+
+    assert!(future["modified_at"].is_null());
+    assert_eq!(old["modified_at"], "1965-03-04T05:06:07Z");
 }
 
 /// A hard link is copied where the filesystem can't link, so the space check

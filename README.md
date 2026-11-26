@@ -303,18 +303,14 @@ Plain tar has no checksums for file contents, so `test` on a tar only proves eve
 
 ### Machine-readable output (JSON)
 
-The `list` and `check` commands support `--json` for scripts and
-other tools:
+The `list` and `check` commands support `--json` for scripts and other tools:
 
 ```sh
 hatchzip list game.zip --json
 hatchzip check game.zip --json
 ```
 
-Both commands emit one JSON document on stdout, using the same
-top-level envelope. The following is an example of a successful
-`list --json` result. A `check --json` result uses `space_plan`
-instead of `entries`:
+Both commands emit one JSON document on stdout, using the same top-level envelope. The following is an example of a successful `list --json` result. A `check --json` result uses `space_plan` instead of `entries`:
 
 ```json
 {
@@ -344,9 +340,7 @@ instead of `entries`:
 }
 ```
 
-`version` identifies the JSON schema. `archives` contains one
-result for each distinct archive, in input order. A split archive
-appears once, with `archive_path` naming its first volume.
+`version` identifies the JSON schema. `archives` contains one result for each distinct archive, in input order. A split archive appears once, with `archive_path` naming its first volume.
 
 The archive metadata fields are:
 
@@ -359,11 +353,9 @@ The archive metadata fields are:
 | `entry_count` | Number of entries still to extract |
 | `remaining_uncompressed_size_bytes` | Uncompressed size still to extract, in bytes |
 
-Fields that are unavailable are present as `null`, rather than
-omitted. For a resumed archive, `entry_count` and
-`remaining_uncompressed_size_bytes` describe only the entries
-and data still to extract. The original archive size is not
-reported because parts may already have been removed.
+The `format` field can be `zip`, `split-zip`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, or `rar` when RAR support is enabled.
+
+Fields that are unavailable are present as `null`, rather than omitted. For a resumed archive, `entry_count` and `remaining_uncompressed_size_bytes` describe only the entries and data still to extract. The original archive size is not reported because parts may already have been removed.
 
 `list --json` adds an `entries` array. Each entry has:
 
@@ -372,18 +364,14 @@ reported because parts may already have been removed.
 | `path` | Safe archive member path, using `/` separators |
 | `kind` | `file`, `directory`, `symlink` or `hard_link` |
 | `size_bytes` | The size recorded by HatchZip's archive model, in bytes |
-| `mode` | File mode, or `null` when unavailable |
+| `mode` | Raw file mode integer, including file-type bits, or `null` when unavailable |
 | `modified_at` | Modification time in RFC 3339 UTC, or `null` |
 | `encrypted` | Whether the entry is encrypted |
 | `hard_link_target` | Target path for a hard link, otherwise `null` |
 
-`size_bytes` reports the archive model's value without estimating
-or recalculating it. Its meaning can depend on the format and
-entry type. TAR and RAR directory entries have a size of zero.
-TAR symbolic links use the byte length of their target path.
-TAR hard links use the target file's size when it can be found,
-otherwise zero. ZIP and 7z report the size supplied by their
-respective archive readers.
+Paths containing invalid UTF-8 are represented using U+FFFD, the Unicode replacement character, matching the paths HatchZip extracts.
+
+`size_bytes` reports the archive model's value without estimating or recalculating it. Its meaning can depend on the format and entry type. TAR and RAR directory entries have a size of zero. TAR symbolic links use the byte length of their target path. TAR hard links use the target file's size when it can be found, otherwise zero. ZIP and 7z report the size supplied by their respective archive readers.
 
 `check --json` adds a `space_plan` object:
 
@@ -396,21 +384,13 @@ respective archive readers.
 | `fits_with_archive_kept` | Whether extraction fits while keeping the archive |
 | `in_place_refusal_reason` | Why in-place extraction is unavailable, or `null` |
 
-A fit field is `null` when that extraction mode cannot be
-selected. For example, a resumed extraction must continue in
-the mode recorded in its journal, so the alternative mode is
-`null`. An orphaned archive has no remaining space plan and
-reports `space_plan: null`.
+A fit field is `null` when that extraction mode cannot be selected. For example, a resumed extraction must continue in the mode recorded in its journal, so the alternative mode is `null`. An orphaned archive has no remaining space plan and reports `space_plan: null`.
 
-Each archive result has an `error` field containing an error
-message or `null`. If one archive in a multi-archive command
-cannot be read, the other results are still emitted. The
-command continues through the inputs and exits with the status
-of the first archive that did not succeed.
+When in-place extraction is refused, `check --json` exits with code `1`, sets `in_place_refusal_reason`, and leaves the archive result's `error` field as `null`. The archive can still be extracted with `--keep-archive` when that mode is supported.
 
-JSON output is written only to stdout. Progress messages and
-errors are written to stderr. Existing exit codes are preserved,
-including exit code `3` for insufficient disk space.
+Each archive result has an `error` field containing an error message or `null`. If one archive in a multi-archive command cannot be read, the other results are still emitted. The command continues through the inputs and exits with the status of the first archive that did not succeed.
+
+JSON output is written only to stdout. Progress messages and errors are written to stderr. Existing exit codes are preserved, including exit code `3` for insufficient disk space.
 
 ### Exit status
 

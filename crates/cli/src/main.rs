@@ -738,7 +738,7 @@ fn list_json_all(archives: &[PathBuf], secret: Secret) -> Result<u8> {
                             entry_count: Some(0),
                             remaining_uncompressed_size_bytes: Some(0),
                         },
-                        entries: None,
+                        entries: Some(Vec::new()),
                         error: Some(message),
                     },
                     code,

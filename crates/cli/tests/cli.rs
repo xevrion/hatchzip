@@ -441,9 +441,15 @@ fn list_json_reports_orphaned_archive_error() {
     let result = &document["archives"][0];
 
     assert_eq!(result["state"], "resuming");
-    assert_eq!(result["entry_count"], 0);
     assert_eq!(result["remaining_uncompressed_size_bytes"], 0);
-    assert!(result["entries"].is_null());
+
+    let entries = result["entries"].as_array().unwrap();
+
+    assert!(entries.is_empty());
+    assert_eq!(
+        entries.len() as u64,
+        result["entry_count"].as_u64().unwrap()
+    );
 
     let error = result["error"].as_str().unwrap();
     assert!(error.contains("no entries remain"), "{error}");
