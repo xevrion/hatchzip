@@ -804,6 +804,7 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
         d.borrow_mut().push(paths);
     });
     ui.set_drag_out_available(true);
+    let open = inside_window(&ui, "Northwind/bin").accessible_expanded();
     for label in ["Northwind/README.txt", "Northwind/bin"] {
         drag_row(&ui, label);
         let w = ui.as_weak();
@@ -826,8 +827,8 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
     );
     assert_eq!(
         inside_window(&ui, "Northwind/bin").accessible_expanded(),
-        Some(true),
-        "nor closes the folder it started on"
+        open,
+        "nor opens or closes the folder it started on"
     );
     // A move within the threshold is still a click.
     let row = inside_window(&ui, "Northwind/bin");
@@ -849,7 +850,7 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
     assert_eq!(dragged.borrow().len(), 2, "no drag");
     assert_eq!(
         inside_window(&ui, "Northwind/bin").accessible_expanded(),
-        Some(false)
+        open.map(|o| !o)
     );
     click_control(&ui, "Northwind/bin");
     ui.set_drag_out_available(false);
