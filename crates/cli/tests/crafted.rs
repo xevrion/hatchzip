@@ -426,10 +426,39 @@ fn a_name_of_dots_never_extracts_outside_its_own_folder() {
 /// was read, and a progress file would be trusted by the next resume.
 #[test]
 fn entries_on_the_archives_own_files_are_refused() {
-    for entry in ["a.zip.hatchzip", "A.ZIP.HATCHZIP-TAIL", "a.zip"] {
+    for (entry, says) in [
+        ("a.zip.hatchzip", "the progress files of an extraction"),
+        ("A.ZIP.HATCHZIP-TAIL", "the progress files of an extraction"),
+        ("a.zip", "one of the archive's own files"),
+    ] {
         let tmp = TempDir::new().unwrap();
         let files = Files::from([(entry.to_string(), b"planted".to_vec())]);
         let archive = zip_of(tmp.path(), "a.zip", &files);
-        refused(&archive, tmp.path(), "one of the archive's own files");
+        refused(&archive, tmp.path(), says);
+    }
+}
+
+/// Progress files are trusted for the archive they are named after, so an
+/// archive may not bring any, wherever they would land and whatever the
+/// case, and nothing is written.
+#[test]
+fn entries_named_like_progress_files_are_refused() {
+    for entry in [
+        "x.zip.hatchzip",
+        "sub/x.zip.HatchZip-Tail",
+        "x.7z.001.hatchzip-folders",
+        "x.hatchzip/readme.txt",
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let mut files = Files::from([("readme.txt".to_string(), b"hello".to_vec())]);
+        files.insert(entry.to_string(), b"{}".to_vec());
+        let archive = zip_of(tmp.path(), "bundle.zip", &files);
+        let out = tmp.path().join("out");
+        let run = refused_env(&archive, &out, "the progress files of an extraction", &[]);
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains("Nothing was modified"),
+            "{entry}"
+        );
+        assert!(!out.exists(), "{entry}: nothing should be written");
     }
 }

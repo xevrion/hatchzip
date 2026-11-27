@@ -399,10 +399,6 @@ impl Job {
                 storage.primary().display()
             );
         }
-        if current > journal.committed_len && writable && !journal.keep {
-            // The last run committed a batch but stopped before truncating.
-            storage.set_len(journal.committed_len)?;
-        }
         let point = journal.resume.as_ref();
         let opened = archive::open(&storage, Some((&journal.format, tail, point)), password)?;
         let mut job = Self::build(storage, opened, journal.committed_len)?;
@@ -431,6 +427,12 @@ impl Job {
                 );
             }
             job.resume = Some(r.clone());
+        }
+        // The last run committed a batch but stopped before truncating. Cut
+        // only once everything above agrees with the journal: one that does
+        // not belong to this archive must leave it as it was.
+        if current > journal.committed_len && writable && !journal.keep {
+            job.storage.set_len(journal.committed_len)?;
         }
         Ok(job)
     }
@@ -641,7 +643,8 @@ impl Job {
     /// the archive is gone, so without this such an archive fails after it
     /// has been consumed. Paths that differ only in case depend on the
     /// destination, so they are returned for [`Job::check_case`]. Names
-    /// ending in [`PART_SUFFIX`] are compared ignoring case everywhere.
+    /// ending in [`PART_SUFFIX`] or a [`PROGRESS_SUFFIXES`] one are compared
+    /// ignoring case everywhere.
     ///
     /// Only a fresh archive is checked: a resumed run no longer lists the
     /// entries it has extracted, and one an older release started on has to
@@ -661,6 +664,26 @@ impl Job {
                 "'{}' uses a name ending in {PART_SUFFIX}, which HatchZip gives a file while it \
                  writes it, so extraction is refused. Extract this archive with another program. \
                  Nothing was modified",
+                item.path.display()
+            );
+        }
+        // HatchZip keeps an extraction's progress in files named after the
+        // archive, and resumes from whatever it finds there. An archive that
+        // brought its own would have them trusted for an archive next to
+        // them, the person's or one it also holds.
+        if let Some((item, suffix)) = items().find_map(|i| {
+            i.path.iter().find_map(|c| {
+                let name = c.to_string_lossy().to_lowercase();
+                PROGRESS_SUFFIXES
+                    .into_iter()
+                    .find(|s| name.ends_with(*s))
+                    .map(|s| (i, s))
+            })
+        }) {
+            bail!(
+                "'{}' uses a name ending in {suffix}, which HatchZip gives the progress files of \
+                 an extraction, so extraction is refused. Extract this archive with another \
+                 program. Nothing was modified",
                 item.path.display()
             );
         }
@@ -1135,6 +1158,10 @@ fn threads_per_unit(units: usize) -> u32 {
 
 /// Added to a file's name while it is written.
 const PART_SUFFIX: &str = ".hatchzip-part";
+
+/// Added to an archive's name for its journal, saved tail and folder list,
+/// and to a split ZIP's `.zip` for its stub; see [`crate::journal::Paths`].
+const PROGRESS_SUFFIXES: [&str; 3] = [".hatchzip", ".hatchzip-tail", ".hatchzip-folders"];
 
 pub(crate) fn part_path(dest: &Path) -> PathBuf {
     let mut part = dest.as_os_str().to_owned();

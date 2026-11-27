@@ -11,7 +11,7 @@ use anyhow::Result;
 use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::engine::Job;
 use hatchzip_core::human;
-use hatchzip_core::session::{self, State, display_name};
+use hatchzip_core::session::{self, Output, State, display_name};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, Timer, TimerMode};
 
@@ -83,7 +83,7 @@ fn load(archive: &Path, password: Option<String>, reads: &Arc<Reads>) -> Result<
     let (state, password) = session::open_encrypted(
         &primary,
         &paths,
-        None,
+        Output::Default,
         None,
         false,
         password,
@@ -1113,7 +1113,12 @@ impl App {
         let request = Request::Extract {
             archive,
             // A resume must go where it started; the journal knows where.
-            output: (self.mode.get() == Mode::Fresh).then(|| output.clone()),
+            // Only a folder picked in the dialog is the person's word.
+            output: match self.mode.get() {
+                Mode::Fresh if self.output_chosen.get() => Output::Named(output.clone()),
+                Mode::Fresh => Output::Computed(output.clone()),
+                _ => Output::Default,
+            },
             keep_free: self.keep_free.get(),
             verify_first: ui.get_verify_first(),
             keep_archive: keep,
@@ -1196,7 +1201,7 @@ impl App {
         }
         let request = Request::Extract {
             archive: archive.to_path_buf(),
-            output: Some(output.clone()),
+            output: Output::Named(output.clone()),
             keep_free: self.keep_free.get(),
             verify_first: self.ui().get_verify_first(),
             keep_archive: true,

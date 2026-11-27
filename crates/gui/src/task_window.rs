@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use anyhow::Result;
-use hatchzip_core::session;
+use hatchzip_core::session::{self, Output};
 use slint::{CloseRequestResponse, ComponentHandle};
 
 use crate::args::{TaskArgs, TaskKind};
@@ -84,7 +84,13 @@ pub(crate) fn job_for(
             Task::extract(&name, Some(&out), keep_archive),
             Request::Extract {
                 archive,
-                output: Some(out),
+                // Only a folder picked for this run is the person's word. The
+                // others are worked out from the archive's name, which a
+                // journal planted next to it can name just as well.
+                output: match kind {
+                    TaskKind::ExtractFiles(_) => Output::Named(out),
+                    _ => Output::Computed(out),
+                },
                 keep_free: settings.keep_free,
                 verify_first: settings.verify_first,
                 keep_archive,
@@ -127,7 +133,7 @@ pub(crate) fn nested_job(
         Task::extract(&name, Some(&out), keep_archive),
         Request::Extract {
             archive: archive.to_path_buf(),
-            output: Some(out),
+            output: Output::Computed(out),
             keep_free,
             verify_first,
             keep_archive,

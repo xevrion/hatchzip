@@ -81,6 +81,8 @@ fn open(
     let reads = Arc::new(Reads::default());
     let mut reading = Some(Reading::show(&reads));
     let mut tries = 0;
+    // A folder given here was typed with `-o`.
+    let output = output.map_or(session::Output::Default, session::Output::Named);
     let opened = session::open_encrypted_noting(
         &primary,
         &paths,

@@ -296,7 +296,16 @@ fn a_lost_folders_file_does_not_stop_a_look() {
 
         let (primary, paths) = session::locate(&archive).unwrap();
         let reads = Default::default();
-        let state = session::open(&primary, &paths, None, None, false, None, &reads).unwrap();
+        let state = session::open(
+            &primary,
+            &paths,
+            session::Output::Default,
+            None,
+            false,
+            None,
+            &reads,
+        )
+        .unwrap();
         assert!(matches!(state, session::State::Resume(..)));
     }
 }
