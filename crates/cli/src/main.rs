@@ -1,4 +1,5 @@
 mod cli;
+mod json;
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -213,10 +214,25 @@ fn run(command: Command) -> Result<u8> {
             keep,
             replace,
             space,
-        } => check_all(target, keep.keep_archive, replace.replace, space),
-        Command::List { archives, secret } => {
+            json: as_json,
+        } => {
+            if as_json {
+                check_json_all(target, keep.keep_archive, space)
+            } else {
+                check_all(target, keep.keep_archive, replace.replace, space)
+            }
+        }
+        Command::List {
+            archives,
+            secret,
+            json: as_json,
+        } => {
             let archives = distinct(&archives)?;
-            Ok(each(&archives, true, |a| list(a, secret.clone())))
+            if as_json {
+                list_json_all(&archives, secret)
+            } else {
+                Ok(each(&archives, true, |a| list(a, secret.clone())))
+            }
         }
         Command::Test { archives, secret } => {
             let archives = distinct(&archives)?;
@@ -254,38 +270,6 @@ fn run(command: Command) -> Result<u8> {
 /// also matches the progress files next to the first volume
 /// (`game.z01.hatchzip`, ...), which are left out when their archive is
 /// given too.
-/// Whether every volume of the set whose first volume is `primary` that
-/// exists on disk is in `written`. A set that is not split has one volume.
-fn volumes_written(primary: &Path, written: &std::collections::HashSet<PathBuf>) -> bool {
-    use hatchzip_core::archive::storage;
-    let mut volumes = Vec::new();
-    if storage::is_split_zip(primary) {
-        let mut disk = 0;
-        while let Some(segment) = storage::split_zip_segment(primary, disk) {
-            if !segment.exists() {
-                break;
-            }
-            volumes.push(segment);
-            disk += 1;
-        }
-        volumes.extend(storage::split_zip_last(primary));
-    } else {
-        let mut index = 0;
-        while let Some(volume) = storage::volume_path(primary, index) {
-            if index > 0 && !volume.exists() {
-                break;
-            }
-            volumes.push(volume);
-            index += 1;
-        }
-    }
-    volumes
-        .iter()
-        .filter(|v| v.exists())
-        .all(|v| written.contains(v))
-        && written.contains(primary)
-}
-
 fn distinct(archives: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let owner = |a: &Path| {
         let name = a.to_str()?;
@@ -444,6 +428,176 @@ fn check_all(target: Target, keep: bool, replace: bool, space: Space) -> Result<
     Ok(code)
 }
 
+fn check_json_all(target: Target, keep: bool, space: Space) -> Result<u8> {
+    let archives = distinct(&target.archives)?;
+    let mut results = Vec::with_capacity(archives.len());
+    let mut first_code = 0;
+
+    for archive in &archives {
+        let (result, code) = match open(
+            archive,
+            target.output.clone(),
+            None,
+            false,
+            target.secret.clone(),
+        ) {
+            Ok((State::Fresh(job, out), _)) => {
+                let metadata = json::ArchiveMetadata {
+                    archive_path: json::archive_path(archive),
+                    state: Some(json::ArchiveState::Fresh),
+                    format: Some(job.format_name.to_string()),
+                    archive_size_bytes: Some(job.storage.original_len()),
+                    entry_count: Some(job.item_count()),
+                    remaining_uncompressed_size_bytes: Some(job.remaining_size()),
+                };
+
+                let refusal = job.in_place_refusal();
+
+                match session::plan(&job, &out, false, space.keep_free, keep) {
+                    Ok(plan) => {
+                        let code = match in_place_possible(&job, keep) {
+                            Err(error) => fail(&error),
+                            Ok(()) if plan.fits => 0,
+                            Ok(()) => EXIT_NO_SPACE,
+                        };
+
+                        (
+                            json::CheckArchive {
+                                archive: metadata,
+                                space_plan: Some(json::CheckSpacePlan {
+                                    needed_bytes: plan.needed,
+                                    available_bytes: plan.free,
+                                    reserved_bytes: plan.keep_free,
+                                    fits_in_place: if refusal.is_some() {
+                                        None
+                                    } else {
+                                        Some(plan.in_place_fits())
+                                    },
+                                    fits_with_archive_kept: Some(plan.normal_fits()),
+                                    in_place_refusal_reason: refusal,
+                                }),
+                                error: None,
+                            },
+                            code,
+                        )
+                    }
+                    Err(error) => check_json_failure(metadata, error),
+                }
+            }
+
+            Ok((State::Resume(job, journal), _)) => {
+                let metadata = json::ArchiveMetadata {
+                    archive_path: json::archive_path(archive),
+                    state: Some(json::ArchiveState::Resuming),
+                    format: Some(journal.format.clone()),
+                    archive_size_bytes: None,
+                    entry_count: Some(job.item_count()),
+                    remaining_uncompressed_size_bytes: Some(job.remaining_size()),
+                };
+
+                let refusal = job.in_place_refusal();
+
+                match session::keeps_archive(&journal, keep) {
+                    Err(error) => check_json_failure(metadata, error),
+
+                    Ok(keep) => {
+                        match session::plan(&job, &journal.output, true, space.keep_free, keep) {
+                            Ok(plan) => {
+                                let code = if plan.fits { 0 } else { EXIT_NO_SPACE };
+
+                                (
+                                    json::CheckArchive {
+                                        archive: metadata,
+                                        space_plan: Some(json::CheckSpacePlan {
+                                            needed_bytes: plan.needed,
+                                            available_bytes: plan.free,
+                                            reserved_bytes: plan.keep_free,
+                                            fits_in_place: if keep {
+                                                None
+                                            } else {
+                                                Some(plan.fits)
+                                            },
+                                            fits_with_archive_kept: if keep {
+                                                Some(plan.fits)
+                                            } else {
+                                                None
+                                            },
+                                            in_place_refusal_reason: refusal,
+                                        }),
+                                        error: None,
+                                    },
+                                    code,
+                                )
+                            }
+                            Err(error) => check_json_failure(metadata, error),
+                        }
+                    }
+                }
+            }
+
+            Ok((State::Orphan(journal), _)) => (
+                json::CheckArchive {
+                    archive: json::ArchiveMetadata {
+                        archive_path: json::archive_path(archive),
+                        state: Some(json::ArchiveState::Resuming),
+                        format: Some(journal.format),
+                        archive_size_bytes: None,
+                        entry_count: Some(0),
+                        remaining_uncompressed_size_bytes: Some(0),
+                    },
+                    space_plan: None,
+                    error: None,
+                },
+                0,
+            ),
+
+            Err(error) => {
+                let metadata = json::ArchiveMetadata {
+                    archive_path: json::archive_path(archive),
+                    state: None,
+                    format: None,
+                    archive_size_bytes: None,
+                    entry_count: None,
+                    remaining_uncompressed_size_bytes: None,
+                };
+
+                check_json_failure(metadata, error)
+            }
+        };
+
+        if first_code == 0 && code != 0 {
+            first_code = code;
+        }
+
+        results.push(result);
+    }
+
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+
+    serde_json::to_writer(&mut output, &json::JsonDocument::new(results))?;
+    writeln!(output)?;
+
+    Ok(first_code)
+}
+
+fn check_json_failure(
+    metadata: json::ArchiveMetadata,
+    error: anyhow::Error,
+) -> (json::CheckArchive, u8) {
+    let message = format!("{error:#}");
+    let code = fail(&error);
+
+    (
+        json::CheckArchive {
+            archive: metadata,
+            space_plan: None,
+            error: Some(message),
+        },
+        code,
+    )
+}
+
 fn check(
     archive: &Path,
     output: Option<PathBuf>,
@@ -523,6 +677,108 @@ fn list(archive: &Path, secret: Secret) -> Result<u8> {
         job.format_name
     );
     Ok(0)
+}
+
+fn list_json_all(archives: &[PathBuf], secret: Secret) -> Result<u8> {
+    let mut results = Vec::with_capacity(archives.len());
+    let mut first_code = 0;
+
+    for archive in archives {
+        let (result, code) = match open(archive, None, None, false, secret.clone()) {
+            Ok((State::Fresh(job, _), _)) => {
+                (list_json_job(archive, job, json::ArchiveState::Fresh), 0)
+            }
+            Ok((State::Resume(job, _), _)) => {
+                (list_json_job(archive, job, json::ArchiveState::Resuming), 0)
+            }
+            Ok((State::Orphan(journal), _)) => {
+                let error = anyhow::anyhow!("no entries remain in this archive");
+                let message = format!("{error:#}");
+                let code = fail(&error);
+
+                (
+                    json::ListArchive {
+                        archive: json::ArchiveMetadata {
+                            archive_path: json::archive_path(archive),
+                            state: Some(json::ArchiveState::Resuming),
+                            format: Some(journal.format.to_string()),
+                            archive_size_bytes: None,
+                            entry_count: Some(0),
+                            remaining_uncompressed_size_bytes: Some(0),
+                        },
+                        entries: Some(Vec::new()),
+                        error: Some(message),
+                    },
+                    code,
+                )
+            }
+            Err(error) => {
+                let message = format!("{error:#}");
+                let code = fail(&error);
+
+                (
+                    json::ListArchive {
+                        archive: json::ArchiveMetadata {
+                            archive_path: json::archive_path(archive),
+                            state: None,
+                            format: None,
+                            archive_size_bytes: None,
+                            entry_count: None,
+                            remaining_uncompressed_size_bytes: None,
+                        },
+                        entries: None,
+                        error: Some(message),
+                    },
+                    code,
+                )
+            }
+        };
+
+        if first_code == 0 && code != 0 {
+            first_code = code;
+        }
+
+        results.push(result);
+    }
+
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+
+    serde_json::to_writer(&mut output, &json::JsonDocument::new(results))?;
+    writeln!(output)?;
+
+    Ok(first_code)
+}
+
+fn list_json_job(archive: &Path, job: Job, state: json::ArchiveState) -> json::ListArchive {
+    let entries = job
+        .units
+        .iter()
+        .rev()
+        .flat_map(|unit| {
+            unit.items
+                .iter()
+                .map(move |item| json::ListEntry::from_item(item, unit.encrypted))
+        })
+        .collect();
+
+    let archive_size_bytes = match state {
+        json::ArchiveState::Fresh => Some(job.storage.original_len()),
+        json::ArchiveState::Resuming => None,
+    };
+
+    json::ListArchive {
+        archive: json::ArchiveMetadata {
+            archive_path: json::archive_path(archive),
+            state: Some(state),
+            format: Some(job.format_name.to_string()),
+            archive_size_bytes,
+            entry_count: Some(job.item_count()),
+            remaining_uncompressed_size_bytes: Some(job.remaining_size()),
+        },
+        entries: Some(entries),
+        error: None,
+    }
 }
 
 fn test_command(archive: &Path, secret: Secret) -> Result<u8> {
@@ -763,7 +1019,7 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
             }
             // Extracting a set in place removes every volume, so each one
             // must be a file this run wrote, never one the person had.
-            if !volumes_written(&primary, &written) {
+            if !hatchzip_core::session::volumes_written(&primary, &written) {
                 continue;
             }
             nested.push(path);

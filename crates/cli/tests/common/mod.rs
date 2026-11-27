@@ -92,6 +92,53 @@ pub fn assert_ok(out: &Output) {
     );
 }
 
+pub fn assert_json_listing(input: &Path, expected_archive_path: &Path) {
+    let run = hatchzip(&["list", input.to_str().unwrap(), "--json"], &[]);
+    assert_ok(&run);
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap_or_else(|e| {
+        panic!(
+            "invalid JSON: {e}\nstdout:\n{}",
+            String::from_utf8_lossy(&run.stdout)
+        )
+    });
+
+    assert_eq!(document["version"], 1);
+
+    let archives = document["archives"].as_array().unwrap();
+    assert_eq!(archives.len(), 1);
+
+    let result = &archives[0];
+
+    assert_eq!(
+        result["archive_path"],
+        expected_archive_path.to_string_lossy().to_string()
+    );
+    assert_eq!(result["state"], "fresh");
+    assert!(result["format"].as_str().is_some());
+    assert!(result["archive_size_bytes"].as_u64().is_some());
+    assert!(
+        result["remaining_uncompressed_size_bytes"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(result["error"].is_null());
+
+    let entries = result["entries"].as_array().unwrap();
+
+    assert_eq!(result["entry_count"].as_u64(), Some(entries.len() as u64));
+
+    for entry in entries {
+        assert!(entry["path"].as_str().is_some());
+        assert!(entry["kind"].as_str().is_some());
+        assert!(entry["size_bytes"].as_u64().is_some());
+        assert!(entry["encrypted"].is_boolean());
+        assert!(entry.get("mode").is_some());
+        assert!(entry.get("modified_at").is_some());
+        assert!(entry.get("hard_link_target").is_some());
+    }
+}
+
 pub fn assert_tree(out: &Path, files: &Files) {
     for (name, data) in files {
         let got = fs::read(out.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));

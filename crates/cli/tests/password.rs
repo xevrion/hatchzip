@@ -184,6 +184,38 @@ fn missing_password_without_a_terminal_says_how_to_give_one() {
 }
 
 #[test]
+fn list_json_reports_encrypted_archive_without_a_terminal() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build_zip(tmp.path(), &sample_files(), Crypto::Aes);
+    let before = fs::read(&archive).unwrap();
+
+    let run = hatchzip(&["list", archive.to_str().unwrap(), "--json"], &[]);
+
+    assert_eq!(run.status.code(), Some(5));
+    assert!(!run.stderr.is_empty());
+
+    let document: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+
+    assert_eq!(document["version"], 1);
+
+    let archives = document["archives"].as_array().unwrap();
+    assert_eq!(archives.len(), 1);
+
+    let result = &archives[0];
+
+    assert_eq!(
+        result["archive_path"],
+        archive.to_string_lossy().to_string()
+    );
+    assert!(result["entries"].is_null());
+
+    let error = result["error"].as_str().unwrap();
+    assert!(error.contains("password"), "{error}");
+
+    assert_eq!(fs::read(&archive).unwrap(), before);
+}
+
+#[test]
 fn encrypted_7z_needs_the_password_even_to_list() {
     let tmp = TempDir::new().unwrap();
     let files = sample_files();

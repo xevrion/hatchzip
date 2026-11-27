@@ -16,6 +16,9 @@ pub const SHELL_MENU: bool = false;
 /// The menu bar is the system's, at the top of the screen.
 pub const IN_WINDOW_MENU: bool = false;
 
+/// Let Slint pick its default renderer (FemtoVG) when SLINT_BACKEND is unset.
+pub const DEFAULT_RENDERER: Option<&str> = None;
+
 /// The faces with real bold weights for these scripts. `""` keeps the
 /// system font.
 ///

@@ -178,6 +178,9 @@ pub enum Command {
         replace: Replace,
         #[command(flatten)]
         space: Space,
+        /// Emit the space plan as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// List the entries of an archive
     #[command(visible_alias = "l")]
@@ -187,6 +190,9 @@ pub enum Command {
         archives: Vec<PathBuf>,
         #[command(flatten)]
         secret: Secret,
+        /// Emit the archive inventory as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Verify every entry of an archive without writing files
     #[command(visible_alias = "t")]

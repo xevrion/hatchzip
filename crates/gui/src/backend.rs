@@ -1,12 +1,12 @@
 //! Choosing how to draw, and files dropped on the window.
 //!
-//! FemtoVG (OpenGL) is the default. Without a working OpenGL driver Slint
-//! falls back to its software renderer only on Windows, where it probes for
-//! OpenGL before creating a window. On Linux the failure happens while the
-//! window is created, and Slint 1.18 then keeps running without a window
-//! instead of returning an error. So the first window is watched: if it
-//! hasn't drawn a frame after a few seconds, the app starts itself again
-//! with the software renderer, which needs nothing but a CPU.
+//! Linux and macOS start with FemtoVG (OpenGL). Windows starts with the
+//! software renderer: OpenGL setup can succeed there even when the driver
+//! fails to present, leaving a black window and bypassing the fallback.
+//!
+//! On Linux, a broken driver fails while creating the window, and Slint 1.18
+//! keeps running with no window. Watching the first frame catches this and
+//! restarts the app with the software renderer.
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -79,8 +79,13 @@ impl CustomApplicationHandler for Handler {
 pub fn select(drops: Rc<Drops>) -> Result<()> {
     let icon = window_icon();
     let opened = drops.clone();
-    slint::BackendSelector::new()
-        .backend_name("winit".into())
+    let mut selector = slint::BackendSelector::new().backend_name("winit".into());
+    if let Some(renderer) = crate::platform::DEFAULT_RENDERER
+        && std::env::var_os(BACKEND_VAR).is_none()
+    {
+        selector = selector.renderer_name(renderer.into());
+    }
+    selector
         .with_winit_custom_application_handler(Handler(drops))
         // With the `.slint` files' `icon:` set to an embedded PNG, Slint
         // 1.18 left X11 with an empty _NET_WM_ICON (checked with xprop), so

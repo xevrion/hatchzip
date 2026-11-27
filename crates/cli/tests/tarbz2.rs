@@ -189,6 +189,17 @@ fn list_and_test_leave_the_archive_unchanged() {
 }
 
 #[test]
+fn list_json_supports_tar_bz2() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build(tmp.path(), "multi.tar.bz2");
+    let before = fs::read(&archive).unwrap();
+
+    assert_json_listing(&archive, &archive);
+
+    assert_eq!(fs::read(&archive).unwrap(), before);
+}
+
+#[test]
 fn survives_every_step_at_every_resume_point() {
     // Discover the point count from real runs so changes to the fixture or
     // encoder cannot silently leave the final points untested.
