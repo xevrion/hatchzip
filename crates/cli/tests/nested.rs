@@ -206,6 +206,282 @@ fn a_set_whose_first_part_was_already_there_is_not_extracted() {
     assert_eq!(fs::read(out.join("set.zip")).unwrap(), inner);
 }
 
+fn split_files() -> Files {
+    let mut files = Files::new();
+    files.insert("data/big.bin".into(), noise(60_000, 5));
+    files.insert("readme.txt".into(), b"split inside".to_vec());
+    files
+}
+
+/// `files` as the native split ZIP `set.z01`, `set.z02`, ..., `set.zip`,
+/// named and in order, with enough segments that one in the middle can go
+/// missing and the set still has a `.z01` and a `.zip`.
+fn split_set(files: &Files) -> Vec<(String, Vec<u8>)> {
+    let tmp = TempDir::new().unwrap();
+    let whole = fs::read(zip_of(tmp.path(), "whole.zip", files)).unwrap();
+    let s = Split {
+        size: 10_000,
+        ..Split::default()
+    };
+    let segments = split_zip_segments(&whole, &s);
+    let n = segments.len();
+    assert!(n >= 4, "only {n} segments");
+    segments
+        .into_iter()
+        .enumerate()
+        .map(|(i, bytes)| {
+            let name = split_zip_name(Path::new(""), "set", i, n, false);
+            (name.to_str().unwrap().to_string(), bytes)
+        })
+        .collect()
+}
+
+fn outer_of(parts: &[&(String, Vec<u8>)]) -> Vec<u8> {
+    let entries: Vec<(&str, &[u8])> = parts
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+        .collect();
+    zip_bytes(&entries)
+}
+
+/// Every one of `parts` is in `out`, as it was written.
+fn assert_parts(out: &Path, parts: &[&(String, Vec<u8>)]) {
+    for (name, bytes) in parts {
+        assert_eq!(&fs::read(out.join(name)).unwrap(), bytes, "{name}");
+    }
+}
+
+fn stdout_of(run: &std::process::Output) -> String {
+    String::from_utf8_lossy(&run.stdout).into_owned()
+}
+
+/// A native split ZIP the run wrote whole is one archive, found by its
+/// `.z01`, whose split marker is no ZIP signature, and extracted as a set
+/// in place: every segment is gone afterwards.
+#[test]
+fn a_split_zip_inside_is_extracted_once_as_a_set() {
+    let tmp = TempDir::new().unwrap();
+    let files = split_files();
+    let parts = split_set(&files);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&parts.iter().collect::<Vec<_>>())).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    let stdout = stdout_of(&run);
+    assert!(
+        stdout.contains("Nested archive:") && stdout.contains("The nested archive was extracted."),
+        "the set is offered once: {stdout}"
+    );
+    assert_tree(&out.join("set"), &files);
+    for (name, _) in &parts {
+        assert!(!out.join(name).exists(), "{name} is left");
+    }
+}
+
+/// The rest of a set next to the person's own `.z01` is not the run's set:
+/// extracting it in place would remove their file.
+#[test]
+fn a_split_zip_whose_first_segment_was_already_there_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join(&parts[0].0), &parts[0].1).unwrap();
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&parts[1..].iter().collect::<Vec<_>>())).unwrap();
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &parts.iter().collect::<Vec<_>>());
+}
+
+/// With `--skip-existing`, a segment the person had stays in place of the
+/// run's copy. It would be removed with the set, so the set is not offered.
+#[test]
+fn a_split_zip_with_a_skipped_segment_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join(&parts[1].0), &parts[1].1).unwrap();
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&parts.iter().collect::<Vec<_>>())).unwrap();
+
+    let run = extract_nested(&archive, &out, &["--skip-existing"]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &parts.iter().collect::<Vec<_>>());
+    assert!(!out.join("set").exists(), "nothing was extracted");
+}
+
+/// `.z01`, `.z03`, ... and `.zip` without the `.z02` are a set with a hole,
+/// so it is not offered.
+#[test]
+fn a_split_zip_missing_a_middle_segment_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let left: Vec<_> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 1)
+        .map(|(_, p)| p)
+        .collect();
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&left)).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &left);
+    assert!(!out.join(&parts[1].0).exists());
+    assert!(!out.join("set").exists(), "nothing was extracted");
+}
+
+/// A `.z01` and a `.zip` look like a whole set by name, but the index says
+/// there are more segments. Opening it finds that, so it is not offered,
+/// and no progress file or folder is left behind.
+#[test]
+fn a_split_zip_missing_segments_its_index_names_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let ends = [&parts[0], &parts[parts.len() - 1]];
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&ends)).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &ends);
+    for left in [
+        "set.z01.hatchzip",
+        "set.z01.hatchzip-tail",
+        "set.z01.hatchzip-folders",
+        "set.zip.hatchzip",
+        "set",
+    ] {
+        assert!(!out.join(left).exists(), "{left} is left");
+    }
+}
+
+/// The person's own `.z02` between the run's `.z01` and `.zip` makes the
+/// set partly theirs, so it is not offered.
+#[test]
+fn a_split_zip_with_the_persons_middle_segment_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join(&parts[1].0), &parts[1].1).unwrap();
+    let theirs: Vec<_> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 1)
+        .map(|(_, p)| p)
+        .collect();
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&theirs)).unwrap();
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &parts.iter().collect::<Vec<_>>());
+    assert!(!out.join("set").exists(), "nothing was extracted");
+}
+
+/// An archive that carries progress files of its own would resume from what
+/// they say, so neither a split set nor a single archive with one is
+/// offered, and nothing changes.
+#[test]
+fn an_archive_inside_with_its_own_progress_files_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let journal = (String::from("set.z01.hatchzip"), b"{}".to_vec());
+    let plain = (String::from("foo.zip"), zip_bytes(&[("foo.txt", b"foo")]));
+    let plain_journal = (String::from("foo.zip.hatchzip"), b"{}".to_vec());
+    let mut all: Vec<_> = parts.iter().collect();
+    all.extend([&journal, &plain, &plain_journal]);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&all)).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &all);
+    assert!(!out.join("set").exists() && !out.join("foo").exists());
+}
+
+/// A RAR set inside counts once, by its first volume, even when a later
+/// volume comes first in the archive.
+#[cfg(feature = "rar")]
+#[test]
+fn a_rar_set_inside_is_extracted_once_from_its_first_volume() {
+    let tmp = TempDir::new().unwrap();
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rar/rar5");
+    let mut volumes: Vec<(String, Vec<u8>)> = fs::read_dir(&from)
+        .unwrap()
+        .map(|e| {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name, fs::read(e.path()).unwrap())
+        })
+        .collect();
+    volumes.sort();
+    assert!(volumes.len() >= 3 && volumes[1].0 == "set.part2.rar");
+    // `set.part2.rar` first, then `set.part1.rar` and the rest.
+    volumes.swap(0, 1);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&volumes.iter().collect::<Vec<_>>())).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    let stdout = stdout_of(&run);
+    assert!(
+        stdout.contains("Nested archive:") && stdout.contains("set.part1.rar"),
+        "the set is offered once, by its first volume: {stdout}"
+    );
+    assert_eq!(
+        fs::read(out.join("set/game/d.pak")).unwrap(),
+        noise(6_000, 9)
+    );
+    assert_eq!(
+        fs::read(out.join("set/game/a.pak")).unwrap(),
+        noise(30_000, 1)
+    );
+    for (name, _) in &volumes {
+        assert!(!out.join(name).exists(), "{name} is left");
+    }
+}
 /// A link inside the output can point anywhere; the scan must not follow it.
 #[cfg(unix)]
 #[test]

@@ -39,6 +39,9 @@ impl Counters {
     }
 }
 
+/// The files a finished run wrote, made absolute.
+pub type Written = Arc<HashSet<PathBuf>>;
+
 /// No `Debug`: a request can carry a password.
 #[derive(Clone)]
 pub enum Request {
@@ -62,9 +65,11 @@ pub enum Request {
         /// Only these entries, and everything inside the folders among them,
         /// which keeps the archive. `None` extracts every entry.
         only: Option<Vec<PathBuf>>,
-        /// This run is itself one of the archives found inside another; its
-        /// output is not scanned again, one level only.
-        nested: bool,
+        /// This run is itself one of the archives found inside another, with
+        /// the files that run wrote, which the archive is checked against
+        /// again before it starts. Its output is not scanned again, one
+        /// level only.
+        nested: Option<Written>,
     },
     Test {
         archive: PathBuf,
@@ -152,6 +157,9 @@ pub enum Update {
         /// The run resumed, so its entry list held only what was left: the
         /// offer does not cover files an earlier run extracted.
         nested_partial: bool,
+        /// The files this run wrote, which each offered archive is checked
+        /// against again when its own job starts.
+        written: Written,
     },
     Tested(usize),
     /// The archive is whole again, holding this many entries; the ones
@@ -209,7 +217,7 @@ pub fn run(
                 here: *here,
                 existing: *existing,
                 only: only.clone(),
-                nested: *nested,
+                nested: nested.clone(),
             },
             Secret {
                 password: password.clone(),
@@ -298,7 +306,7 @@ struct Choices {
     here: bool,
     existing: Existing,
     only: Option<Vec<PathBuf>>,
-    nested: bool,
+    nested: Option<Written>,
 }
 
 fn extract(
@@ -319,14 +327,25 @@ fn extract(
         only,
         nested: nested_run,
     } = choices;
-    // The file was an archive when the offer was made. It may have been
-    // replaced since, so it is checked again before anything is opened.
-    if nested_run && hatchzip_core::archive::nested_kind(archive).is_none() {
-        bail!(
-            "'{}' is no longer an archive that can be extracted inside, so it may have \
-             been replaced. Extract it from its folder instead. Nothing was modified",
-            archive.display()
-        );
+    // The file was an archive the run wrote whole when the offer was made.
+    // It may have been replaced since, or a part the person had may have
+    // joined its set, so it is checked again before anything is opened. A
+    // paused nested run has its own journal, which the offer would refuse;
+    // the journal then says what the set is.
+    if let Some(written) = &nested_run {
+        let (primary, paths) = session::locate(archive)?;
+        let still = if paths.exists() {
+            hatchzip_core::archive::nested_kind(archive).is_some()
+        } else {
+            session::nested_offer(archive, written).is_some_and(|p| p == primary)
+        };
+        if !still {
+            bail!(
+                "'{}' is no longer an archive that can be extracted inside, so it may have \
+                 been replaced. Extract it from its folder instead. Nothing was modified",
+                archive.display()
+            );
+        }
     }
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
@@ -360,6 +379,7 @@ fn extract(
                 warning,
                 nested: Vec::new(),
                 nested_partial: false,
+                written: Arc::default(),
             });
             return Ok(());
         }
@@ -452,7 +472,7 @@ fn extract(
     // Every file this run may write, before the job moves into the run. A
     // nested archive is one of these: a folder scan would also find archives
     // the person already had there.
-    let candidates: Vec<PathBuf> = if nested_run {
+    let candidates: Vec<PathBuf> = if nested_run.is_some() {
         Vec::new()
     } else {
         job.units
@@ -509,15 +529,11 @@ fn extract(
                 .into_iter()
                 .filter(|path| !kept.contains(path))
                 .filter_map(|path| {
-                    let path = output.join(path);
-                    hatchzip_core::archive::nested_kind(&path)?;
-                    // A split set is one archive, named by its first volume;
-                    // the parent archive is never offered back.
-                    let (primary, _) = session::locate(&path).ok()?;
-                    if parent_primary.as_ref() == Some(&primary)
-                        || !seen.insert(primary.clone())
-                        || !session::volumes_written(&primary, &written)
-                    {
+                    // A split set is one archive, named by its first volume,
+                    // and only when the run wrote all of it; the parent
+                    // archive is never offered back.
+                    let primary = session::nested_offer(&output.join(path), &written)?;
+                    if parent_primary.as_ref() == Some(&primary) || !seen.insert(primary.clone()) {
                         return None;
                     }
                     Some(primary)
@@ -530,6 +546,7 @@ fn extract(
                 warning,
                 nested_partial: resumed && !nested.is_empty(),
                 nested,
+                written: Arc::new(written),
             });
         }
         Outcome::Paused => send(Update::Paused),
@@ -618,7 +635,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
-            nested: false,
+            nested: None,
         };
         assert!(extract.set_keep_free(500_000_000));
         match extract {
@@ -963,6 +980,235 @@ mod tests {
         assert_eq!(std::fs::read(out.join("set.zip")).unwrap(), inner);
     }
 
+    /// [`inner_zip`] as a native split ZIP laid out the way `zip -s` starts
+    /// one: the split marker and every entry in `set.z01`, and the index
+    /// alone in `set.zip`, the second and last disk.
+    fn split_inner() -> [(&'static str, Vec<u8>); 2] {
+        let zip = inner_zip();
+        let short = |b: &[u8], i: usize| usize::from(u16::from_le_bytes([b[i], b[i + 1]]));
+        let word = |b: &[u8], i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+        let eocd = zip.len() - 22;
+        let count = short(&zip, eocd + 10);
+        let cd_len = word(&zip, eocd + 12);
+        let cd_at = word(&zip, eocd + 16) as usize;
+        let mut first = b"PK\x07\x08".to_vec();
+        first.extend_from_slice(&zip[..cd_at]);
+        let mut index = zip[cd_at..cd_at + cd_len as usize].to_vec();
+        let mut at = 0;
+        for _ in 0..count {
+            // Every entry is on disk 0, behind the marker.
+            let offset = word(&index, at + 42) + 4;
+            index[at + 42..at + 46].copy_from_slice(&offset.to_le_bytes());
+            at += 46 + short(&index, at + 28) + short(&index, at + 30) + short(&index, at + 32);
+        }
+        let count = u16::try_from(count).unwrap();
+        // The end record: this is disk 1, the index starts on it, and it
+        // holds every record.
+        index.extend_from_slice(b"PK\x05\x06");
+        for field in [1u16, 1, count, count] {
+            index.extend_from_slice(&field.to_le_bytes());
+        }
+        index.extend_from_slice(&cd_len.to_le_bytes());
+        index.extend_from_slice(&0u32.to_le_bytes());
+        index.extend_from_slice(&0u16.to_le_bytes());
+        [("set.z01", first), ("set.zip", index)]
+    }
+
+    /// What a finished extraction offers to extract inside, and the files it
+    /// wrote, keeping the person's file at every path the run finds taken
+    /// when `keep` is set.
+    fn offered(request: &Request, keep: bool) -> (Vec<PathBuf>, Written) {
+        let counters = Arc::new(Counters::default());
+        let seen = Mutex::new(Vec::new());
+        run(
+            request,
+            &counters,
+            &|u| seen.lock().unwrap().push(u),
+            &mut |_| None,
+            &mut |found, _, _| {
+                assert!(keep, "nothing is replaced in a fresh folder");
+                Some(hatchzip_core::replace::Choices {
+                    keep: found.to_vec(),
+                    ..Default::default()
+                })
+            },
+        );
+        seen.into_inner()
+            .unwrap()
+            .into_iter()
+            .find_map(|u| match u {
+                Update::Extracted {
+                    nested, written, ..
+                } => Some((nested, written)),
+                _ => None,
+            })
+            .expect("the extraction finished")
+    }
+
+    /// Every one of `files` is in `dir` as it was written.
+    fn assert_files(dir: &Path, files: &[(&str, &[u8])]) {
+        for (name, bytes) in files {
+            assert_eq!(std::fs::read(dir.join(name)).unwrap(), *bytes, "{name}");
+        }
+    }
+
+    /// A native split ZIP the run wrote whole is one archive, offered by its
+    /// `.z01`, whose split marker is no ZIP signature, and extracted as a
+    /// set: every segment is gone afterwards.
+    #[test]
+    fn a_split_zip_inside_is_offered_once_and_extracted_as_a_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let archive = zip_with(dir.path(), "game.zip", &[(z01, &first), (zip, &last)]);
+        let out = dir.path().join("out");
+        let (nested, written) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert_eq!(nested, [out.join("set.z01")]);
+
+        let (_, request) = crate::task_window::nested_job(&nested[0], written, false, 0, false);
+        let counters = Arc::new(Counters::default());
+        let updates = collect(&request, &counters);
+        assert_eq!(
+            std::fs::read(out.join("set/inside.txt")).unwrap(),
+            b"inside",
+            "{updates:?}"
+        );
+        assert!(
+            !out.join(z01).exists() && !out.join(zip).exists(),
+            "every segment is removed in place"
+        );
+    }
+
+    /// The set was the run's when it was offered. A segment the person puts
+    /// next to it before the job starts would be removed with it, so the job
+    /// refuses the set and changes nothing.
+    #[test]
+    fn a_split_zip_that_gains_a_segment_before_its_job_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let archive = zip_with(dir.path(), "game.zip", &[(z01, &first), (zip, &last)]);
+        let out = dir.path().join("out");
+        let (nested, written) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert_eq!(nested, [out.join("set.z01")]);
+        let theirs: &[u8] = b"the person's own second segment";
+        std::fs::write(out.join("set.z02"), theirs).unwrap();
+
+        let (_, request) = crate::task_window::nested_job(&nested[0], written, false, 0, false);
+        let counters = Arc::new(Counters::default());
+        let updates = collect(&request, &counters);
+        assert_eq!(updates.len(), 1, "{updates:?}");
+        assert!(updates[0].contains("no longer an archive"), "{updates:?}");
+        assert_files(&out, &[(z01, &first), ("set.z02", theirs), (zip, &last)]);
+        assert!(!out.join("set").exists(), "nothing was extracted");
+    }
+
+    /// A segment the person had, kept in place of the run's copy, would be
+    /// removed with the set, so the set is not offered.
+    #[test]
+    fn a_split_zip_with_a_kept_segment_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let archive = zip_with(dir.path(), "game.zip", &[(z01, &first), (zip, &last)]);
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let mut theirs = last.clone();
+        theirs.extend_from_slice(b"the person's copy");
+        std::fs::write(out.join(zip), &theirs).unwrap();
+
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), true);
+        assert!(nested.is_empty(), "the person's segment is not offered");
+        assert_files(&out, &[(z01, &first), (zip, &theirs)]);
+    }
+
+    /// A `.zip` the run wrote that is a ZIP on its own still names the set
+    /// of the person's `.z01` next to it, which is not offered.
+    #[test]
+    fn a_split_zip_whose_first_segment_is_the_persons_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, _)] = split_inner();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        std::fs::write(out.join(z01), &first).unwrap();
+        let inner = inner_zip();
+        let archive = zip_with(dir.path(), "game.zip", &[(zip, &inner)]);
+
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert!(nested.is_empty(), "the person's set is not offered");
+        assert_files(&out, &[(z01, &first), (zip, &inner)]);
+    }
+
+    /// The person's own `.z02` between the run's `.z01` and `.zip` makes the
+    /// set partly theirs, so it is not offered.
+    #[test]
+    fn a_split_zip_with_the_persons_middle_segment_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        let theirs: &[u8] = b"the person's own second segment";
+        std::fs::write(out.join("set.z02"), theirs).unwrap();
+        let archive = zip_with(dir.path(), "game.zip", &[(z01, &first), (zip, &last)]);
+
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert!(
+            nested.is_empty(),
+            "a set partly the person's is not offered"
+        );
+        assert_files(&out, &[(z01, &first), ("set.z02", theirs), (zip, &last)]);
+    }
+
+    /// `.z01`, `.z03` and `.zip` are a set with a segment missing, not a set
+    /// of three, so it is not offered.
+    #[test]
+    fn a_split_zip_missing_a_middle_segment_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let third: &[u8] = b"the third segment";
+        let archive = zip_with(
+            dir.path(),
+            "game.zip",
+            &[(z01, &first), ("set.z03", third), (zip, &last)],
+        );
+        let out = dir.path().join("out");
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert!(nested.is_empty(), "a set with a hole is not offered");
+        assert_files(&out, &[(z01, &first), ("set.z03", third), (zip, &last)]);
+    }
+
+    /// A `.z01` without its `.zip`, which holds the index, is no set.
+    #[test]
+    fn a_split_zip_first_segment_alone_is_not_offered_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), _] = split_inner();
+        let archive = zip_with(dir.path(), "game.zip", &[(z01, &first)]);
+        let out = dir.path().join("out");
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert!(nested.is_empty(), "a lone first segment is not offered");
+        assert_files(&out, &[(z01, &first)]);
+    }
+
+    /// An archive that carries progress files of its own would resume from
+    /// what they say, so neither a set nor a single archive with one is
+    /// offered.
+    #[test]
+    fn an_archive_inside_with_its_own_progress_files_is_not_offered() {
+        let dir = tempfile::tempdir().unwrap();
+        let [(z01, first), (zip, last)] = split_inner();
+        let inner = inner_zip();
+        let journal: &[u8] = b"{}";
+        let files: [(&str, &[u8]); 5] = [
+            (z01, &first),
+            (zip, &last),
+            ("set.z01.hatchzip", journal),
+            ("foo.zip", &inner),
+            ("foo.zip.hatchzip", journal),
+        ];
+        let archive = zip_with(dir.path(), "game.zip", &files);
+        let out = dir.path().join("out");
+        let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
+        assert!(nested.is_empty(), "{nested:?}");
+        assert_files(&out, &files);
+    }
+
     /// The file was an archive when it was offered. If it is replaced before
     /// the nested job starts, the job refuses it rather than opening the new
     /// file.
@@ -974,7 +1220,7 @@ mod tests {
         std::fs::write(&path, &replaced).unwrap();
         let mut request = extract(&path, Some(dir.path().join("out")), false);
         if let Request::Extract { nested, .. } = &mut request {
-            *nested = true;
+            *nested = Some(Arc::default());
         }
         let counters = Arc::new(Counters::default());
         let updates = collect(&request, &counters);
@@ -1122,7 +1368,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
-            nested: false,
+            nested: None,
         }
     }
 
@@ -1137,7 +1383,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
-            nested: false,
+            nested: None,
         }
     }
 
@@ -1391,7 +1637,7 @@ mod tests {
             here: false,
             existing: Existing::Ask,
             only: None,
-            nested: false,
+            nested: None,
         };
         assert_eq!(collect(&request, &counters), ["checking", "no space"]);
         assert!(!session::locate(&archive).unwrap().1.exists());
