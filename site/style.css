@@ -11,7 +11,20 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
+    --bg: #121212;
+    --side: #1a1a1a;
+    --fg: #e6e6e6;
+    --muted: #a8a8a8;
+    --link: #8ab4f8;
+    --line: #444444;
+    --head: #1e1e1e;
+    --code: #1e1e1e;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root:has(#theme:checked) {
     color-scheme: dark;
     --bg: #121212;
     --side: #1a1a1a;
@@ -24,20 +37,22 @@
   }
 }
 
-:root[data-theme="light"] {
-  color-scheme: light;
+@media (prefers-color-scheme: dark) {
+  :root:has(#theme:checked) {
+    color-scheme: light;
+    --bg: #ffffff;
+    --side: #f4f4f4;
+    --fg: #1a1a1a;
+    --muted: #555555;
+    --link: #0645ad;
+    --line: #c8c8c8;
+    --head: #f2f2f2;
+    --code: #f4f4f4;
+  }
 }
 
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #121212;
-  --side: #1a1a1a;
-  --fg: #e6e6e6;
-  --muted: #a8a8a8;
-  --link: #8ab4f8;
-  --line: #444444;
-  --head: #1e1e1e;
-  --code: #1e1e1e;
+@supports not selector(:has(*)) {
+  .theme-switch, .theme-toggle { display: none; }
 }
 
 * { box-sizing: border-box; }
@@ -108,6 +123,30 @@ body {
 .side nav a:hover { background: var(--head); text-decoration: underline; }
 .side nav a[aria-current="page"] { color: var(--fg); font-weight: 600; }
 
+.theme-switch {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .theme-toggle {
   display: inline-flex;
   width: 42px;
@@ -127,9 +166,19 @@ body {
 }
 
 .theme-toggle::before { content: "☾"; }
-.theme-toggle[data-icon="sun"]::before { content: "☀︎"; }
+#theme:checked + label::before { content: "☀︎"; }
 .theme-toggle:hover { background: var(--head); }
-.side .theme-toggle { display: grid; margin: 0 0 12px 8px; }
+
+@media (prefers-color-scheme: dark) {
+  .theme-toggle::before { content: "☀︎"; }
+  #theme:checked + label::before { content: "☾"; }
+}
+
+#theme:focus-visible + label {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 
 /* A small heading between groups of menu links. */
 .side .label {
