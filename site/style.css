@@ -11,7 +11,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #121212;
     --side: #1a1a1a;
     --fg: #e6e6e6;
@@ -21,6 +22,22 @@
     --head: #1e1e1e;
     --code: #1e1e1e;
   }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121212;
+  --side: #1a1a1a;
+  --fg: #e6e6e6;
+  --muted: #a8a8a8;
+  --link: #8ab4f8;
+  --line: #444444;
+  --head: #1e1e1e;
+  --code: #1e1e1e;
 }
 
 * { box-sizing: border-box; }
@@ -90,6 +107,29 @@ body {
 
 .side nav a:hover { background: var(--head); text-decoration: underline; }
 .side nav a[aria-current="page"] { color: var(--fg); font-weight: 600; }
+
+.theme-toggle {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--side);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.theme-toggle::before { content: "☾"; }
+.theme-toggle[data-icon="sun"]::before { content: "☀︎"; }
+.theme-toggle:hover { background: var(--head); }
+.side .theme-toggle { display: grid; margin: 0 0 12px 8px; }
 
 /* A small heading between groups of menu links. */
 .side .label {

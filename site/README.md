@@ -1,6 +1,6 @@
 # Website
 
-The HatchZip website: static pages, no build step. The only scripts are Cloudflare Web Analytics and Umami, which count visits without cookies; the Content-Security-Policy on every page allows them and nothing else.
+The HatchZip website: static pages, no build step. The scripts are the local theme toggle and Cloudflare Web Analytics and Umami, which count visits without cookies; the Content-Security-Policy allows only these scripts.
 
 | File | Purpose |
 |---|---|
@@ -13,6 +13,7 @@ The HatchZip website: static pages, no build step. The only scripts are Cloudfla
 | `not-enough-space-to-extract.html`, `winrar-not-enough-space.html`, `7zip-not-enough-space.html` | Guides for people whose extraction ran out of disk space |
 | `indexnow.py`, `4114b1f4eb288ada55a869db5d3b852f.txt` | Submits the sitemap's URLs to IndexNow; the key file proves the site is ours |
 | `style.css` | All styles, light and dark |
+| `theme.js` | Theme toggle, with the system preference as the default |
 | `404.html` | Page shown for unknown addresses |
 | `favicon.svg` | Browser tab icon |
 | `robots.txt`, `sitemap.xml` | For search engines. `DOMAIN` is a placeholder. |
