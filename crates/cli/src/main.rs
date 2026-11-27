@@ -270,38 +270,6 @@ fn run(command: Command) -> Result<u8> {
 /// also matches the progress files next to the first volume
 /// (`game.z01.hatchzip`, ...), which are left out when their archive is
 /// given too.
-/// Whether every volume of the set whose first volume is `primary` that
-/// exists on disk is in `written`. A set that is not split has one volume.
-fn volumes_written(primary: &Path, written: &std::collections::HashSet<PathBuf>) -> bool {
-    use hatchzip_core::archive::storage;
-    let mut volumes = Vec::new();
-    if storage::is_split_zip(primary) {
-        let mut disk = 0;
-        while let Some(segment) = storage::split_zip_segment(primary, disk) {
-            if !segment.exists() {
-                break;
-            }
-            volumes.push(segment);
-            disk += 1;
-        }
-        volumes.extend(storage::split_zip_last(primary));
-    } else {
-        let mut index = 0;
-        while let Some(volume) = storage::volume_path(primary, index) {
-            if index > 0 && !volume.exists() {
-                break;
-            }
-            volumes.push(volume);
-            index += 1;
-        }
-    }
-    volumes
-        .iter()
-        .filter(|v| v.exists())
-        .all(|v| written.contains(v))
-        && written.contains(primary)
-}
-
 fn distinct(archives: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let owner = |a: &Path| {
         let name = a.to_str()?;
@@ -1051,7 +1019,7 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
             }
             // Extracting a set in place removes every volume, so each one
             // must be a file this run wrote, never one the person had.
-            if !volumes_written(&primary, &written) {
+            if !hatchzip_core::session::volumes_written(&primary, &written) {
                 continue;
             }
             nested.push(path);

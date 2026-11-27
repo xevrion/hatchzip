@@ -17,7 +17,7 @@ clap = { version = "4", features = ["derive"] }
 open = "5.4.5"
 # Decodes the window icon; already in the tree through Slint's build.
 png = "0.18.1"
-rfd = "0.17.2"
+rfd = "0.18.0"
 serde.workspace = true
 serde_json.workspace = true
 # The system's preferred languages, in order, to pick a translation from
