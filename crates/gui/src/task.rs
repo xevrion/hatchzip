@@ -13,7 +13,7 @@ use crate::work::{Counters, Update};
 use crate::{Phase, PlanView, TaskView};
 
 /// Where this archive sits when several were queued from one right-click.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Queue {
     #[default]
     Single,
@@ -28,6 +28,8 @@ pub enum Queue {
         at: usize,
         of: usize,
         left: usize,
+        /// The archives after this one, by name: what a stop leaves out.
+        rest: Vec<String>,
     },
 }
 
@@ -47,6 +49,10 @@ pub struct Task {
     pub resumable_failure: Option<String>,
     /// What the finished run could not do, shown after its result.
     pub warning: Option<String>,
+    /// Archives among the files the run left, to offer extracting next.
+    pub nested: Vec<PathBuf>,
+    /// The run resumed, so `nested` covers only the entries it still had.
+    pub nested_partial: bool,
     /// The person closed the password or replace prompt, so the run never
     /// started.
     pub cancelled: bool,
@@ -136,6 +142,8 @@ impl Task {
             restore_result: None,
             resumable_failure: None,
             warning: None,
+            nested: Vec::new(),
+            nested_partial: false,
             cancelled: false,
             lower_reserve: None,
             queue: Queue::Single,
@@ -161,6 +169,8 @@ impl Task {
         self.restoring
     }
 
+    /// Whether the current run keeps the archive, as the engine reported: a
+    /// resumed run goes on the way its journal started.
     pub fn keeps_archive(&self) -> bool {
         self.keep
     }
@@ -242,6 +252,8 @@ impl Task {
                 self.resumable_failure = None;
                 self.warning = None;
                 self.space = None;
+                self.nested = Vec::new();
+                self.nested_partial = false;
                 self.cancelled = false;
                 v.fraction = 0.0;
                 v.amounts = "".into();
@@ -301,11 +313,15 @@ impl Task {
                 keep,
                 selected,
                 warning,
+                nested,
+                nested_partial,
             } => {
                 self.keep = keep;
                 // A right-click resume of a selection learns it only here.
                 self.selected |= selected;
                 self.warning = warning;
+                self.nested = nested;
+                self.nested_partial = nested_partial;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
@@ -526,6 +542,8 @@ mod tests {
             keep: false,
             selected: false,
             warning: None,
+            nested: Vec::new(),
+            nested_partial: false,
         });
         assert_eq!(t.view.phase, Phase::Done);
         assert_eq!(t.view.heading, "Extraction complete");
@@ -563,6 +581,8 @@ mod tests {
             keep: true,
             selected: false,
             warning: None,
+            nested: Vec::new(),
+            nested_partial: false,
         });
         assert_eq!(
             t.view.message,
@@ -801,6 +821,8 @@ mod tests {
                 keep,
                 selected: false,
                 warning: None,
+                nested: Vec::new(),
+                nested_partial: false,
             });
             assert_eq!(task.keeps_archive(), keep);
         }

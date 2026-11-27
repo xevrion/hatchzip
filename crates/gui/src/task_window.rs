@@ -4,6 +4,7 @@
 //! after another, each checked just before it starts; one that doesn't
 //! finish stops the rest until it is resumed.
 
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -13,7 +14,7 @@ use slint::{CloseRequestResponse, ComponentHandle};
 
 use crate::args::{TaskArgs, TaskKind};
 use crate::runner::Runner;
-use crate::settings::{AfterExtracting, Appearance, Settings};
+use crate::settings::{AfterExtracting, Appearance, Existing, Settings};
 use crate::task::Task;
 use crate::work::Request;
 use crate::{Messages, Palette, TaskWindow};
@@ -64,7 +65,7 @@ pub fn run(mut args: TaskArgs) -> Result<()> {
 /// and verification settings apply. The archive is kept when the menu entry
 /// says so or when the main window's setting does, so someone who never
 /// wants archives removed gets that from every entry.
-fn job_for(
+pub(crate) fn job_for(
     kind: &TaskKind,
     archive: &Path,
     keep_archive: bool,
@@ -91,6 +92,7 @@ fn job_for(
                 here: *kind == TaskKind::ExtractHere,
                 existing: settings.existing_files,
                 only: None,
+                nested: false,
             },
         ),
         None => (
@@ -101,6 +103,38 @@ fn job_for(
             },
         ),
     }
+}
+
+/// A nested archive found inside a finished extraction: next to itself in
+/// its own folder, asking about existing files, and not scanned again.
+pub(crate) fn nested_job(
+    archive: &Path,
+    keep_archive: bool,
+    keep_free: u64,
+    verify_first: bool,
+) -> (Task, Request) {
+    let primary = session::locate(archive).map_or_else(|_| archive.to_path_buf(), |(p, _)| p);
+    let name = primary
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let out = session::default_output(&primary);
+    (
+        Task::extract(&name, Some(&out), keep_archive),
+        Request::Extract {
+            archive: archive.to_path_buf(),
+            output: Some(out),
+            keep_free,
+            verify_first,
+            keep_archive,
+            password: None,
+            here: false,
+            existing: Existing::Ask,
+            only: None,
+            nested: true,
+        },
+    )
 }
 
 /// The window, shown, and the function that starts the task. Nothing
@@ -147,16 +181,27 @@ fn build_in(
     });
     ui.set_task(crate::text::localize(task, &ui.global::<Messages>()));
     let open_folder = settings.after_extracting == AfterExtracting::OpenFolder;
+    // The folder this window's run wrote to, recorded when "Extract inside"
+    // replaces the queue: the last nested task's output is a folder inside
+    // it, not the one to show.
+    let parent_output: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
     if settings.close_when_done || open_folder {
         let (weak, r) = (ui.as_weak(), Rc::downgrade(&runner));
         let close = settings.close_when_done;
+        let parent_output = parent_output.clone();
+        // A nested queue runs after the parent, so "when extracted" fires
+        // again; open the parent's folder only the first time.
+        let folder_opened = Cell::new(false);
         runner.when_extracted(move || {
-            // The last archive's folder, which for several archives from
-            // one folder is where all of them went.
+            // Several archives queued from one folder each have their own
+            // output; the last one is where the run ended.
+            let out = parent_output
+                .borrow()
+                .clone()
+                .or_else(|| r.upgrade()?.task.borrow().as_ref()?.output.clone());
             if open_folder
-                && let Some(out) = r
-                    .upgrade()
-                    .and_then(|r| r.task.borrow().as_ref().and_then(|t| t.output.clone()))
+                && let Some(out) = out
+                && !folder_opened.replace(true)
             {
                 let _ = open::that_detached(out);
             }
@@ -177,6 +222,36 @@ fn build_in(
         if let Some(out) = task.as_ref().and_then(|t| t.output.clone()) {
             let _ = open::that_detached(out);
         }
+    });
+    let r = runner.clone();
+    let keep = args.keep_archive || settings.keep_archive;
+    let parent_output = parent_output.clone();
+    ui.on_extract_inside(move || {
+        // Remember the parent before the queue below replaces it.
+        *parent_output.borrow_mut() = r.task.borrow().as_ref().and_then(|t| t.output.clone());
+        let keep = r.task.borrow().as_ref().map_or(keep, |t| t.keeps_archive());
+        let keep_free = r.keep_free().unwrap_or(settings.keep_free);
+        let nested = r
+            .task
+            .borrow()
+            .as_ref()
+            .map(|t| t.nested.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
+            .collect::<Vec<_>>();
+        let password = r.password();
+        let jobs = nested
+            .iter()
+            .map(|path| {
+                let (task, mut request) = nested_job(path, keep, keep_free, settings.verify_first);
+                if let Some(p) = &password {
+                    request.set_password(p.clone());
+                }
+                (task, request)
+            })
+            .collect();
+        r.start_queue(jobs);
     });
     let r = runner.clone();
     ui.on_give_back(move || r.give_back());

@@ -173,6 +173,14 @@ fn bundled_hindi_and_english_fallback() {
         "ज़रूरी: 3.5 MB। उपलब्ध: 7.8 GB।"
     );
     assert_eq!(
+        ui.global::<Messages>().invoke_inside_count(1, "1".into()),
+        "अंदर का 1 आर्काइव एक्सट्रैक्ट करें"
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_inside_count(3, "3".into()),
+        "अंदर के 3 आर्काइव एक्सट्रैक्ट करें"
+    );
+    assert_eq!(
         ui.global::<Messages>().invoke_test_cancelled(),
         "जाँच रद्द हुई। आर्काइव नहीं बदला गया।"
     );
@@ -353,6 +361,10 @@ fn bundled_hindi_and_english_fallback() {
         ui.global::<Messages>()
             .invoke_task_space("3.5 MB".into(), "7.8 GB".into()),
         "Required: 3.5 MB. Available: 7.8 GB."
+    );
+    assert_eq!(
+        ui.global::<Messages>().invoke_inside_count(3, "3".into()),
+        "Extract 3 archives inside"
     );
     assert_eq!(
         ui.global::<Messages>().invoke_test_cancelled(),

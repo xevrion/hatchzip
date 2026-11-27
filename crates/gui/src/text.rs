@@ -211,6 +211,19 @@ pub(crate) fn plural_count(n: usize) -> i32 {
 /// text stays English; everything the app builds itself comes from `@tr`.
 pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
     let mut view = task.view.clone();
+    view.inside = if task.nested.is_empty() {
+        Default::default()
+    } else if task.keeps_archive() {
+        messages.invoke_inside_count(
+            plural_count(task.nested.len()),
+            count(task.nested.len()).into(),
+        )
+    } else {
+        messages.invoke_inside_count_remove(
+            plural_count(task.nested.len()),
+            count(task.nested.len()).into(),
+        )
+    };
     view.space = task
         .space
         .as_ref()
@@ -260,6 +273,9 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
             }
         }
         _ => {}
+    }
+    if task.nested_partial && !task.nested.is_empty() {
+        view.message = messages.invoke_joined(view.message, messages.invoke_inside_partial());
     }
     if task.cancelled {
         let cancelled = if view.is_test {
@@ -356,15 +372,21 @@ pub(crate) fn localize(task: &Task, messages: &Messages) -> TaskView {
         };
         view.rate = messages.invoke_task_rate(human(speed).into(), duration.into());
     }
-    view.step = match task.queue {
+    view.step = match &task.queue {
         crate::task::Queue::Single => SharedString::new(),
         crate::task::Queue::Of { at, of } => {
-            messages.invoke_queue_of(plural_count(at), plural_count(of))
+            messages.invoke_queue_of(plural_count(*at), plural_count(*of))
         }
-        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(of)),
-        crate::task::Queue::Waiting { at, of, left } => {
-            messages.invoke_queue_waiting(plural_count(at), plural_count(of), plural_count(left))
+        crate::task::Queue::All { of } => messages.invoke_queue_all(plural_count(*of)),
+        crate::task::Queue::Waiting { at, of, left, .. } => {
+            messages.invoke_queue_waiting(plural_count(*at), plural_count(*of), plural_count(*left))
         }
+    };
+    view.rest = match &task.queue {
+        crate::task::Queue::Waiting { rest, .. } if !rest.is_empty() => {
+            messages.invoke_queue_rest(rest.join(", ").into())
+        }
+        _ => SharedString::new(),
     };
     view
 }
