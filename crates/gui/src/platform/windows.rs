@@ -9,6 +9,11 @@ pub const SHELL_MENU: bool = true;
 /// The menu bar is a native Win32 menu, with its own edge.
 pub const IN_WINDOW_MENU: bool = false;
 
+/// The Slint renderer name to select when SLINT_BACKEND is unset. FemtoVG
+/// (OpenGL) leaves an empty black window on machines where the driver cannot
+/// present the swapchain, so Windows defaults to the software renderer.
+pub const DEFAULT_RENDERER: Option<&str> = Some("software");
+
 /// The system's UI face for each script. Left to itself, the software
 /// renderer drew Latin text in Arial, and Simplified Chinese in a Japanese
 /// face that lacks most of its characters.
