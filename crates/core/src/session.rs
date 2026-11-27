@@ -28,13 +28,32 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
 /// that first volume are archives by name and signature, and every volume of
 /// the set is in `written` ([`volumes_written`]). A native split ZIP is
 /// found by its `.z01`, whose split marker no other check names.
+///
+/// An archive with progress files next to it (a journal, its tail or
+/// folder list, a split ZIP's stub) is never offered, even when the run
+/// wrote them: a resume would follow what they say, not what the person
+/// was offered. A split ZIP is also opened read only, so a set whose index
+/// names more segments than are there is not offered.
 pub fn nested_offer(path: &Path, written: &HashSet<PathBuf>) -> Option<PathBuf> {
     crate::archive::nested_kind(path)?;
-    let (primary, _) = locate(path).ok()?;
+    let (primary, paths) = locate(path).ok()?;
     // A `.zip` that happens to start with a local header names the set of
     // the `.z01` next to it, which must itself look like a first segment.
-    crate::archive::nested_kind(&primary)?;
-    volumes_written(&primary, written).then_some(primary)
+    let kind = crate::archive::nested_kind(&primary)?;
+    let side_files = [&paths.journal, &paths.tail, &paths.folders]
+        .into_iter()
+        .chain(&paths.stub)
+        .any(|p| fs::symlink_metadata(p).is_ok());
+    if side_files || !volumes_written(&primary, written) {
+        return None;
+    }
+    // Opening reads only the index and the local headers, and checks the
+    // segment count against the index. Other formats are not opened here:
+    // a compressed tar is decompressed in full to list it.
+    if kind == crate::archive::SPLIT_ZIP {
+        Job::open(&primary, false, None, Arc::default()).ok()?;
+    }
+    Some(primary)
 }
 
 /// Whether every volume of the set whose first volume is `primary` that
@@ -44,9 +63,11 @@ pub fn nested_offer(path: &Path, written: &HashSet<PathBuf>) -> Option<PathBuf> 
 /// must not take in one the run did not write: a `.zip` next to the person's
 /// own `.z01` is the last segment of their set, not of the run's.
 ///
-/// A native split ZIP also needs its `.zip`, which holds the index, and no
-/// segment the run wrote may lie past a missing one: `.z01`, `.z03` and
-/// `.zip` are a set with a hole, not a set of three.
+/// A native split ZIP also needs its `.zip`, which holds the index. A
+/// segment in `written` past a missing one, such as a `.z03` without the
+/// `.z02`, also makes this false. That only catches the gaps the run's own
+/// files show: a set missing its last segments before the `.zip` passes,
+/// and only opening it, which checks the index, finds that.
 pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
     let mut volumes = Vec::new();
     if storage::is_split_zip(primary) {
