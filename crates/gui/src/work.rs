@@ -14,7 +14,7 @@ use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::archive::{Kind, PasswordNeeded, WrongPassword};
 use hatchzip_core::engine::{self, Job, Outcome, Progress, Run};
 use hatchzip_core::journal::{Journal, Paths};
-use hatchzip_core::session::{self, SpacePlan, State};
+use hatchzip_core::session::{self, Output, SpacePlan, State};
 
 use crate::settings::Existing;
 
@@ -47,8 +47,9 @@ pub type Written = Arc<HashSet<PathBuf>>;
 pub enum Request {
     Extract {
         archive: PathBuf,
-        /// `None` keeps what the archive's journal or name says.
-        output: Option<PathBuf>,
+        /// [`Output::Default`] keeps what the archive's journal or name
+        /// says. Only a folder the person picked is [`Output::Named`].
+        output: Output,
         keep_free: u64,
         verify_first: bool,
         /// Extract without removing the archive. A half-extracted archive
@@ -268,7 +269,7 @@ struct Secret<'a> {
 fn open(
     primary: &Path,
     paths: &Paths,
-    output: Option<PathBuf>,
+    output: Output,
     only: Option<&[PathBuf]>,
     writable: bool,
     secret: Secret,
@@ -311,7 +312,7 @@ struct Choices {
 
 fn extract(
     archive: &Path,
-    output: Option<PathBuf>,
+    output: Output,
     choices: Choices,
     secret: Secret,
     replace: Confirm,
@@ -356,7 +357,7 @@ fn extract(
     }
     // "Extract here" opens for the folder named after the archive, the safe
     // choice, and moves next to the archive once its contents allow.
-    let output = if here { None } else { output };
+    let output = if here { Output::Default } else { output };
     let kept: Vec<PathBuf>;
     let mut resumed = false;
     let opened = open(
@@ -562,7 +563,16 @@ fn test(
 ) -> Result<()> {
     send(Update::Checking);
     let (primary, paths) = session::locate(archive)?;
-    let job = match open(&primary, &paths, None, None, false, secret, counters, send)? {
+    let job = match open(
+        &primary,
+        &paths,
+        Output::Default,
+        None,
+        false,
+        secret,
+        counters,
+        send,
+    )? {
         State::Fresh(job, _) => job,
         _ => bail!(
             "this archive is partially extracted and cannot be tested. Resume or restore it first"
@@ -627,7 +637,7 @@ mod tests {
     fn lowering_the_reserve_leaves_other_requests_alone() {
         let mut extract = Request::Extract {
             archive: "/games/game.zip".into(),
-            output: None,
+            output: Output::Default,
             keep_free: 2_000_000_000,
             verify_first: false,
             keep_archive: false,
@@ -1186,27 +1196,29 @@ mod tests {
         assert_files(&out, &[(z01, &first)]);
     }
 
-    /// An archive that carries progress files of its own would resume from
-    /// what they say, so neither a set nor a single archive with one is
-    /// offered.
+    /// An archive with progress files next to it would resume from what they
+    /// say, so neither a set nor a single archive with them is offered. An
+    /// archive can't carry such files itself (it is refused), so they are
+    /// already in the destination here.
     #[test]
-    fn an_archive_inside_with_its_own_progress_files_is_not_offered() {
+    fn an_archive_with_progress_files_next_to_it_is_not_offered() {
         let dir = tempfile::tempdir().unwrap();
         let [(z01, first), (zip, last)] = split_inner();
         let inner = inner_zip();
         let journal: &[u8] = b"{}";
-        let files: [(&str, &[u8]); 5] = [
-            (z01, &first),
-            (zip, &last),
-            ("set.z01.hatchzip", journal),
-            ("foo.zip", &inner),
-            ("foo.zip.hatchzip", journal),
-        ];
-        let archive = zip_with(dir.path(), "game.zip", &files);
         let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let planted: [(&str, &[u8]); 2] =
+            [("set.z01.hatchzip", journal), ("foo.zip.hatchzip", journal)];
+        for (name, bytes) in planted {
+            std::fs::write(out.join(name), bytes).unwrap();
+        }
+        let files: [(&str, &[u8]); 3] = [(z01, &first), (zip, &last), ("foo.zip", &inner)];
+        let archive = zip_with(dir.path(), "game.zip", &files);
         let (nested, _) = offered(&extract(&archive, Some(out.clone()), false), false);
         assert!(nested.is_empty(), "{nested:?}");
         assert_files(&out, &files);
+        assert_files(&out, &planted);
     }
 
     /// The file was an archive when it was offered. If it is replaced before
@@ -1360,7 +1372,7 @@ mod tests {
     fn extract(archive: &Path, out: Option<PathBuf>, verify_first: bool) -> Request {
         Request::Extract {
             archive: archive.to_path_buf(),
-            output: out,
+            output: out.map_or(Output::Default, Output::Named),
             keep_free: 0,
             verify_first,
             keep_archive: false,
@@ -1375,7 +1387,7 @@ mod tests {
     fn keep(archive: &Path, out: Option<PathBuf>) -> Request {
         Request::Extract {
             archive: archive.to_path_buf(),
-            output: out,
+            output: out.map_or(Output::Default, Output::Named),
             keep_free: 0,
             verify_first: false,
             keep_archive: true,
@@ -1629,7 +1641,7 @@ mod tests {
         let counters = Arc::new(Counters::default());
         let request = Request::Extract {
             archive: archive.clone(),
-            output: None,
+            output: Output::Default,
             keep_free: u64::MAX / 4,
             verify_first: false,
             keep_archive: false,

@@ -52,8 +52,15 @@ pub fn check(name: &str, data: &[u8]) {
         return;
     };
     let reads = Arc::new(Reads::default());
-    let Ok(State::Fresh(job, _)) = session::open(&primary, &paths, None, None, false, None, &reads)
-    else {
+    let Ok(State::Fresh(job, _)) = session::open(
+        &primary,
+        &paths,
+        session::Output::Default,
+        None,
+        false,
+        None,
+        &reads,
+    ) else {
         return;
     };
     // The space check replays every unit's sizes and offsets, which is

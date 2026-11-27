@@ -206,6 +206,39 @@ fn a_set_whose_first_part_was_already_there_is_not_extracted() {
     assert_eq!(fs::read(out.join("set.zip")).unwrap(), inner);
 }
 
+/// An archive inside that lands next to progress files of its name would be
+/// resumed from what they say, so it is not offered, and they stay as they
+/// were. An archive can't bring them itself; these were in the folder.
+#[test]
+fn an_archive_inside_with_progress_files_next_to_it_is_not_extracted() {
+    for side in [
+        "inner.zip.hatchzip",
+        "inner.zip.hatchzip-tail",
+        "inner.zip.hatchzip-folders",
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let out = tmp.path().join("out");
+        fs::create_dir_all(&out).unwrap();
+        fs::write(out.join(side), b"{}").unwrap();
+
+        let inner = zip_bytes(&[("inside.txt", b"one")]);
+        let outer = zip_bytes(&[("inner.zip", &inner)]);
+        let archive = tmp.path().join("outer.zip");
+        fs::write(&archive, outer).unwrap();
+
+        let run = extract_nested(&archive, &out, &[]);
+        assert_ok(&run);
+        assert!(
+            String::from_utf8_lossy(&run.stdout).contains("No archives among the extracted files."),
+            "{side}: {}",
+            String::from_utf8_lossy(&run.stdout)
+        );
+        assert_eq!(fs::read(out.join("inner.zip")).unwrap(), inner, "{side}");
+        assert!(!out.join("inner").exists(), "{side}");
+        assert_eq!(fs::read(out.join(side)).unwrap(), b"{}", "{side}");
+    }
+}
+
 fn split_files() -> Files {
     let mut files = Files::new();
     files.insert("data/big.bin".into(), noise(60_000, 5));
@@ -413,21 +446,26 @@ fn a_split_zip_with_the_persons_middle_segment_is_not_extracted() {
     assert!(!out.join("set").exists(), "nothing was extracted");
 }
 
-/// An archive that carries progress files of its own would resume from what
-/// they say, so neither a split set nor a single archive with one is
-/// offered, and nothing changes.
+/// A split set or a single archive with progress files next to it would
+/// resume from what they say, so neither is offered, and nothing changes. An
+/// archive can't carry such files itself (it is refused), so they are already
+/// in the destination here.
 #[test]
-fn an_archive_inside_with_its_own_progress_files_is_not_extracted() {
+fn an_archive_with_progress_files_next_to_it_is_not_extracted() {
     let tmp = TempDir::new().unwrap();
     let parts = split_set(&split_files());
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
     let journal = (String::from("set.z01.hatchzip"), b"{}".to_vec());
-    let plain = (String::from("foo.zip"), zip_bytes(&[("foo.txt", b"foo")]));
     let plain_journal = (String::from("foo.zip.hatchzip"), b"{}".to_vec());
+    for (name, bytes) in [&journal, &plain_journal] {
+        fs::write(out.join(name), bytes).unwrap();
+    }
+    let plain = (String::from("foo.zip"), zip_bytes(&[("foo.txt", b"foo")]));
     let mut all: Vec<_> = parts.iter().collect();
-    all.extend([&journal, &plain, &plain_journal]);
+    all.push(&plain);
     let archive = tmp.path().join("outer.zip");
     fs::write(&archive, outer_of(&all)).unwrap();
-    let out = tmp.path().join("out");
 
     let run = extract_nested(&archive, &out, &[]);
     assert_ok(&run);
@@ -437,6 +475,7 @@ fn an_archive_inside_with_its_own_progress_files_is_not_extracted() {
         stdout_of(&run)
     );
     assert_parts(&out, &all);
+    assert_parts(&out, &[&journal, &plain_journal]);
     assert!(!out.join("set").exists() && !out.join("foo").exists());
 }
 

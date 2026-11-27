@@ -299,6 +299,16 @@ impl Paths {
         self.journal.exists()
     }
 
+    /// Whether any progress file is at its name: the journal, its tail or
+    /// folder list, or a split ZIP's stub. A link counts, even a dangling
+    /// one.
+    pub fn any_exist(&self) -> bool {
+        [&self.journal, &self.tail, &self.folders]
+            .into_iter()
+            .chain(&self.stub)
+            .any(|p| fs::symlink_metadata(p).is_ok())
+    }
+
     pub fn remove(&self) -> Result<()> {
         crate::chosen::forget(&self.archive);
         for p in [&self.folders, &self.tail, &self.journal] {
@@ -525,6 +535,20 @@ impl Journal {
         fsutil::write_atomic(&paths.journal, &serde_json::to_vec(self)?)
     }
 
+    /// The progress files this journal has next to the archive, for a
+    /// message that says which ones to delete.
+    pub(crate) fn side_files(&self, paths: &Paths) -> String {
+        match self.folders {
+            Some(_) => format!(
+                "{}, {} and {}",
+                paths.journal.display(),
+                paths.tail.display(),
+                paths.folders.display()
+            ),
+            None => format!("{} and {}", paths.journal.display(), paths.tail.display()),
+        }
+    }
+
     /// The journal is a file next to the archive, so anyone who could put
     /// the archive there could have written it too. Whatever it names may
     /// only be what an extraction of this archive touches: the archive's own
@@ -532,21 +556,13 @@ impl Journal {
     /// is checked by [`crate::session::check_output`].
     fn check_bound(&self, paths: &Paths) -> Result<()> {
         let foreign = || {
-            let files = match self.folders {
-                Some(_) => format!(
-                    "{}, {} and {}",
-                    paths.journal.display(),
-                    paths.tail.display(),
-                    paths.folders.display()
-                ),
-                None => format!("{} and {}", paths.journal.display(), paths.tail.display()),
-            };
             anyhow!(
                 "{} does not belong to {}, so it was not used and nothing was modified. If the \
                  archive was moved during an extraction, move it back to resume; otherwise \
-                 delete {files}",
+                 delete {}",
                 paths.journal.display(),
                 paths.archive.display(),
+                self.side_files(paths)
             )
         };
         if self.parts.is_empty() {

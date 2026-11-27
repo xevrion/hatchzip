@@ -96,30 +96,72 @@ fn a_journal_for_another_file_is_refused() {
     assert_eq!(fs::read(&archive).unwrap(), before);
 }
 
-/// A journal that sends the output elsewhere is followed only when the
-/// person names that folder again.
+/// A journal that sends the output to a folder this computer has no record
+/// of is not followed, even when the person names that folder.
 #[test]
-fn a_journal_output_elsewhere_needs_the_folder_named() {
+fn a_journal_output_elsewhere_is_refused() {
+    let tmp = TempDir::new().unwrap();
+    let archive = half_extracted(tmp.path());
+    let before = fs::read(&archive).unwrap();
+    let elsewhere = tmp.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    edit_journal(&archive, |j| j["output"] = serde_json::json!(elsewhere));
+
+    assert_refused(&extract_here(&archive, &[]), "no record of starting it");
+    assert_refused(&restore(&archive, None), "no record of starting it");
+    assert_refused(
+        &extract(&archive, &elsewhere, &[]),
+        "no record of starting it",
+    );
+    assert_refused(
+        &restore(&archive, Some(elsewhere.as_path())),
+        "no record of starting it",
+    );
+    assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    // Looking changes nothing, so it needs no folder.
+    assert_ok(&hatchzip(&["check", archive.to_str().unwrap()], &[]));
+}
+
+/// Makes the journal look like one a release before 0.1.6 wrote: those had
+/// no folder list, and recorded no default folder.
+fn as_before_records(archive: &Path) {
+    edit_journal(archive, |j| {
+        let j = j.as_object_mut().unwrap();
+        j.remove("folders");
+        j.remove("folders_left");
+        j.insert("version".into(), serde_json::json!(3));
+    });
+}
+
+/// A planted journal can claim an old format just as easily, so one without
+/// a record is refused whatever its format, the folder named or not, and
+/// the refusal offers no command that would follow it.
+#[test]
+fn a_journal_in_an_old_format_without_its_record_is_refused() {
     let tmp = TempDir::new().unwrap();
     let archive = half_extracted(tmp.path());
     let elsewhere = tmp.path().join("elsewhere");
     fs::create_dir(&elsewhere).unwrap();
     edit_journal(&archive, |j| j["output"] = serde_json::json!(elsewhere));
+    as_before_records(&archive);
+    let before = fs::read(&archive).unwrap();
 
+    let run = extract_here(&archive, &[]);
+    assert_refused(&run, "no record of starting it");
+    assert_refused(&run, "If you did not start this extraction, delete");
+    assert!(!String::from_utf8_lossy(&run.stderr).contains(" -o "));
     assert_refused(
-        &extract_here(&archive, &[]),
-        "a folder not chosen on this computer",
+        &extract(&archive, &elsewhere, &[]),
+        "no record of starting it",
     );
-    assert_refused(&restore(&archive, None), "hatchzip restore");
+    assert_refused(
+        &restore(&archive, Some(elsewhere.as_path())),
+        "no record of starting it",
+    );
     assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
-    // Looking changes nothing, so it needs no folder.
-    assert_ok(&hatchzip(&["check", archive.to_str().unwrap()], &[]));
-
-    assert_ok(&extract(&archive, &elsewhere, &[]));
-    assert_eq!(
-        fs::read(elsewhere.join("one.txt")).unwrap(),
-        files()["one.txt"]
-    );
+    assert_eq!(fs::read(&archive).unwrap(), before);
+    assert!(side_files(&archive)[0].exists());
 }
 
 /// Where a run notes the folder of the extraction it starts.
@@ -129,11 +171,11 @@ fn record(archive: &Path) -> PathBuf {
 }
 
 /// A journal this computer has no record of, such as one that came with
-/// the archive, is not used even for the default folder. A resume deletes
-/// what it finds at the paths of the entries left, and there those may be
-/// the person's own files.
+/// the archive, is not used even for the default folder, named or not. A
+/// resume deletes what it finds at the paths of the entries left, and there
+/// those may be the person's own files.
 #[test]
-fn a_journal_for_the_default_folder_without_its_record_needs_the_folder_named() {
+fn a_journal_for_the_default_folder_without_its_record_is_refused() {
     let tmp = TempDir::new().unwrap();
     let archive = tar_of(tmp.path(), "game.tar", &files());
     // Crashed under another profile, as on another computer or by a
@@ -153,20 +195,21 @@ fn a_journal_for_the_default_folder_without_its_record_needs_the_folder_named() 
     let before = fs::read(&archive).unwrap();
 
     let run = extract_here(&archive, &[]);
-    assert_refused(&run, "no record of starting that extraction");
+    assert_refused(&run, "no record of starting it");
     assert_refused(&run, "Nothing was modified");
-    assert_refused(&restore(&archive, None), "hatchzip restore");
+    assert_refused(&run, "If you did not start this extraction, delete");
+    assert_refused(&restore(&archive, None), "no record of starting it");
+    assert_refused(&extract(&archive, &out, &[]), "no record of starting it");
+    assert_refused(
+        &restore(&archive, Some(out.as_path())),
+        "no record of starting it",
+    );
     assert_eq!(
         fs::read(out.join("one.txt")).unwrap(),
         b"a file of the person's"
     );
     assert_eq!(fs::read(&archive).unwrap(), before);
-
-    // Named again, it is the person's own extraction and resumes.
-    fs::remove_file(out.join("one.txt")).unwrap();
-    assert_ok(&extract(&archive, &out, &[]));
-    assert_tree_without_dir(&out);
-    assert_consumed(&archive);
+    assert!(side_files(&archive)[0].exists());
 }
 
 /// Restore removes the record with the progress files, so it can't vouch
@@ -197,9 +240,10 @@ fn a_chosen_output_resumes_without_naming_it() {
     assert!(!record.exists(), "the record should be gone");
 }
 
-/// Elsewhere, such as on another computer, the folder has to be named.
+/// Elsewhere, such as on another computer, the journal is not followed,
+/// and the refusal does not hand out a command that would follow it.
 #[test]
-fn a_chosen_output_without_its_record_needs_the_folder_named() {
+fn a_chosen_output_without_its_record_is_refused() {
     let tmp = TempDir::new().unwrap();
     let archive = tar_of(tmp.path(), "game.tar", &files());
     let out = tmp.path().join("chosen");
@@ -221,11 +265,35 @@ fn a_chosen_output_without_its_record_needs_the_folder_named() {
     assert!(!crashed.status.success());
 
     let run = extract_here(&archive, &[]);
-    assert_refused(&run, "-o");
-    assert!(String::from_utf8_lossy(&run.stderr).contains(out.to_str().unwrap()));
-    assert_ok(&extract(&archive, &out, &[]));
-    assert_tree_without_dir(&out);
-    assert_consumed(&archive);
+    assert_refused(&run, "no record of starting it");
+    assert!(!String::from_utf8_lossy(&run.stderr).contains(" -o "));
+    assert_refused(&extract(&archive, &out, &[]), "no record of starting it");
+    assert!(side_files(&archive)[0].exists());
+}
+
+/// A resume cuts what the last run committed off the archive only once the
+/// journal, its saved index and the folder all check out. Here the saved
+/// index matches its journal but is not the archive's, so the archive can't
+/// be read, and it must stay exactly as it was.
+#[test]
+fn a_resume_that_fails_to_open_leaves_the_archive_as_it_was() {
+    let tmp = TempDir::new().unwrap();
+    let archive = zip_of(tmp.path(), "game.zip", &files());
+    // Stopped after committing a batch, before cutting it off.
+    assert!(!extract_here(&archive, &crash()).status.success());
+    let [journal, tail] = side_files(&archive);
+    let j: serde_json::Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+    let committed = j["committed_len"].as_u64().unwrap();
+    let before = fs::read(&archive).unwrap();
+    assert!(before.len() as u64 > committed, "a cut should be pending");
+
+    let zeros = vec![0u8; fs::metadata(&tail).unwrap().len() as usize];
+    fs::write(&tail, &zeros).unwrap();
+    edit_journal(&archive, |j| {
+        j["tail_crc"] = serde_json::json!(crc32fast::hash(&zeros));
+    });
+    assert!(!extract_here(&archive, &[]).status.success());
+    assert_eq!(fs::read(&archive).unwrap(), before);
 }
 
 /// A volume that is a link would have the file it points to cut off.
