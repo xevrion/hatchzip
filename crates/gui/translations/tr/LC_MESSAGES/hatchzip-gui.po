@@ -593,3 +593,19 @@ msgstr "Seçilen öğeler çıkarıldı. Arşive dokunulmadı."
 
 msgid "Extract all"
 msgstr "Tümünü çıkar"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "İçindeki arşivi çıkar"
+msgstr[1] "İçindeki {} arşivi çıkar"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "İçindeki arşivi çıkar ve sil"
+msgstr[1] "İçindeki {} arşivi çıkar ve sil"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "Yalnızca bu çalıştırmanın yazdığı dosyalarda arşiv arandı."
+
+msgid "Not started: {}."
+msgstr "Başlatılmadı: {}."
