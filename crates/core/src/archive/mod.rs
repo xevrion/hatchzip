@@ -641,7 +641,14 @@ pub fn detect(path: &Path) -> Option<&'static str> {
 /// The format `path` holds if its name claims an archive format and its
 /// signature agrees. Both matter: `.jar`, `.docx`, `.pk3` and `.apk` are
 /// ZIPs, and `.ova` and `.gem` are tars, and none of them should be offered.
+///
+/// A `.z01` that starts like the first segment of a native split ZIP is
+/// [`SPLIT_ZIP`]. That says nothing about the rest of the set, which
+/// [`crate::session::nested_offer`] checks before offering it.
 pub fn nested_kind(path: &Path) -> Option<&'static str> {
+    if storage::is_split_zip(path) {
+        return starts_like_split_zip(path).then_some(SPLIT_ZIP);
+    }
     let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
     let expected = if name.ends_with(".zip") {
         "zip"
@@ -669,6 +676,24 @@ pub fn nested_kind(path: &Path) -> Option<&'static str> {
         return None;
     };
     (detect(path)? == expected).then_some(expected)
+}
+
+/// Whether the file at `path` starts the way the split reader takes a first
+/// segment: the split marker `zip -s` writes, or the marker of a split that
+/// needed one segment, then a local header; or a local header straight
+/// away. `detect` never names such a file, as the marker is no signature.
+fn starts_like_split_zip(path: &Path) -> bool {
+    if !fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+        return false;
+    }
+    let mut head = [0u8; 8];
+    let Ok(n) = fs::File::open(path).and_then(|mut f| read_up_to(&mut f, &mut head)) else {
+        return false;
+    };
+    let head = &head[..n];
+    let local: &[u8] = b"PK\x03\x04";
+    head.starts_with(local)
+        || ((head.starts_with(b"PK\x07\x08") || head.starts_with(b"PK00")) && &head[4..] == local)
 }
 
 fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {

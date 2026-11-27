@@ -22,12 +22,31 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
     Ok((primary, paths))
 }
 
+/// The archive a finished run offers to extract for `path`, one of the files
+/// in `written`, the files it wrote: the first volume of its set, so a set
+/// is offered once whichever volume is asked about. `None` unless `path` and
+/// that first volume are archives by name and signature, and every volume of
+/// the set is in `written` ([`volumes_written`]). A native split ZIP is
+/// found by its `.z01`, whose split marker no other check names.
+pub fn nested_offer(path: &Path, written: &HashSet<PathBuf>) -> Option<PathBuf> {
+    crate::archive::nested_kind(path)?;
+    let (primary, _) = locate(path).ok()?;
+    // A `.zip` that happens to start with a local header names the set of
+    // the `.z01` next to it, which must itself look like a first segment.
+    crate::archive::nested_kind(&primary)?;
+    volumes_written(&primary, written).then_some(primary)
+}
+
 /// Whether every volume of the set whose first volume is `primary` that
 /// exists on disk is in `written`. A set that is not split has one volume.
 ///
 /// Extracting a set in place removes every volume, so an offer to extract it
 /// must not take in one the run did not write: a `.zip` next to the person's
 /// own `.z01` is the last segment of their set, not of the run's.
+///
+/// A native split ZIP also needs its `.zip`, which holds the index, and no
+/// segment the run wrote may lie past a missing one: `.z01`, `.z03` and
+/// `.zip` are a set with a hole, not a set of three.
 pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
     let mut volumes = Vec::new();
     if storage::is_split_zip(primary) {
@@ -40,8 +59,17 @@ pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
             }
             volumes.push(segment);
         }
-        if let Some(last) = storage::split_zip_last(primary) {
-            volumes.push(last);
+        match storage::split_zip_last(primary) {
+            Some(last) if last.exists() => volumes.push(last),
+            _ => return false,
+        }
+        let beyond_a_gap = written.iter().any(|w| {
+            w.parent() == primary.parent()
+                && !volumes.contains(w)
+                && storage::first_volume(w) == primary
+        });
+        if beyond_a_gap {
+            return false;
         }
     } else {
         for index in 0.. {
