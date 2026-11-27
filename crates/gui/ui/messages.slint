@@ -27,6 +27,8 @@ export global Messages {
     public function inside-count-remove(n: int, count: string) -> string { return @tr("Extract and remove {} archive inside" | "Extract and remove {} archives inside" % n, count); }
     public function inside-partial() -> string { return @tr("Only the files this run wrote were checked for archives."); }
     public function waiting-disk() -> string { return @tr("Waiting for disk"); }
+    public function drag-too-large(size: string) -> string { return @tr("Up to {} can be dragged out at once. Use Extract selected… for more.", size); }
+    public function drag-busy() -> string { return @tr("Entries dragged out of the archive are still being extracted. Try again when they are done."); }
 
     public function reading-archive(percent: int) -> string { return @tr("Reading archive… {}%", percent); }
     public function archive-kind(name: string) -> string { return @tr("{} archive", name); }

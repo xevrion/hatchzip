@@ -609,3 +609,9 @@ msgstr "Yalnızca bu çalıştırmanın yazdığı dosyalarda arşiv arandı."
 
 msgid "Not started: {}."
 msgstr "Başlatılmadı: {}."
+
+msgid "Up to {} can be dragged out at once. Use Extract selected… for more."
+msgstr "Tek seferde en fazla {} dışarı sürüklenebilir. Daha fazlası için Seçimi çıkar… seçeneğini kullanın."
+
+msgid "Entries dragged out of the archive are still being extracted. Try again when they are done."
+msgstr "Arşivden dışarı sürüklenen öğeler hâlâ çıkarılıyor. Bittiğinde tekrar deneyin."

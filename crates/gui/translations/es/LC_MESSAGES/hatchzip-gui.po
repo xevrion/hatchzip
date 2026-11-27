@@ -609,3 +609,9 @@ msgstr[1] "Extraer y eliminar los {} archivos que contiene"
 
 msgid "Only the files this run wrote were checked for archives."
 msgstr "Solo se comprobaron los archivos que escribió esta ejecución."
+
+msgid "Up to {} can be dragged out at once. Use Extract selected… for more."
+msgstr "Se pueden arrastrar hasta {} a la vez. Usa Extraer selección… para más."
+
+msgid "Entries dragged out of the archive are still being extracted. Try again when they are done."
+msgstr "Las entradas arrastradas fuera del archivo todavía se están extrayendo. Inténtalo de nuevo cuando terminen."

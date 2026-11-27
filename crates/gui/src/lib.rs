@@ -4,6 +4,7 @@
 
 pub mod args;
 pub mod backend;
+mod drag;
 mod entries;
 pub mod locale;
 pub mod main_window;

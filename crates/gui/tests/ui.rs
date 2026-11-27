@@ -9,7 +9,7 @@
 //!
 //! The backend can be installed once per process, so this is one test.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -794,6 +794,67 @@ fn selection_flow(scheme: ColorScheme, tag: &str) {
     inside_window(&ui, "Extract all");
     shot(ui.window(), &format!("{tag}-21-selection"));
 
+    // Dragging a chosen row out takes the whole selection, and any other
+    // row goes alone. The system's drag can't run here, and Linux has none,
+    // so the window is told it has one and the paths are watched instead.
+    let dragged = Rc::new(RefCell::new(Vec::<Vec<String>>::new()));
+    let d = dragged.clone();
+    main_window::watch_drags(move |mut paths| {
+        paths.sort();
+        d.borrow_mut().push(paths);
+    });
+    ui.set_drag_out_available(true);
+    let open = inside_window(&ui, "Northwind/bin").accessible_expanded();
+    for label in ["Northwind/README.txt", "Northwind/bin"] {
+        drag_row(&ui, label);
+        let w = ui.as_weak();
+        wait_until("the drag to end", move || w.unwrap().get_drag_row() < 0);
+    }
+    assert_eq!(
+        *dragged.borrow(),
+        [
+            vec![
+                "Northwind/README.txt".to_string(),
+                "Northwind/data".to_string()
+            ],
+            vec!["Northwind/bin".to_string()],
+        ]
+    );
+    assert_eq!(
+        ui.get_selection_count(),
+        2,
+        "a drag's release chooses nothing"
+    );
+    assert_eq!(
+        inside_window(&ui, "Northwind/bin").accessible_expanded(),
+        open,
+        "nor opens or closes the folder it started on"
+    );
+    // A move within the threshold is still a click.
+    let row = inside_window(&ui, "Northwind/bin");
+    let (p, s) = (row.absolute_position(), row.size());
+    let at = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    let near = slint::LogicalPosition::new(at.x + 3.0, at.y);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position: at });
+    ui.window().dispatch_event(WindowEvent::PointerPressed {
+        position: at,
+        button: PointerEventButton::Left,
+    });
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position: near });
+    ui.window().dispatch_event(WindowEvent::PointerReleased {
+        position: near,
+        button: PointerEventButton::Left,
+    });
+    assert_eq!(dragged.borrow().len(), 2, "no drag");
+    assert_eq!(
+        inside_window(&ui, "Northwind/bin").accessible_expanded(),
+        open.map(|o| !o)
+    );
+    click_control(&ui, "Northwind/bin");
+    ui.set_drag_out_available(false);
+
     let picked = dir.path().join("picked");
     let answer = picked.clone();
     main_window::answer_folder_picker(move || Some(answer.clone()));
@@ -1413,6 +1474,26 @@ fn inside_window(ui: &MainWindow, label: &str) -> ElementHandle {
         "{label}: position {p:?}, size {s:?}, window {window:?}"
     );
     element
+}
+
+/// Presses on the row, moves well past the drag threshold and releases.
+fn drag_row(ui: &MainWindow, label: &str) {
+    let row = inside_window(ui, label);
+    let p = row.absolute_position();
+    let s = row.size();
+    let from = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+    let to = slint::LogicalPosition::new(from.x + 30.0, from.y);
+    let window = ui.window();
+    window.dispatch_event(WindowEvent::PointerMoved { position: from });
+    window.dispatch_event(WindowEvent::PointerPressed {
+        position: from,
+        button: PointerEventButton::Left,
+    });
+    window.dispatch_event(WindowEvent::PointerMoved { position: to });
+    window.dispatch_event(WindowEvent::PointerReleased {
+        position: to,
+        button: PointerEventButton::Left,
+    });
 }
 
 fn click_control(ui: &MainWindow, label: &str) {

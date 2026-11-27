@@ -52,6 +52,10 @@ impl CustomApplicationHandler for Handler {
         // winit 0.30 reports dropped files on Windows, macOS and X11 only;
         // on Wayland nothing arrives here and the Open button is the way in.
         match event {
+            // Entries dragged out of the tree and back onto the window, from
+            // the folder they were extracted to; not an archive to open.
+            WindowEvent::DroppedFile(path) | WindowEvent::HoveredFile(path)
+                if crate::drag::is_ours(path) => {}
             WindowEvent::DroppedFile(path) => {
                 if let Some(f) = &*self.0.on_hover.borrow() {
                     f(false);

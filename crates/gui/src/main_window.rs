@@ -12,10 +12,12 @@ use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::engine::Job;
 use hatchzip_core::human;
 use hatchzip_core::session::{self, State, display_name};
+use slint::platform::{PointerEventButton, WindowEvent};
 use slint::winit_030::WinitWindowAccessor;
-use slint::{CloseRequestResponse, ComponentHandle, ModelRc, Timer, TimerMode};
+use slint::{CloseRequestResponse, ComponentHandle, LogicalPosition, ModelRc, Timer, TimerMode};
 
 use crate::backend::Drops;
+use crate::drag::{self, Drag, Dragged};
 use crate::entries::{self, Entries, EntriesModel};
 use crate::runner::Runner;
 use crate::settings::{self, AfterExtracting, Appearance, Destination, Settings};
@@ -24,8 +26,8 @@ use crate::task::Task;
 use crate::text::{self, gb_text, parse_gb, plan_view};
 use crate::work::{Request, sentence};
 use crate::{
-    AboutWindow, MainWindow, Messages, Mode, Palette, PlanView, Screen, SettingsWindow, TaskView,
-    Theme, locale, platform, shell,
+    AboutWindow, MainWindow, Messages, Mode, Palette, Phase, PlanView, Screen, SettingsWindow,
+    TaskView, Theme, locale, platform, shell,
 };
 
 const REPO: &str = "https://github.com/xevrion/hatchzip";
@@ -202,17 +204,58 @@ struct App {
 
 /// Answers the folder picker of "Extract selected…" in tests.
 type FolderAnswer = Box<dyn Fn() -> Option<PathBuf>>;
+/// Takes the paths of a drag out of the tree in tests.
+type DragWatch = Box<dyn Fn(Vec<String>)>;
 
 thread_local! {
     static APP: RefCell<Option<Rc<App>>> = const { RefCell::new(None) };
     /// Answers the folder picker of "Extract selected…" instead of a dialog.
     static PICKED: RefCell<Option<FolderAnswer>> = const { RefCell::new(None) };
+    /// Sees a drag out of the tree instead of the system.
+    static DRAGGED: RefCell<Option<DragWatch>> = const { RefCell::new(None) };
 }
 
 /// Makes "Extract selected…" take its folder from `answer` instead of
 /// asking with a dialog, which a test without a display can't answer.
 pub fn answer_folder_picker(answer: impl Fn() -> Option<PathBuf> + 'static) {
     PICKED.with(|p| *p.borrow_mut() = Some(Box::new(answer)));
+}
+
+/// Hands the paths of every drag out of the tree to `watch` instead of
+/// starting one with the system, which a test without a display can't
+/// drop anywhere.
+pub fn watch_drags(watch: impl Fn(Vec<String>) + 'static) {
+    DRAGGED.with(|d| *d.borrow_mut() = Some(Box::new(watch)));
+}
+
+/// The system's drag of entries out of the tree is over. It kept the
+/// button's release from the window, which still holds the press, so the
+/// release is given back where it can't click anything.
+pub(crate) fn drag_ended() {
+    post(|app| {
+        let ui = app.ui();
+        ui.set_drag_row(-1);
+        ui.window().dispatch_event(WindowEvent::PointerReleased {
+            position: LogicalPosition::new(-1.0, -1.0),
+            button: PointerEventButton::Left,
+        });
+    });
+}
+
+/// Extracting entries dragged out of the tree failed; from any thread.
+#[allow(dead_code)] // Linux starts no drag, so nothing fails there.
+pub(crate) fn drag_failed(error: anyhow::Error) {
+    post(move |app| {
+        let ui = app.ui();
+        let text = if error.is::<drag::NoSpace>() {
+            ui.global::<Messages>()
+                .invoke_task_heading(Phase::NoSpace, false, false, "".into())
+                .to_string()
+        } else {
+            sentence(&format!("{error:#}"))
+        };
+        app.notify(&text, true);
+    });
 }
 
 /// Runs `f` on the UI thread with the app, from any thread.
@@ -233,8 +276,12 @@ pub fn run(archive: Option<PathBuf>, drops: Rc<Drops>) -> Result<()> {
     // Opening only reads, so it needn't wait for the first frame like a
     // task does; this only arms the switch to software drawing.
     crate::backend::when_drawn(ui.window(), || {});
-    ui.run()?;
+    std::thread::spawn(drag::clean_stale);
+    let ran = ui.run();
     APP.with(|a| a.borrow_mut().take());
+    // The file manager copies dropped entries from there; it is done by now.
+    drag::cleanup();
+    ran?;
     Ok(())
 }
 
@@ -255,6 +302,7 @@ pub fn build(
     ui.set_remove_archive(!settings.keep_archive);
     ui.set_supports_rar(hatchzip_core::archive::RAR_SUPPORTED);
     ui.set_shell_menu_available(platform::SHELL_MENU);
+    ui.set_drag_out_available(platform::DRAG_OUT);
     show_shell_menu_label(&ui);
     // Left alone when it follows the system, so the style's own binding to
     // the system's setting stays in place.
@@ -417,6 +465,8 @@ fn wire(ui: &MainWindow, app: &Rc<App>) {
                 .invoke_selection_count(text::count(count).into(), plural_count(count)),
         );
     });
+    let a = app.clone();
+    ui.on_drag_entries(move |row| a.drag_out(row));
     let a = app.clone();
     ui.on_extract_selected(move || a.extract_selected());
     let a = app.clone();
@@ -1106,6 +1156,9 @@ impl App {
         let Some(archive) = self.archive.borrow().clone() else {
             return;
         };
+        if self.wait_for_drop() {
+            return;
+        }
         self.runner.clear_queue();
         let ui = self.ui();
         let output = self.output.borrow().clone();
@@ -1191,6 +1244,7 @@ impl App {
         if self.runner.running()
             || self.mode.get() != Mode::Fresh
             || self.archive.borrow().as_deref() != Some(archive)
+            || self.wait_for_drop()
         {
             return;
         }
@@ -1208,6 +1262,79 @@ impl App {
         };
         let task = Task::extract(&self.name.borrow(), Some(&output), true).selecting();
         self.start_extraction(task, request);
+    }
+
+    /// Entries dragged out are still being extracted from the archive, which
+    /// a run must not change or journal under them: says so and returns true.
+    fn wait_for_drop(&self) -> bool {
+        if !drag::busy() {
+            return false;
+        }
+        let text = self.ui().global::<Messages>().invoke_drag_busy();
+        self.notify(&text, true);
+        true
+    }
+
+    /// The press on `row` moved far enough to be a drag: hands the rows it
+    /// takes to the system, to drop in a folder. Only for an archive nothing
+    /// was extracted from yet, while nothing runs, like "Extract selected…".
+    fn drag_out(&self, row: i32) {
+        if !platform::DRAG_OUT && DRAGGED.with(|d| d.borrow().is_none()) {
+            return;
+        }
+        if self.runner.running() || self.mode.get() != Mode::Fresh {
+            return;
+        }
+        let Some(archive) = self.archive.borrow().clone() else {
+            return;
+        };
+        let picked = match (self.entries.borrow().as_ref(), usize::try_from(row)) {
+            (Some(tree), Ok(index)) => tree.dragged(index),
+            _ => None,
+        };
+        let Some((paths, size, chosen)) = picked else {
+            return;
+        };
+        let ui = self.ui();
+        if let Some(limit) = platform::DRAG_LIMIT
+            && size > limit
+        {
+            let text = ui
+                .global::<Messages>()
+                .invoke_drag_too_large(human(limit).into());
+            self.notify(&text, true);
+            return;
+        }
+        ui.set_drag_chosen(chosen);
+        ui.set_drag_row(row);
+        let watched = DRAGGED.with(|d| match d.borrow().as_ref() {
+            Some(watch) => {
+                watch(paths.iter().map(|(p, _)| p.clone()).collect());
+                true
+            }
+            None => false,
+        });
+        if watched {
+            drag_ended();
+            return;
+        }
+        let drag = Drag {
+            source: drag::Source {
+                archive,
+                password: self.password.borrow().clone(),
+                keep_free: self.keep_free.get(),
+            },
+            entries: paths
+                .into_iter()
+                .map(|(path, dir)| Dragged {
+                    path: PathBuf::from(path),
+                    dir,
+                })
+                .collect(),
+        };
+        if !platform::drag_out(ui.window(), drag) {
+            drag_ended();
+        }
     }
 
     /// Queues the archives this run left in the output, each into its own
