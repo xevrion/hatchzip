@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use hatchzip_core::human;
 
 use crate::text::{Rate, count, plan_view, reading_text};
-use crate::work::{Counters, Update};
+use crate::work::{Counters, Update, Written};
 use crate::{Phase, PlanView, TaskView};
 
 /// Where this archive sits when several were queued from one right-click.
@@ -53,6 +53,9 @@ pub struct Task {
     pub nested: Vec<PathBuf>,
     /// The run resumed, so `nested` covers only the entries it still had.
     pub nested_partial: bool,
+    /// The files the run wrote, which each job for `nested` checks its
+    /// archive against again.
+    pub written: Written,
     /// The person closed the password or replace prompt, so the run never
     /// started.
     pub cancelled: bool,
@@ -144,6 +147,7 @@ impl Task {
             warning: None,
             nested: Vec::new(),
             nested_partial: false,
+            written: Written::default(),
             cancelled: false,
             lower_reserve: None,
             queue: Queue::Single,
@@ -254,6 +258,7 @@ impl Task {
                 self.space = None;
                 self.nested = Vec::new();
                 self.nested_partial = false;
+                self.written = Written::default();
                 self.cancelled = false;
                 v.fraction = 0.0;
                 v.amounts = "".into();
@@ -315,6 +320,7 @@ impl Task {
                 warning,
                 nested,
                 nested_partial,
+                written,
             } => {
                 self.keep = keep;
                 // A right-click resume of a selection learns it only here.
@@ -322,6 +328,7 @@ impl Task {
                 self.warning = warning;
                 self.nested = nested;
                 self.nested_partial = nested_partial;
+                self.written = written;
                 v.phase = Phase::Done;
                 v.fraction = 1.0;
                 v.rate = "".into();
@@ -544,6 +551,7 @@ mod tests {
             warning: None,
             nested: Vec::new(),
             nested_partial: false,
+            written: Written::default(),
         });
         assert_eq!(t.view.phase, Phase::Done);
         assert_eq!(t.view.heading, "Extraction complete");
@@ -583,6 +591,7 @@ mod tests {
             warning: None,
             nested: Vec::new(),
             nested_partial: false,
+            written: Written::default(),
         });
         assert_eq!(
             t.view.message,
@@ -823,6 +832,7 @@ mod tests {
                 warning: None,
                 nested: Vec::new(),
                 nested_partial: false,
+                written: Written::default(),
             });
             assert_eq!(task.keeps_archive(), keep);
         }

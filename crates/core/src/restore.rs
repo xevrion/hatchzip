@@ -67,9 +67,8 @@ pub struct Restored {
 }
 
 /// Restores the half-extracted archive `archive` names (any volume of a
-/// split set works). `output` is the folder the extraction was started
-/// with, needed only when that was not the default one (see
-/// [`session::check_output`]).
+/// split set works). `output`, if given, must be the folder the extraction
+/// was started with (see [`session::check_output`]).
 pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
     let (primary, paths) = session::locate(archive)?;
     if !paths.exists() {
@@ -79,7 +78,11 @@ pub fn restore(archive: &Path, output: Option<&Path>) -> Result<Restored> {
         );
     }
     let (mut journal, tail) = Journal::load(&paths)?;
-    session::check_output(&journal, &primary, output, "restore")?;
+    // `-o` is the only way to give a folder here, so one given is named.
+    let given = output.map_or(session::Output::Default, |o| {
+        session::Output::Named(o.to_path_buf())
+    });
+    session::check_output(&journal, &primary, &given)?;
     session::check_recorded_case(&journal)?;
     if journal.keep {
         return discard(&mut journal, tail, &paths);

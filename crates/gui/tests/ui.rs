@@ -1123,9 +1123,16 @@ fn give_back_flow(scheme: ColorScheme, tag: &str) {
     // exists, so the archive is half extracted.
     let (primary, paths) = session::locate(&archive).unwrap();
     let reads = Default::default();
-    let State::Fresh(job, out) =
-        session::open(&primary, &paths, None, None, true, None, &reads).unwrap()
-    else {
+    let State::Fresh(job, out) = session::open(
+        &primary,
+        &paths,
+        session::Output::Default,
+        None,
+        true,
+        None,
+        &reads,
+    )
+    .unwrap() else {
         panic!("a new archive opens fresh");
     };
     session::begin(&job, &paths, out, false, None).unwrap();

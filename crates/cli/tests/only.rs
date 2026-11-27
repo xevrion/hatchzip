@@ -171,7 +171,7 @@ fn the_space_plan_counts_only_the_selection() {
     let State::Fresh(job, out) = session::open(
         &primary,
         &paths,
-        None,
+        session::Output::Default,
         Some(chosen.as_slice()),
         false,
         None,
@@ -230,7 +230,7 @@ fn a_selection_without_keeping_the_archive_is_refused() {
     let State::Fresh(job, out) = session::open(
         &primary,
         &paths,
-        None,
+        session::Output::Default,
         Some(chosen.as_slice()),
         true,
         None,

@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::fsutil;
@@ -60,17 +61,32 @@ fn read(archive: &Path) -> Option<(PathBuf, Record)> {
     fsutil::same_path(&record.archive, archive).then_some((file, record))
 }
 
-/// Notes that the person chose `output` for `archive`. If it can't be
-/// noted, resuming the extraction just needs the folder named again.
-pub(crate) fn remember(archive: &Path, output: &Path) {
-    let Some(file) = file(archive) else { return };
+/// Notes that the person chose `output` for `archive`. An extraction that
+/// can't be noted is not started: nothing could tell its journal from one
+/// planted next to the archive, so it could never be resumed.
+pub(crate) fn remember(archive: &Path, output: &Path) -> Result<()> {
+    let file = file(archive).ok_or_else(|| {
+        anyhow!(
+            "HatchZip cannot find your profile folder to record this extraction in, which it \
+             needs to resume it. Nothing was modified"
+        )
+    })?;
     let record = Record {
         archive: archive.to_path_buf(),
         output: output.to_path_buf(),
     };
-    if let (Some(parent), Ok(bytes)) = (file.parent(), serde_json::to_vec(&record)) {
-        let _ = fs::create_dir_all(parent).map(|_| fsutil::write_atomic(&file, &bytes));
-    }
+    let bytes = serde_json::to_vec(&record)?;
+    let parent = file.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)
+        .map_err(anyhow::Error::from)
+        .and_then(|()| fsutil::write_atomic(&file, &bytes))
+        .with_context(|| {
+            format!(
+                "recording this extraction in {}, which HatchZip needs to resume it. Nothing \
+                 was modified",
+                parent.display()
+            )
+        })
 }
 
 pub(crate) fn chose(archive: &Path, output: &Path) -> bool {

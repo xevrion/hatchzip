@@ -81,6 +81,8 @@ fn open(
     let reads = Arc::new(Reads::default());
     let mut reading = Some(Reading::show(&reads));
     let mut tries = 0;
+    // A folder given here was typed with `-o`.
+    let output = output.map_or(session::Output::Default, session::Output::Named);
     let opened = session::open_encrypted_noting(
         &primary,
         &paths,
@@ -1006,23 +1008,17 @@ fn extract_all(target: Target, mut opts: Options) -> Result<u8> {
         let mut nested: Vec<PathBuf> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for path in nested_candidates {
-            if hatchzip_core::archive::nested_kind(&path).is_none() {
-                continue;
-            }
-            // A split set counts once, by its first volume, and the parent
-            // archives are never nested.
-            let Ok((primary, _)) = locate(&path) else {
+            // Extracting a set in place removes every volume, so each one
+            // must be a file this run wrote, never one the person had.
+            let Some(primary) = hatchzip_core::session::nested_offer(&path, &written) else {
                 continue;
             };
+            // A split set counts once, by its first volume, and the parent
+            // archives are never nested.
             if parents.contains(&primary) || !seen.insert(primary.clone()) {
                 continue;
             }
-            // Extracting a set in place removes every volume, so each one
-            // must be a file this run wrote, never one the person had.
-            if !hatchzip_core::session::volumes_written(&primary, &written) {
-                continue;
-            }
-            nested.push(path);
+            nested.push(primary);
         }
         if nested.is_empty() {
             say!("No archives among the extracted files.");

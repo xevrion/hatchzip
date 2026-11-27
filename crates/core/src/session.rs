@@ -22,12 +22,52 @@ pub fn locate(archive: &Path) -> Result<(PathBuf, Paths)> {
     Ok((primary, paths))
 }
 
+/// The archive a finished run offers to extract for `path`, one of the files
+/// in `written`, the files it wrote: the first volume of its set, so a set
+/// is offered once whichever volume is asked about. `None` unless `path` and
+/// that first volume are archives by name and signature, and every volume of
+/// the set is in `written` ([`volumes_written`]). A native split ZIP is
+/// found by its `.z01`, whose split marker no other check names.
+///
+/// An archive with progress files next to it (a journal, its tail or
+/// folder list, a split ZIP's stub) is never offered, even when the run
+/// wrote them: a resume would follow what they say, not what the person
+/// was offered. A split ZIP is also opened read only, so a set whose index
+/// names more segments than are there is not offered.
+pub fn nested_offer(path: &Path, written: &HashSet<PathBuf>) -> Option<PathBuf> {
+    crate::archive::nested_kind(path)?;
+    let (primary, paths) = locate(path).ok()?;
+    // A `.zip` that happens to start with a local header names the set of
+    // the `.z01` next to it, which must itself look like a first segment.
+    let kind = crate::archive::nested_kind(&primary)?;
+    let side_files = [&paths.journal, &paths.tail, &paths.folders]
+        .into_iter()
+        .chain(&paths.stub)
+        .any(|p| fs::symlink_metadata(p).is_ok());
+    if side_files || !volumes_written(&primary, written) {
+        return None;
+    }
+    // Opening reads only the index and the local headers, and checks the
+    // segment count against the index. Other formats are not opened here:
+    // a compressed tar is decompressed in full to list it.
+    if kind == crate::archive::SPLIT_ZIP {
+        Job::open(&primary, false, None, Arc::default()).ok()?;
+    }
+    Some(primary)
+}
+
 /// Whether every volume of the set whose first volume is `primary` that
 /// exists on disk is in `written`. A set that is not split has one volume.
 ///
 /// Extracting a set in place removes every volume, so an offer to extract it
 /// must not take in one the run did not write: a `.zip` next to the person's
 /// own `.z01` is the last segment of their set, not of the run's.
+///
+/// A native split ZIP also needs its `.zip`, which holds the index. A
+/// segment in `written` past a missing one, such as a `.z03` without the
+/// `.z02`, also makes this false. That only catches the gaps the run's own
+/// files show: a set missing its last segments before the `.zip` passes,
+/// and only opening it, which checks the index, finds that.
 pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
     let mut volumes = Vec::new();
     if storage::is_split_zip(primary) {
@@ -40,8 +80,17 @@ pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
             }
             volumes.push(segment);
         }
-        if let Some(last) = storage::split_zip_last(primary) {
-            volumes.push(last);
+        match storage::split_zip_last(primary) {
+            Some(last) if last.exists() => volumes.push(last),
+            _ => return false,
+        }
+        let beyond_a_gap = written.iter().any(|w| {
+            w.parent() == primary.parent()
+                && !volumes.contains(w)
+                && storage::first_volume(w) == primary
+        });
+        if beyond_a_gap {
+            return false;
         }
     } else {
         for index in 0.. {
@@ -59,6 +108,32 @@ pub fn volumes_written(primary: &Path, written: &HashSet<PathBuf>) -> bool {
         .filter(|v| v.exists())
         .all(|v| written.contains(v))
         && written.contains(primary)
+}
+
+/// Where an extraction goes, and who said so. A half-extracted archive's
+/// progress files lie next to it, where whoever supplied the archive could
+/// have put them, so a resume follows them only into a folder this
+/// computer recorded starting that extraction in (see [`check_output`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Output {
+    /// The folder next to the archive ([`default_output`]), or for a
+    /// half-extracted archive the folder its journal records.
+    Default,
+    /// A folder HatchZip worked out itself, such as the one "Extract to
+    /// folder" names after the archive. A resume goes there only when the
+    /// journal says so too, and is trusted as [`Output::Default`] is.
+    Computed(PathBuf),
+    /// A folder the person named for this run, typed or picked.
+    Named(PathBuf),
+}
+
+impl Output {
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Default => None,
+            Self::Computed(p) | Self::Named(p) => Some(p),
+        }
+    }
 }
 
 // Made once per open and taken apart at once, so the size of the largest
@@ -105,7 +180,7 @@ pub fn case_sensitive(dir: &Path) -> bool {
 pub fn open(
     primary: &Path,
     paths: &Paths,
-    output: Option<PathBuf>,
+    output: Output,
     only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<&str>,
@@ -120,8 +195,8 @@ pub fn open(
             journal.check_folders(paths)?;
         }
         // Only a writable open deletes or writes anything in the folder.
-        if writable || output.is_some() {
-            check_output(&journal, primary, output.as_deref(), "extract")?;
+        if writable || output != Output::Default {
+            check_output(&journal, primary, &output)?;
         }
         if writable {
             check_recorded_case(&journal)?;
@@ -170,8 +245,15 @@ pub fn open(
         job.select(given)?;
     }
     let output = match output {
-        Some(o) => std::path::absolute(o)?,
-        None => {
+        Output::Named(o) => std::path::absolute(o)?,
+        // A folder worked out from the archive's name, like the default
+        // one, may be a link the archive's supplier put there.
+        Output::Computed(o) => {
+            let output = std::path::absolute(o)?;
+            refuse_linked_default(&output)?;
+            output
+        }
+        Output::Default => {
             let output = default_output(primary);
             refuse_linked_default(&output)?;
             output
@@ -238,56 +320,44 @@ fn check_same_selection(journal: &Journal, given: &[PathBuf]) -> Result<()> {
 
 /// The journal lies next to the archive, where anyone who supplied the
 /// archive could have put one, so it is used only for an extraction this
-/// computer recorded starting into that folder (see [`crate::chosen`]), or
-/// when the person names the folder again (`given`). A resume deletes what
-/// it finds at the paths of the entries left, so a planted journal could
-/// otherwise have it delete and write files anywhere, and even in the
-/// default folder it would replace the person's own files there.
-/// `command` is the one to run again, with `-o`.
-pub fn check_output(
-    journal: &Journal,
-    primary: &Path,
-    given: Option<&Path>,
-    command: &str,
-) -> Result<()> {
+/// computer recorded starting into that folder (see [`crate::chosen`]). A
+/// resume deletes what it finds at the paths of the entries left and cuts
+/// the archive to what the journal says, so a planted journal could
+/// otherwise destroy the archive and replace the person's own files in the
+/// folder it names. A folder given now must also be the journal's, and one
+/// HatchZip worked out ([`Output::Computed`]) vouches for nothing: a
+/// planted journal can name it as easily as the app does. Without the
+/// record the journal is never followed, whatever its format says: a
+/// planted one can claim to come from a release that kept no record.
+pub fn check_output(journal: &Journal, primary: &Path, given: &Output) -> Result<()> {
     let default = default_output(primary);
     let in_default = fsutil::same_path(&default, &journal.output);
-    match given {
-        Some(o) => {
-            if !fsutil::same_path(&std::path::absolute(o)?, &journal.output) {
-                bail!(
-                    "this archive is already partially extracted to {}. Complete or restore that \
-                     extraction first",
-                    journal.output.display()
-                );
-            }
-        }
-        None if crate::chosen::chose(primary, &journal.output) => {
-            if in_default {
-                refuse_linked_default(&default)?;
-            }
-        }
-        // Releases before 0.1.6 did not record the default folder.
-        None if in_default => bail!(
-            "{} was partially extracted to {}, but this computer has no record of starting that \
-             extraction. If you started it, continue it by naming the folder again: hatchzip \
-             {command} \"{}\" -o \"{}\". Nothing was modified",
-            primary.display(),
-            journal.output.display(),
-            primary.display(),
+    if let Some(o) = given.path()
+        && !fsutil::same_path(&std::path::absolute(o)?, &journal.output)
+    {
+        bail!(
+            "this archive is already partially extracted to {}. Complete or restore that \
+             extraction first",
             journal.output.display()
-        ),
-        None => bail!(
-            "{} was partially extracted to {}, a folder not chosen on this computer. If you \
-             started that extraction, continue it by naming the folder again: hatchzip {command} \
-             \"{}\" -o \"{}\". Nothing was modified",
-            primary.display(),
-            journal.output.display(),
-            primary.display(),
-            journal.output.display()
-        ),
+        );
     }
-    Ok(())
+    let named = matches!(given, Output::Named(_));
+    if crate::chosen::chose(primary, &journal.output) {
+        // A folder the person names is theirs to choose, link or not.
+        if in_default && !named {
+            refuse_linked_default(&default)?;
+        }
+        return Ok(());
+    }
+    let paths = Paths::for_archive(primary);
+    bail!(
+        "{} has progress files next to it for an extraction to {}, but HatchZip on this computer \
+         has no record of starting it, so they were not used. If you did not start this \
+         extraction, delete {}. Nothing was modified",
+        primary.display(),
+        journal.output.display(),
+        journal.side_files(&paths)
+    )
 }
 
 /// A link at the default output folder, next to the archive, would send the
@@ -357,7 +427,7 @@ fn check_path_lengths(job: &Job, out: &Path) -> Result<()> {
 pub fn open_encrypted(
     primary: &Path,
     paths: &Paths,
-    output: Option<PathBuf>,
+    output: Output,
     only: Option<&[PathBuf]>,
     writable: bool,
     password: Option<String>,
@@ -384,7 +454,7 @@ pub fn open_encrypted(
 pub fn open_encrypted_noting(
     primary: &Path,
     paths: &Paths,
-    output: Option<PathBuf>,
+    output: Output,
     only: Option<&[PathBuf]>,
     writable: bool,
     mut password: Option<String>,
@@ -866,9 +936,10 @@ pub fn begin(
         bail!("{why}. It can be extracted while keeping the archive");
     }
     crate::sfv::check_volumes(&job.storage)?;
-    // The default folder too: a resume trusts the journal only when this
-    // computer recorded starting the extraction (see [`check_output`]).
-    crate::chosen::remember(&paths.archive, &output);
+    // Whatever the folder: a resume trusts the journal only when this
+    // computer recorded starting the extraction (see [`check_output`]), so
+    // a run that can't be recorded could never be resumed.
+    crate::chosen::remember(&paths.archive, &output)?;
     // A choice for a file that has gone since it was made has nothing to
     // keep.
     let only_found = |paths: &[PathBuf]| -> Vec<PathBuf> {
@@ -1106,7 +1177,7 @@ mod tests {
         let (primary, paths) = locate(&archive).unwrap();
         let reads = Arc::default();
         let State::Fresh(job, out) =
-            open(&primary, &paths, None, None, true, None, &reads).unwrap()
+            open(&primary, &paths, Output::Default, None, true, None, &reads).unwrap()
         else {
             panic!("a new archive opens fresh");
         };
