@@ -41,6 +41,10 @@ struct Node {
     children: Vec<usize>,
 }
 
+/// What a drag out of the tree takes: each path with whether it is a
+/// folder, the size of it all, and whether it is the selection.
+pub type DragRows = (Vec<(String, bool)>, u64, bool);
+
 pub struct Entries {
     nodes: Vec<Node>,
     visible: Vec<(usize, i32)>,
@@ -263,7 +267,7 @@ impl Entries {
     /// row is part of it, as file managers do, and the row alone otherwise.
     /// Each path comes with whether it is a folder, then the size of it all
     /// and whether it was the selection.
-    pub fn dragged(&self, row: usize) -> Option<(Vec<(String, bool)>, u64, bool)> {
+    pub fn dragged(&self, row: usize) -> Option<DragRows> {
         let &(node, _) = self.visible.get(row)?;
         let chosen = self.nodes[node].selected || self.inside_chosen(node);
         let picked: Vec<usize> = if chosen {
@@ -380,7 +384,7 @@ impl EntriesModel {
     }
 
     /// See [`Entries::dragged`].
-    pub fn dragged(&self, row: usize) -> Option<(Vec<(String, bool)>, u64, bool)> {
+    pub fn dragged(&self, row: usize) -> Option<DragRows> {
         self.tree.borrow().dragged(row)
     }
 

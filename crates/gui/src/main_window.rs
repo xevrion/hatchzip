@@ -243,6 +243,7 @@ pub(crate) fn drag_ended() {
 }
 
 /// Extracting entries dragged out of the tree failed; from any thread.
+#[allow(dead_code)] // Linux starts no drag, so nothing fails there.
 pub(crate) fn drag_failed(error: anyhow::Error) {
     post(move |app| {
         let ui = app.ui();
