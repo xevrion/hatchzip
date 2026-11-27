@@ -291,6 +291,17 @@ fn list_and_test_read_a_tar_gz_without_changing_it() {
 }
 
 #[test]
+fn list_json_supports_tar_gz() {
+    let tmp = TempDir::new().unwrap();
+    let archive = build(tmp.path(), &sample_files());
+    let before = fs::read(&archive).unwrap();
+
+    assert_json_listing(&archive, &archive);
+
+    assert_eq!(fs::read(&archive).unwrap(), before);
+}
+
+#[test]
 fn a_tar_gz_survives_a_crash_at_every_step_of_a_resume_point() {
     let files = files();
     crash_at_every_point(|d| build(d, &files), &files, &[0, 4, 9]);
