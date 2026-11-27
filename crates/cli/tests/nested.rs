@@ -354,10 +354,10 @@ fn a_split_zip_missing_a_middle_segment_is_not_extracted() {
 }
 
 /// A `.z01` and a `.zip` look like a whole set by name, but the index says
-/// there are more segments. The nested run refuses it before it changes
-/// anything.
+/// there are more segments. Opening it finds that, so it is not offered,
+/// and no progress file or folder is left behind.
 #[test]
-fn a_split_zip_missing_segments_its_index_names_is_refused_intact() {
+fn a_split_zip_missing_segments_its_index_names_is_not_extracted() {
     let tmp = TempDir::new().unwrap();
     let parts = split_set(&split_files());
     let ends = [&parts[0], &parts[parts.len() - 1]];
@@ -366,16 +366,122 @@ fn a_split_zip_missing_segments_its_index_names_is_refused_intact() {
     let out = tmp.path().join("out");
 
     let run = extract_nested(&archive, &out, &[]);
-    assert!(!run.status.success(), "{}", stdout_of(&run));
-    let said = format!(
-        "{}{}",
-        stdout_of(&run),
-        String::from_utf8_lossy(&run.stderr)
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
     );
-    assert!(said.contains("is missing"), "{said}");
     assert_parts(&out, &ends);
+    for left in [
+        "set.z01.hatchzip",
+        "set.z01.hatchzip-tail",
+        "set.z01.hatchzip-folders",
+        "set.zip.hatchzip",
+        "set",
+    ] {
+        assert!(!out.join(left).exists(), "{left} is left");
+    }
 }
 
+/// The person's own `.z02` between the run's `.z01` and `.zip` makes the
+/// set partly theirs, so it is not offered.
+#[test]
+fn a_split_zip_with_the_persons_middle_segment_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join(&parts[1].0), &parts[1].1).unwrap();
+    let theirs: Vec<_> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 1)
+        .map(|(_, p)| p)
+        .collect();
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&theirs)).unwrap();
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &parts.iter().collect::<Vec<_>>());
+    assert!(!out.join("set").exists(), "nothing was extracted");
+}
+
+/// An archive that carries progress files of its own would resume from what
+/// they say, so neither a split set nor a single archive with one is
+/// offered, and nothing changes.
+#[test]
+fn an_archive_inside_with_its_own_progress_files_is_not_extracted() {
+    let tmp = TempDir::new().unwrap();
+    let parts = split_set(&split_files());
+    let journal = (String::from("set.z01.hatchzip"), b"{}".to_vec());
+    let plain = (String::from("foo.zip"), zip_bytes(&[("foo.txt", b"foo")]));
+    let plain_journal = (String::from("foo.zip.hatchzip"), b"{}".to_vec());
+    let mut all: Vec<_> = parts.iter().collect();
+    all.extend([&journal, &plain, &plain_journal]);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&all)).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    assert!(
+        stdout_of(&run).contains("No archives among the extracted files."),
+        "{}",
+        stdout_of(&run)
+    );
+    assert_parts(&out, &all);
+    assert!(!out.join("set").exists() && !out.join("foo").exists());
+}
+
+/// A RAR set inside counts once, by its first volume, even when a later
+/// volume comes first in the archive.
+#[cfg(feature = "rar")]
+#[test]
+fn a_rar_set_inside_is_extracted_once_from_its_first_volume() {
+    let tmp = TempDir::new().unwrap();
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rar/rar5");
+    let mut volumes: Vec<(String, Vec<u8>)> = fs::read_dir(&from)
+        .unwrap()
+        .map(|e| {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name, fs::read(e.path()).unwrap())
+        })
+        .collect();
+    volumes.sort();
+    assert!(volumes.len() >= 3 && volumes[1].0 == "set.part2.rar");
+    // `set.part2.rar` first, then `set.part1.rar` and the rest.
+    volumes.swap(0, 1);
+    let archive = tmp.path().join("outer.zip");
+    fs::write(&archive, outer_of(&volumes.iter().collect::<Vec<_>>())).unwrap();
+    let out = tmp.path().join("out");
+
+    let run = extract_nested(&archive, &out, &[]);
+    assert_ok(&run);
+    let stdout = stdout_of(&run);
+    assert!(
+        stdout.contains("Nested archive:") && stdout.contains("set.part1.rar"),
+        "the set is offered once, by its first volume: {stdout}"
+    );
+    assert_eq!(
+        fs::read(out.join("set/game/d.pak")).unwrap(),
+        noise(6_000, 9)
+    );
+    assert_eq!(
+        fs::read(out.join("set/game/a.pak")).unwrap(),
+        noise(30_000, 1)
+    );
+    for (name, _) in &volumes {
+        assert!(!out.join(name).exists(), "{name} is left");
+    }
+}
 /// A link inside the output can point anywhere; the scan must not follow it.
 #[cfg(unix)]
 #[test]
