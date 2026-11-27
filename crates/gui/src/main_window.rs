@@ -1121,7 +1121,7 @@ impl App {
             here: false,
             existing: self.settings.borrow().existing_files,
             only: None,
-            nested: false,
+            nested: None,
         };
         let mut task = Task::extract(&self.name.borrow(), Some(&output), keep);
         if self.mode.get() == Mode::Resume && self.selected_run.get() {
@@ -1204,7 +1204,7 @@ impl App {
             here: false,
             existing: self.settings.borrow().existing_files,
             only: Some(only),
-            nested: false,
+            nested: None,
         };
         let task = Task::extract(&self.name.borrow(), Some(&output), true).selecting();
         self.start_extraction(task, request);
@@ -1214,13 +1214,14 @@ impl App {
     /// folder next to it. Only the files the run wrote are considered, so a
     /// file that was already there is never extracted as if it were new.
     fn extract_inside(&self) {
-        let nested: Vec<PathBuf> = self
+        let (nested, written) = self
             .runner
             .task
             .borrow()
             .as_ref()
-            .map(|t| t.nested.clone())
-            .unwrap_or_default()
+            .map(|t| (t.nested.clone(), t.written.clone()))
+            .unwrap_or_default();
+        let nested: Vec<PathBuf> = nested
             .into_iter()
             .filter(|p| hatchzip_core::archive::nested_kind(p).is_some())
             .collect();
@@ -1243,8 +1244,13 @@ impl App {
         let jobs = nested
             .iter()
             .map(|path| {
-                let (task, mut request) =
-                    crate::task_window::nested_job(path, keep, keep_free, verify_first);
+                let (task, mut request) = crate::task_window::nested_job(
+                    path,
+                    written.clone(),
+                    keep,
+                    keep_free,
+                    verify_first,
+                );
                 if let Some(p) = &password {
                     request.set_password(p.clone());
                 }
