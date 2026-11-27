@@ -53,6 +53,8 @@ HatchZip shows whether the files will fit before it changes anything. The archiv
 
 To take only some files or folders out, select them in the app's contents list (Ctrl+click or Cmd+click adds a row, Shift+click a range, Space the row under the cursor), then choose **Extract selected…** and the destination folder. Only those are extracted, and the archive is always kept.
 
+On Windows and macOS, rows can also be dragged from the contents list into a folder in Explorer or the Finder. Dragging a selected row takes the whole selection; any other row goes alone. The archive is kept, as with **Extract selected…**. On Windows the entries are extracted when they are dropped, into a temporary folder that Explorer copies from and that is removed when HatchZip closes; up to 1 GB can be dragged at once. On macOS the Finder has each entry written straight into the folder it was dropped in. Linux has no drag out yet.
+
 To keep the archive when there is room for both, choose **Extract here (keep archive)** in the right-click menu. To always keep archives, as other extractors do, clear **Remove the archive during extraction** in the app's [settings](#settings); every right-click entry then keeps the archive too. That is a normal extraction: the archive is not changed, and space is required for all extracted files.
 
 ### Settings

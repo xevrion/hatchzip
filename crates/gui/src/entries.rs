@@ -259,6 +259,30 @@ impl Entries {
             .collect()
     }
 
+    /// What dragging the row at `row` takes: the whole selection when the
+    /// row is part of it, as file managers do, and the row alone otherwise.
+    /// Each path comes with whether it is a folder, then the size of it all
+    /// and whether it was the selection.
+    pub fn dragged(&self, row: usize) -> Option<(Vec<(String, bool)>, u64, bool)> {
+        let &(node, _) = self.visible.get(row)?;
+        let chosen = self.nodes[node].selected || self.inside_chosen(node);
+        let picked: Vec<usize> = if chosen {
+            (1..self.nodes.len())
+                .filter(|&i| self.nodes[i].selected && !self.inside_chosen(i))
+                .collect()
+        } else {
+            vec![node]
+        };
+        let size = picked
+            .iter()
+            .fold(0u64, |sum, &i| sum.saturating_add(self.nodes[i].size));
+        let paths = picked
+            .iter()
+            .map(|&i| (self.path(i), self.nodes[i].dir))
+            .collect();
+        Some((paths, size, chosen))
+    }
+
     fn inside_chosen(&self, mut node: usize) -> bool {
         while node != 0 {
             node = self.nodes[node].parent;
@@ -353,6 +377,11 @@ impl EntriesModel {
 
     pub fn chosen(&self) -> Vec<String> {
         self.tree.borrow().chosen()
+    }
+
+    /// See [`Entries::dragged`].
+    pub fn dragged(&self, row: usize) -> Option<(Vec<(String, bool)>, u64, bool)> {
+        self.tree.borrow().dragged(row)
     }
 
     pub fn toggle(&self, row: usize, expand: Option<bool>) {
@@ -585,6 +614,44 @@ mod tests {
         // Escape works with no row under the cursor too.
         assert_eq!(model.choose(99, 3), 0);
         assert!(model.chosen().is_empty());
+    }
+
+    #[test]
+    fn dragging_takes_the_selection_or_the_row_alone() {
+        let model = EntriesModel::new(Entries::new(vec![
+            file("a.txt", 1),
+            file("b.txt", 2),
+            file("d/e.txt", 4),
+        ]));
+        // d, a.txt, b.txt; nothing chosen drags the row under the pointer.
+        assert_eq!(
+            model.dragged(1),
+            Some((vec![("a.txt".to_string(), false)], 1, false))
+        );
+        assert_eq!(
+            model.dragged(0),
+            Some((vec![("d".to_string(), true)], 4, false))
+        );
+        model.choose(0, 1);
+        model.choose(2, 1);
+        let (mut paths, size, chosen) = model.dragged(2).unwrap();
+        paths.sort();
+        assert_eq!(
+            paths,
+            [("b.txt".to_string(), false), ("d".to_string(), true)]
+        );
+        assert_eq!((size, chosen), (6, true));
+        // A row outside the selection goes alone, and leaves it as it is.
+        assert_eq!(
+            model.dragged(1),
+            Some((vec![("a.txt".to_string(), false)], 1, false))
+        );
+        assert_eq!(model.chosen().len(), 2);
+        // A row inside a chosen folder takes the selection with it.
+        model.toggle(0, Some(true));
+        assert_eq!(model.row_data(1).unwrap().path, "d/e.txt");
+        assert!(model.dragged(1).unwrap().2);
+        assert_eq!(model.dragged(99), None);
     }
 
     #[test]

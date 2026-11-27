@@ -609,3 +609,9 @@ msgstr[1] "अंदर के {} आर्काइव एक्सट्रै
 
 msgid "Only the files this run wrote were checked for archives."
 msgstr "इस रन में लिखी गई फ़ाइलों में ही आर्काइव खोजे गए।"
+
+msgid "Up to {} can be dragged out at once. Use Extract selected… for more."
+msgstr "एक बार में अधिकतम {} बाहर खींचा जा सकता है। इससे अधिक के लिए चयनित एक्सट्रैक्ट करें… का उपयोग करें।"
+
+msgid "Entries dragged out of the archive are still being extracted. Try again when they are done."
+msgstr "आर्काइव से बाहर खींची गई प्रविष्टियाँ अभी एक्सट्रैक्ट हो रही हैं। उनके पूरा होने पर फिर से प्रयास करें।"

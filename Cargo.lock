@@ -2027,6 +2027,7 @@ name = "hatchzip-gui"
 version = "0.1.10"
 dependencies = [
  "anyhow",
+ "block2 0.6.2",
  "clap",
  "hatchzip-core",
  "hatchzip-shell",
@@ -2043,6 +2044,8 @@ dependencies = [
  "slint-build",
  "sys-locale",
  "tempfile",
+ "windows",
+ "windows-core",
  "winresource",
  "zip",
 ]

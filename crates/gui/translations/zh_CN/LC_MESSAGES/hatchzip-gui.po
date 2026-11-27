@@ -597,3 +597,9 @@ msgstr[0] "解压并删除里面的 {} 个压缩包"
 
 msgid "Only the files this run wrote were checked for archives."
 msgstr "只检查了本次运行写出的文件。"
+
+msgid "Up to {} can be dragged out at once. Use Extract selected… for more."
+msgstr "一次最多可拖出 {}。更多内容请使用“解压所选项…”。"
+
+msgid "Entries dragged out of the archive are still being extracted. Try again when they are done."
+msgstr "从压缩包拖出的条目仍在解压。完成后请重试。"

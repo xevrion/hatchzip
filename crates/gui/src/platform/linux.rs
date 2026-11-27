@@ -27,3 +27,15 @@ pub fn config_dir() -> Option<PathBuf> {
 /// File managers pass the files as arguments here, so there is nothing to
 /// listen for.
 pub fn forward_opened_files(_on_open: impl Fn(PathBuf) + 'static) {}
+
+/// winit has no way to start a drag from the window here, on X11 or
+/// Wayland, so rows can't be dragged out; "Extract selected…" does it.
+pub const DRAG_OUT: bool = false;
+
+/// Nothing is dragged, so there is nothing to limit.
+pub const DRAG_LIMIT: Option<u64> = None;
+
+/// Never called while [`DRAG_OUT`] is false; starts nothing.
+pub fn drag_out(_window: &slint::Window, _drag: crate::drag::Drag) -> bool {
+    false
+}

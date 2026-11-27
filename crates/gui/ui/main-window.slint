@@ -80,11 +80,21 @@ component EntryList inherits VerticalLayout {
     // range from the last row clicked (Shift). Read from the press, which
     // carries the keys.
     property <int> click-mode: 0;
+    // Rows can be dragged out to a folder in the file manager.
+    in property <bool> drag-out;
+    // The row being dragged out, or -1; with `drag-chosen`, every chosen
+    // row goes with it. Dimmed until the drop.
+    in property <int> drag-row: -1;
+    in property <bool> drag-chosen;
+    // The press being made has turned into a drag, so its release is no click.
+    property <bool> dragged;
     init => { scope.focus(); }
     callback toggle(int, int);
     callback navigate(int, bool) -> int;
     // Changes the rows "Extract selected…" takes, with a mode as above.
     callback choose(int, int);
+    // The press on this row moved far enough to start dragging it out.
+    callback drag(int);
     function show-selection() {
         let y = list.content-y + root.selected * root.row-height;
         if y < 0px { list.content-y -= y; }
@@ -143,6 +153,7 @@ component EntryList inherits VerticalLayout {
             // Rows chosen for "Extract selected…" keep the selection colour,
             // and the cursor bar is drawn on them too, in their text colour.
             background: row.selected ? Palette.selection-background : root.selected != index ? transparent : scope.has-focus ? Theme.selected : Theme.track;
+            opacity: root.drag-row >= 0 && (root.drag-chosen ? row.selected : root.drag-row == index) ? 0.5 : 1;
             if root.selected == index && scope.has-focus: Rectangle {
                 x: 4px;
                 y: (parent.height - self.height) / 2;
@@ -191,16 +202,28 @@ component EntryList inherits VerticalLayout {
             TouchArea {
                 pointer-event(event) => {
                     if event.kind == PointerEventKind.down {
+                        root.dragged = false;
                         root.click-mode = event.modifiers.shift ? 2 : (event.modifiers.control || event.modifiers.meta) ? 1 : 0;
                     }
                 }
+                // A few pixels, as the systems' own drag thresholds.
+                moved => {
+                    if root.drag-out && self.pressed && !root.dragged && root.drag-row < 0 && (abs(self.mouse-x - self.pressed-x) > 5px || abs(self.mouse-y - self.pressed-y) > 5px) {
+                        root.dragged = true;
+                        root.drag(index);
+                    }
+                }
                 clicked => {
-                    root.selected = index;
-                    scope.focus();
-                    root.choose(index, root.click-mode);
-                    // A plain click opens or closes a folder and chooses
-                    // nothing; adding one to the selection leaves it as it is.
-                    if row.dir && root.click-mode == 0 { root.toggle(index, 0); }
+                    if root.dragged {
+                        root.dragged = false;
+                    } else {
+                        root.selected = index;
+                        scope.focus();
+                        root.choose(index, root.click-mode);
+                        // A plain click opens or closes a folder and chooses
+                        // nothing; adding one to the selection leaves it as it is.
+                        if row.dir && root.click-mode == 0 { root.toggle(index, 0); }
+                    }
                 }
             }
         }
@@ -255,6 +278,11 @@ export component MainWindow inherits Window {
     in property <[EntryRow]> entries;
     // Rows chosen in the tree for "Extract selected…".
     in property <int> selection-count;
+    // This system can take rows dragged out of the tree.
+    in property <bool> drag-out-available;
+    // The row being dragged out, or -1, and whether the chosen rows go too.
+    in property <int> drag-row: -1;
+    in property <bool> drag-chosen;
     // "2 items selected. ...", said after what Extract does, which a
     // selection does not change.
     in property <string> selection-text;
@@ -297,6 +325,8 @@ export component MainWindow inherits Window {
     callback toggle-entry(int, int);
     callback navigate-entry(int, bool) -> int;
     callback choose-entry(int, int);
+    // The press on this row became a drag out of the window.
+    callback drag-entries(int);
     callback extract-selected();
     callback password-ok(string);
     callback password-cancel();
@@ -555,6 +585,12 @@ export component MainWindow inherits Window {
                 toggle(row, action) => { root.toggle-entry(row, action); }
                 navigate(row, right) => { return root.navigate-entry(row, right); }
                 choose(row, mode) => { root.choose-entry(row, mode); }
+                // Like "Extract selected…": only before anything was
+                // extracted, while nothing runs.
+                drag-out: root.drag-out-available && root.mode == Mode.fresh && root.task.phase == Phase.idle;
+                drag-row: root.drag-row;
+                drag-chosen: root.drag-chosen;
+                drag(row) => { root.drag-entries(row); }
             }
             VLine { }
             // The plan can outgrow a small window; its content must not
