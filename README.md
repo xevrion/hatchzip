@@ -377,7 +377,7 @@ Fields that are unavailable are present as `null`, rather than omitted. For a re
 | `path` | Safe archive member path, using `/` separators |
 | `kind` | `file`, `directory`, `symlink` or `hard_link` |
 | `size_bytes` | The size recorded by HatchZip's archive model, in bytes |
-| `mode` | Raw file mode integer, including file-type bits, or `null` when unavailable |
+| `mode` | The mode as the archive stores it, as an integer, or `null` when unavailable. ZIP usually includes the file-type bits (`33188` for a plain file); tar usually stores only the permission bits (`420`) |
 | `modified_at` | Modification time in RFC 3339 UTC, or `null` |
 | `encrypted` | Whether the entry is encrypted |
 | `hard_link_target` | Target path for a hard link, otherwise `null` |

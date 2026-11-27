@@ -30,10 +30,11 @@ How it works: it extracts from the end of the archive and cuts each finished par
 - `hatchzip extract game.zip --verify-first`: read everything once before deleting anything
 - `hatchzip extract game.zip --keep-archive`: a normal extraction that keeps the archive unchanged and needs space for all extracted files. In the app: clear "Remove the archive during extraction"; in the right-click menu: "Extract here (keep archive)"
 - `hatchzip extract a.zip b.7z c.tar.gz`: several archives one after another, each checked for space just before it starts
-- `hatchzip extract bundle.zip --nested`: after extracting, also extracts the archives among the files it wrote, one level deep, each into a folder next to it. An archive is recognized by its extension and its signature, so a .jar or .docx is left alone. It asks once for all of them; `--yes` skips the question. Command line only
+- `hatchzip extract bundle.zip --nested`: after extracting, also extracts the archives among the files it wrote, one level deep, each into a folder next to it. An archive is recognized by its extension and its signature, so a .jar or .docx is left alone. It asks once for all of them; `--yes` skips the question. The desktop app offers the same on the screen shown when an extraction finishes
 - `hatchzip extract game.zip --only game/saves --only readme.txt`: extracts only those entries (a folder includes everything inside it) and always keeps the archive. In the app: choose rows in the contents list (Ctrl or Command-click, Shift-click, Space), then Extract selected
 - `hatchzip restore game.zip`: turn a half-extracted archive back into a normal archive
 - `hatchzip list`, `hatchzip test`: list or verify without changing anything
+- `hatchzip list --json`, `hatchzip check --json`: one JSON document for scripts (`{"version": 1, "archives": [...]}`), with each archive's entries or disk-space plan; see the README for the fields
 - Desktop app: in English, Spanish, Hindi, Simplified Chinese and Turkish, following the system language; Settings, Language picks another. Every option is in the Settings window (File menu or the gear, Ctrl+, or Command+, on a Mac): General (language, appearance, after extracting, close the progress window), Extraction (remove the archive, verify first, reserved space, default destination, when a file already exists), Integration (the right-click menu), Advanced (settings file, reset)
 - Exit codes: 0 done, 1 error, 2 usage, 3 not enough space, 4 damaged archive, 5 password needed or wrong, 130 stopped (run again to resume)
 
