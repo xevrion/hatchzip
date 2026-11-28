@@ -89,6 +89,7 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
             "English",
             "Español",
             "हिन्दी",
+            "Русский",
             "Türkçe",
             "简体中文"
         ]
@@ -98,7 +99,7 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
     assert!(ui.get_formats().contains("Supported formats"));
     assert!(ui.get_summary().contains("1 entry"), "{}", ui.get_summary());
 
-    choose(&settings, 5);
+    choose(&settings, 6);
     assert!(
         ui.get_formats().contains("支持的格式"),
         "{}",
@@ -115,7 +116,7 @@ fn choosing_a_language_switches_the_window_and_is_saved() {
         "{}",
         ui.get_shell_menu_label()
     );
-    assert_eq!(settings.get_language_index(), 5);
+    assert_eq!(settings.get_language_index(), 6);
     // The first entry is worded again; the names stay in their own scripts
     // whatever is showing.
     assert_eq!(

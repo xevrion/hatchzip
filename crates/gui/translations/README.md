@@ -6,6 +6,7 @@ The desktop app is translated with Slint's `@tr()` and gettext catalogs. Each la
 |---|---|
 | Español | `es` |
 | हिन्दी (Hindi) | `hi` |
+| Русский (Russian) | `ru` |
 | Türkçe (Turkish) | `tr` |
 | 简体中文 (Simplified Chinese) | `zh_CN` |
 
