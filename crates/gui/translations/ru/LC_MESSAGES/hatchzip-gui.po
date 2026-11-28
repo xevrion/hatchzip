@@ -1,0 +1,623 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+msgid "Name"
+msgstr "Имя"
+
+msgid "Size"
+msgstr "Размер"
+
+msgid "File"
+msgstr "Файл"
+
+msgid "Open…"
+msgstr "Открыть…"
+
+msgid "Quit"
+msgstr "Выход"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Verify archive before extracting"
+msgstr "Проверять архив перед извлечением"
+
+msgid "Remove the archive during extraction"
+msgstr "Удалять архив в процессе извлечения"
+
+msgid "Close the progress window when extraction completes"
+msgstr "Закрывать окно прогресса после завершения извлечения"
+
+msgid "Language"
+msgstr "Язык"
+
+msgid "Use the system language"
+msgstr "Использовать язык системы"
+
+msgid "Help"
+msgstr "Справка"
+
+msgid "Check for updates"
+msgstr "Проверить обновления"
+
+msgid "About HatchZip"
+msgstr "О программе HatchZip"
+
+msgid "Version {}"
+msgstr "Версия {}"
+
+msgid "Extracts large archives in place. The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "Извлекает крупные архивы на месте. Архив постепенно удаляется в процессе извлечения, поэтому требуется место только для извлечённых файлов."
+
+msgid "Licensed under MIT or Apache-2.0"
+msgstr "Лицензия MIT или Apache-2.0"
+
+msgid "Drop the archive to open it"
+msgstr "Отпустите архив, чтобы открыть его"
+
+msgid "No archive open"
+msgstr "Архив не открыт"
+
+msgid "The archive is removed progressively during extraction, so only the space for the extracted files is required."
+msgstr "Архив постепенно удаляется в процессе извлечения, поэтому требуется место только для извлечённых файлов."
+
+msgid "Open archive…"
+msgstr "Открыть архив…"
+
+msgid "Open another archive…"
+msgstr "Открыть другой архив…"
+
+msgid "All entries have been extracted."
+msgstr "Все элементы извлечены."
+
+msgid "This archive is empty."
+msgstr "Этот архив пуст."
+
+msgid "Extract to"
+msgstr "Извлечь в"
+
+msgid "Browse…"
+msgstr "Обзор…"
+
+msgid "Reserved space"
+msgstr "Резерв места"
+
+msgid "GB. Enter a number, such as 2 or 0.5."
+msgstr "GB. Введите число, например 2 или 0.5."
+
+msgid "The archive is removed progressively during extraction. An interrupted extraction can be resumed."
+msgstr "Архив постепенно удаляется в процессе извлечения. Прерванное извлечение можно продолжить."
+
+msgid "The archive is kept unchanged, so space is required for all extracted files. An interrupted extraction can be resumed."
+msgstr "Архив остаётся без изменений, поэтому требуется место для всех извлечённых файлов. Прерванное извлечение можно продолжить."
+
+msgid "Test"
+msgstr "Проверить"
+
+msgid "Restore archive"
+msgstr "Восстановить архив"
+
+msgid "Extract"
+msgstr "Извлечь"
+
+msgid "Resume extraction"
+msgstr "Продолжить извлечение"
+
+msgid "Finish"
+msgstr "Завершить"
+
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and split archives."
+msgstr "Или перетащите архив в это окно. Поддерживаемые форматы: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst и многотомные архивы."
+
+msgid "Or drag an archive onto this window. Supported formats: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR, and split archives."
+msgstr "Или перетащите архив в это окно. Поддерживаемые форматы: ZIP, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, RAR и многотомные архивы."
+
+msgid "Opening {}…"
+msgstr "Открытие {}…"
+
+msgid "Unable to open {}"
+msgstr "Не удалось открыть {}"
+
+msgid "This archive is partially extracted to {}."
+msgstr "Этот архив частично извлечён в {}."
+
+msgid " The archive is kept."
+msgstr " Архив сохраняется."
+
+msgid "All entries have been extracted to {}. Select Finish to remove the remaining temporary files."
+msgstr "Все элементы извлечены в {}. Нажмите «Завершить», чтобы удалить оставшиеся временные файлы."
+
+msgid "Show in the Explorer context menu"
+msgstr "Показывать в контекстном меню Проводника"
+
+msgid "Show in the file manager's context menu"
+msgstr "Показывать в контекстном меню файлового менеджера"
+
+msgid "Show in the Finder context menu"
+msgstr "Показывать в контекстном меню Finder"
+
+msgid "Open archive"
+msgstr "Открыть архив"
+
+msgid "Archives"
+msgstr "Архивы"
+
+msgid "All files"
+msgstr "Все файлы"
+
+msgid "Select destination folder"
+msgstr "Выбрать папку назначения"
+
+msgid "Context menu entries added."
+msgstr "Пункты контекстного меню добавлены."
+
+msgid "Context menu entries removed."
+msgstr "Пункты контекстного меню удалены."
+
+msgid "No entries remaining"
+msgstr "Оставшихся элементов нет"
+
+msgid "Reading archive… {}%"
+msgstr "Чтение архива… {}%"
+
+msgid "{} archive"
+msgstr "Архив {}"
+
+msgid "{} entry"
+msgid_plural "{} entries"
+msgstr[0] "{} элемент"
+msgstr[1] "{} элемента"
+msgstr[2] "{} элементов"
+
+msgid "{} in {} remaining"
+msgstr "Осталось {0} ({1})"
+
+msgid "{} uncompressed"
+msgstr "{} без сжатия"
+
+msgid "Disk space"
+msgstr "Место на диске"
+
+msgid "Calculating…"
+msgstr "Подсчёт…"
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Pausing…"
+msgstr "Приостановка…"
+
+msgid "Pause"
+msgstr "Пауза"
+
+msgid "Resume"
+msgstr "Продолжить"
+
+msgid "Check again"
+msgstr "Проверить снова"
+
+msgid "Retry"
+msgstr "Повторить"
+
+msgid "Open folder"
+msgstr "Открыть папку"
+
+msgid "Password required"
+msgstr "Требуется пароль"
+
+msgid "Password"
+msgstr "Пароль"
+
+msgid "Incorrect password."
+msgstr "Неверный пароль."
+
+msgid "OK"
+msgstr "ОК"
+
+msgid "Replace or skip files"
+msgstr "Заменить или пропустить файлы"
+
+msgid "Keep both"
+msgstr "Сохранить оба"
+
+msgid "Skip"
+msgstr "Пропустить"
+
+msgid "Replace"
+msgstr "Заменить"
+
+msgid "Enter the password for {}."
+msgstr "Введите пароль для {}."
+
+msgid "Available"
+msgstr "Доступно"
+
+msgid "Required, archive removed"
+msgstr "Нужно (архив удаляется)"
+
+msgid "Required, archive kept"
+msgstr "Нужно (архив сохраняется)"
+
+msgid "Reserved"
+msgstr "Резерв"
+
+msgid "Available after extraction"
+msgstr "Доступно после извлечения"
+
+msgid "Not enough"
+msgstr "Не хватает"
+
+msgid "Restore complete"
+msgstr "Восстановление завершено"
+
+msgid "Restore failed"
+msgstr "Ошибка восстановления"
+
+msgid "Restoring {}"
+msgstr "Восстановление {}"
+
+msgid "Test complete"
+msgstr "Проверка завершена"
+
+msgid "Test failed"
+msgstr "Ошибка проверки"
+
+msgid "Testing {}"
+msgstr "Проверка {}"
+
+msgid "Extraction complete"
+msgstr "Извлечение завершено"
+
+msgid "Extraction paused"
+msgstr "Извлечение приостановлено"
+
+msgid "Extraction failed"
+msgstr "Ошибка извлечения"
+
+msgid "Insufficient disk space"
+msgstr "Недостаточно места на диске"
+
+msgid "Extracting {}"
+msgstr "Извлечение {}"
+
+msgid "Checking disk space…"
+msgstr "Проверка места на диске…"
+
+msgid "Converting it back to a standard archive. Extracted files are kept."
+msgstr "Преобразование обратно в обычный архив. Извлечённые файлы сохраняются."
+
+msgid "Verifying every entry. No files are written."
+msgstr "Проверка всех элементов. Файлы на диск не записываются."
+
+msgid "Pausing after the current batch…"
+msgstr "Приостановка после текущей группы файлов…"
+
+msgid "Verifying archive before extracting…"
+msgstr "Проверка архива перед извлечением…"
+
+msgid "Progress is saved. The extraction can be resumed now or later."
+msgstr "Прогресс сохранён. Извлечение можно продолжить сейчас или позже."
+
+msgid "All entries were extracted. The archive was kept."
+msgstr "Все элементы извлечены. Архив сохранён."
+
+msgid "All entries were extracted. The archive was removed."
+msgstr "Все элементы извлечены. Архив удалён."
+
+msgid "Test passed: 1 entry verified."
+msgid_plural "Test passed: {} entries verified."
+msgstr[0] "Проверка пройдена: проверен {} элемент."
+msgstr[1] "Проверка пройдена: проверено {} элемента."
+msgstr[2] "Проверка пройдена: проверено {} элементов."
+
+msgid "'{}' already exists in {}."
+msgstr "«{}» уже существует в {}."
+
+msgid "Replace deletes the existing file when the extraction completes. Skip keeps it, and the archive's copy is not kept. Keep both keeps it and adds the archive's copy with a number after its name."
+msgstr "«Заменить» удаляет существующий файл после завершения извлечения. «Пропустить» оставляет его, а копия из архива не сохраняется. «Сохранить оба» оставляет его и добавляет копию из архива с номером в имени."
+
+msgid "Replace deletes the existing file when the extraction completes. Skip keeps it. Keep both keeps it and adds the archive's copy with a number after its name."
+msgstr "«Заменить» удаляет существующий файл после завершения извлечения. «Пропустить» оставляет его. «Сохранить оба» оставляет его и добавляет копию из архива с номером в имени."
+
+msgid "Do the same for the next file"
+msgid_plural "Do the same for the next {} files"
+msgstr[0] "Сделать то же для ещё {} файла"
+msgstr[1] "Сделать то же для ещё {} файлов"
+msgstr[2] "Сделать то же для ещё {} файлов"
+
+msgid "Destination: {}"
+msgstr "Папка назначения: {}"
+
+msgid "{} of {}"
+msgstr "{0} из {1}"
+
+msgid "Archive remaining: {}"
+msgstr "Остаток архива: {}"
+
+msgid "Waiting for disk"
+msgstr "Ожидание диска"
+
+msgid "{}/s, {} remaining"
+msgstr "{}/s, осталось: {}"
+
+msgid "less than 5 seconds"
+msgstr "менее 5 секунд"
+
+msgid "{} second"
+msgid_plural "{} seconds"
+msgstr[0] "{} секунда"
+msgstr[1] "{} секунды"
+msgstr[2] "{} секунд"
+
+msgid "{} minute"
+msgid_plural "{} minutes"
+msgstr[0] "{} минута"
+msgstr[1] "{} минуты"
+msgstr[2] "{} минут"
+
+msgid "{} hour"
+msgid_plural "{} hours"
+msgstr[0] "{} час"
+msgstr[1] "{} часа"
+msgstr[2] "{} часов"
+
+msgid "the 1 entry"
+msgid_plural "the {} entries"
+msgstr[0] "{} неизвлечённый элемент"
+msgstr[1] "{} неизвлечённых элемента"
+msgstr[2] "{} неизвлечённых элементов"
+
+msgid "Extraction progress discarded. The archive was not modified. Extracted files remain in {}."
+msgstr "Прогресс извлечения сброшен. Архив не был изменён. Извлечённые файлы остаются в {}."
+
+msgid "Archive restored. It contains {} not yet extracted. Extracted files remain in {}."
+msgstr "Архив восстановлен. Он содержит {}. Извлечённые файлы остаются в {}."
+
+msgid "1 replaced file remains in {1}, since the file extracted at its path is no longer in the archive."
+msgid_plural "{} replaced files remain in {}, since the files extracted at their paths are no longer in the archive."
+msgstr[0] "{0} заменённый файл остался в {1}, так как файл, извлечённый по этому пути, больше не находится в архиве."
+msgstr[1] "{0} заменённых файла остались в {1}, так как файлы, извлечённые по их путям, больше не находятся в архиве."
+msgstr[2] "{0} заменённых файлов остались в {1}, так как файлы, извлечённые по их путям, больше не находятся в архиве."
+
+msgid "link"
+msgstr "ссылка"
+
+msgid "Progress is saved; the extraction can be resumed."
+msgstr "Прогресс сохранён; извлечение можно продолжить."
+
+msgid "Folder"
+msgstr "Папка"
+
+msgid "Link"
+msgstr "Ссылка"
+
+msgid "{}. Turn off \"Remove the archive during extraction\" to extract it and keep the archive."
+msgstr "{}. Отключите параметр «Удалять архив в процессе извлечения», чтобы извлечь файлы и сохранить архив."
+
+msgid "Sufficient disk space"
+msgstr "Места на диске достаточно"
+
+msgid "Insufficient disk space. {} more is required."
+msgstr "Недостаточно места на диске. Требуется ещё {}."
+
+msgid "Removing the archive during extraction requires only {}."
+msgstr "При удалении архива в процессе извлечения требуется всего {}."
+
+msgid "There is also enough space to keep the archive."
+msgstr "Места также хватит, чтобы сохранить архив."
+
+msgid "Most of the required space is one solid block, which can only be released after it is fully extracted."
+msgstr "Большую часть нужного места занимает один непрерывный блок, который можно освободить только после его полного извлечения."
+
+msgid "The destination is on another drive, so removing the archive does not free space there."
+msgstr "Папка назначения находится на другом диске, поэтому удаление архива не освобождает место на нём."
+
+msgid "This drive cannot release space inside a file, so the compressed archive remains whole until extraction completes."
+msgstr "Этот диск не поддерживает освобождение места внутри файла, поэтому сжатый архив остаётся целым до завершения извлечения."
+
+msgid "Extract with {} reserved"
+msgstr "Извлечь с резервом {}"
+
+msgid "Extract without a reserve"
+msgstr "Извлечь без резерва"
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run with {} reserved, with {} left once it finishes."
+msgstr "Мешает только резерв: требуется {}, доступно {}, поэтому извлечение можно выполнить с резервом {}, и после завершения останется {}."
+
+msgid "The reserve is all that stands in the way: {} is needed and {} is available, so it can run without one, with {} left once it finishes."
+msgstr "Мешает только резерв: требуется {}, доступно {}, поэтому извлечение можно выполнить без резерва, и после завершения останется {}."
+
+msgid "Available: {}. Required: {}, plus {} reserved."
+msgstr "Доступно: {}. Требуется: {}, плюс {} в резерве."
+
+msgid "Settings…"
+msgstr "Настройки…"
+
+msgid "General"
+msgstr "Основные"
+
+msgid "Extraction"
+msgstr "Извлечение"
+
+msgid "Integration"
+msgstr "Интеграция"
+
+msgid "Advanced"
+msgstr "Дополнительно"
+
+msgid "Appearance"
+msgstr "Тема"
+
+msgid "System follows the light or dark setting of the operating system."
+msgstr "«Системная» следует светлому или тёмному оформлению операционной системы."
+
+msgid "System"
+msgstr "Системная"
+
+msgid "Light"
+msgstr "Светлая"
+
+msgid "Dark"
+msgstr "Тёмная"
+
+msgid "After extracting"
+msgstr "После извлечения"
+
+msgid "The destination folder opens in the file manager when an extraction completes."
+msgstr "Папка назначения открывается в файловом менеджере после завершения извлечения."
+
+msgid "The result is shown in the window and nothing else is opened."
+msgstr "Результат отображается в окне, и ничего больше не открывается."
+
+msgid "Do nothing"
+msgstr "Ничего не делать"
+
+msgid "Open the folder"
+msgstr "Открыть папку"
+
+msgid "Applies to the window the right-click menu opens. A test, a pause or a failure keeps it open."
+msgstr "Относится к окну, открываемому из контекстного меню. При проверке, паузе или ошибке окно остаётся открытым."
+
+msgid "Every entry is read and checked before anything is extracted or removed, which takes longer."
+msgstr "Каждый элемент сначала считывается и проверяется, прежде чем что-либо будет извлечено или удалено, поэтому процесс занимает больше времени."
+
+msgid "Free space left untouched on the destination drive, so the system and other programs keep room to work."
+msgstr "Свободное место, оставляемое нетронутым на целевом диске, чтобы у системы и других программ оставалось пространство для работы."
+
+msgid "Default destination"
+msgstr "Папка назначения по умолчанию"
+
+msgid "Each archive is extracted into a folder named after it inside the chosen folder. \"Extract here\" in the right-click menu still extracts next to the archive."
+msgstr "Каждый архив извлекается в папку с его именем внутри выбранной папки. Пункт «Extract here» в контекстном меню по-прежнему извлекает рядом с архивом."
+
+msgid "Each archive is extracted into a folder named after it, next to the archive."
+msgstr "Каждый архив извлекается в папку с его именем рядом с архивом."
+
+msgid "Next to the archive"
+msgstr "Рядом с архивом"
+
+msgid "Always in a folder"
+msgstr "Всегда в папке"
+
+msgid "No folder chosen"
+msgstr "Папка не выбрана"
+
+msgid "When a file already exists"
+msgstr "Когда файл уже существует"
+
+msgid "Existing files are replaced. The old copies are kept until the extraction completes, then deleted."
+msgstr "Существующие файлы заменяются. Прежние копии сохраняются до завершения извлечения, после чего удаляются."
+
+msgid "Existing files are kept, and the archive's copies of them are not."
+msgstr "Существующие файлы сохраняются, а их копии из архива не сохраняются."
+
+msgid "Each file already in the destination is shown, with the choice to replace it, skip it or keep both."
+msgstr "Для каждого уже существующего в папке назначения файла предлагается заменить его, пропустить или сохранить оба."
+
+msgid "Ask"
+msgstr "Спрашивать"
+
+msgid "Adds HatchZip's extract and test entries to the right-click menu of archives."
+msgstr "Добавляет пункты HatchZip для извлечения и проверки в контекстное меню архивов."
+
+msgid "Settings file"
+msgstr "Файл настроек"
+
+msgid "Settings are saved here as soon as they change."
+msgstr "Настройки сохраняются сюда сразу после изменения."
+
+msgid "Show in Explorer"
+msgstr "Показать в Проводнике"
+
+msgid "Show in Finder"
+msgstr "Показать в Finder"
+
+msgid "Show in the file manager"
+msgstr "Показать в файловом менеджере"
+
+msgid "Every setting returns to its default, including the language and the appearance."
+msgstr "Все настройки возвращаются к значениям по умолчанию, включая язык и тему."
+
+msgid "Reset all settings…"
+msgstr "Сбросить все настройки…"
+
+msgid "Reset all settings?"
+msgstr "Сбросить все настройки?"
+
+msgid "The language, the appearance and every extraction setting return to their defaults. The right-click menu is not changed."
+msgstr "Язык, тема и все настройки извлечения вернутся к значениям по умолчанию. Контекстное меню не изменится."
+
+msgid "Reset"
+msgstr "Сбросить"
+
+msgid "Select the default destination folder"
+msgstr "Выбрать папку назначения по умолчанию"
+
+msgid "Archive {} of {}"
+msgstr "Архив {0} из {1}"
+
+msgid "All {} archives completed."
+msgstr "Все архивы обработаны ({})."
+
+msgid "Archive {} of {}. 1 more archive has not started."
+msgid_plural "Archive {} of {}. {} more archives have not started."
+msgstr[0] "Архив {0} из {1}. Ещё {2} архив не обработан."
+msgstr[1] "Архив {0} из {1}. Ещё {2} архива не обработаны."
+msgstr[2] "Архив {0} из {1}. Ещё {2} архивов не обработаны."
+
+msgid "Not started: {}."
+msgstr "Не обработано: {}."
+
+msgid "Required: {}. Available: {}."
+msgstr "Требуется: {}. Доступно: {}."
+
+msgid "Test cancelled. The archive was not modified."
+msgstr "Проверка отменена. Архив не был изменён."
+
+msgid "Extraction cancelled. The archive was not modified."
+msgstr "Извлечение отменено. Архив не был изменён."
+
+msgid "{} {}"
+msgstr "{} {}"
+
+msgid "{} {}."
+msgstr "{} {}."
+
+msgid "Extract selected…"
+msgstr "Извлечь выбранное…"
+
+msgid "{} item selected. Extracting the selection keeps the archive unchanged."
+msgid_plural "{} items selected. Extracting the selection keeps the archive unchanged."
+msgstr[0] "Выбран {} элемент. При извлечении выбранного архив остаётся без изменений."
+msgstr[1] "Выбрано {} элемента. При извлечении выбранного архив остаётся без изменений."
+msgstr[2] "Выбрано {} элементов. При извлечении выбранного архив остаётся без изменений."
+
+msgid "The selected entries were extracted. The archive was kept."
+msgstr "Выбранные элементы извлечены. Архив сохранён."
+
+msgid "Extract all"
+msgstr "Извлечь всё"
+
+msgid "Extract {} archive inside"
+msgid_plural "Extract {} archives inside"
+msgstr[0] "Извлечь {} вложенный архив"
+msgstr[1] "Извлечь {} вложенных архива"
+msgstr[2] "Извлечь {} вложенных архивов"
+
+msgid "Extract and remove {} archive inside"
+msgid_plural "Extract and remove {} archives inside"
+msgstr[0] "Извлечь и удалить {} вложенный архив"
+msgstr[1] "Извлечь и удалить {} вложенных архива"
+msgstr[2] "Извлечь и удалить {} вложенных архивов"
+
+msgid "Only the files this run wrote were checked for archives."
+msgstr "На наличие архивов проверены только файлы, записанные за этот запуск."
