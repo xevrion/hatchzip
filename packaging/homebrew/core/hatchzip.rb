@@ -7,8 +7,8 @@
 class Hatchzip < Formula
   desc "Extract huge archives in place, needing free space only for the contents"
   homepage "https://hatchzip.dev"
-  url "https://github.com/xevrion/hatchzip/archive/refs/tags/v0.1.10.tar.gz"
-  sha256 "453fc3ff6ac2a4f81d5e18589323e61c637c32d45a1f151d1bd1c44e9df5403f"
+  url "https://github.com/xevrion/hatchzip/archive/refs/tags/v0.1.11.tar.gz"
+  sha256 "96b4d022bef02cf026cc8d7b43ab959eec80a54bd90fd6cc3d1ae7bb067462b3"
   license any_of: ["MIT", "Apache-2.0"]
   head "https://github.com/xevrion/hatchzip.git", branch: "main"
 

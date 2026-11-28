@@ -78,7 +78,7 @@ instead. Windows Sandbox also gives a clean machine for a quick check.
    ```powershell
    choco apikey --key <api key> --source https://push.chocolatey.org/
    choco pack
-   choco push hatchzip.0.1.10.nupkg --source https://push.chocolatey.org/
+   choco push hatchzip.0.1.11.nupkg --source https://push.chocolatey.org/
    ```
 
 3. Follow the package's page on community.chocolatey.org through moderation,
@@ -94,7 +94,7 @@ from the clipboard (macOS), so the key never lands in the shell history:
 ```sh
 python3 packaging/chocolatey/pack.py
 curl -sS -w "\nHTTP %{http_code}\n" -X PUT -H "X-NuGet-ApiKey: $(pbpaste)" \
-  -F "package=@hatchzip.0.1.10.nupkg" https://push.chocolatey.org/api/v2/package/
+  -F "package=@hatchzip.0.1.11.nupkg" https://push.chocolatey.org/api/v2/package/
 pbcopy < /dev/null
 ```
 
