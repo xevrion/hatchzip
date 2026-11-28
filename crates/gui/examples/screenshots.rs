@@ -38,7 +38,7 @@ use i_slint_backend_testing::ElementHandle;
 use slint::{ComponentHandle, LogicalSize, Timer};
 
 /// The bundled languages, by the codes the Settings window saves.
-const LANGUAGES: [&str; 4] = ["en", "es", "hi", "zh_CN"];
+const LANGUAGES: [&str; 6] = ["en", "es", "hi", "ru", "tr", "zh_CN"];
 
 /// The `min-width` and `min-height` in `ui/main-window.slint` and
 /// `ui/settings-window.slint`.
