@@ -24,7 +24,7 @@
 <meta property="article:modified_time" content="2026-11-20">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"磁盘空间不足，无法解压 ZIP、RAR 或 7z：解决办法","description":"为什么解压时磁盘要同时容纳压缩包和解压出的文件，以及真正有效的解决办法，附在几乎已满的磁盘上的实测结果。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-20","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-not-enough-space-to-extract.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"磁盘空间不足，无法解压","item":"https://hatchzip.dev/zh-not-enough-space-to-extract.html"}]}]}
+{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"磁盘空间不足，无法解压 ZIP、RAR 或 7z：解决办法","description":"为什么解压时磁盘要同时容纳压缩包和解压出的文件，以及真正有效的解决办法，附在几乎已满的磁盘上的实测结果。","image":"https://hatchzip.dev/img/og.png","datePublished":"2026-10-25","dateModified":"2026-11-28","inLanguage":"zh-Hans","mainEntityOfPage":"https://hatchzip.dev/zh-not-enough-space-to-extract.html","author":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1","sameAs":["https://github.com/xevrion"]},"publisher":{"@type":"Person","name":"Yash Bavadiya","url":"https://x.com/xevrion_the1"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"HatchZip","item":"https://hatchzip.dev/zh.html"},{"@type":"ListItem","position":2,"name":"磁盘空间不足，无法解压","item":"https://hatchzip.dev/zh-not-enough-space-to-extract.html"}]}]}
 </script>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css?v=7">
@@ -69,7 +69,7 @@
 </header>
 <main>
 <p class="answer">WinRAR、7-Zip 和 unzip 在解压完成之前都会把压缩包留在磁盘上，所以磁盘必须同时容纳压缩包和所有解压出的文件：一个 180 GB、解压后为 200 GB 的压缩包，总共要占用 380 GB。可以解压到其他磁盘、释放空间，或者就地解压，这样只需为解压出的文件预留空间。</p>
-<p class="note">作者 <a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a> 的开发者。更新于 <time class="nw" datetime="2026-11-20">2026-11-20</time>。</p>
+<p class="note">作者 <a href="https://x.com/xevrion_the1">Yash Bavadiya</a>，<a href="https://github.com/xevrion/hatchzip">HatchZip</a> 的开发者。更新于 <time class="nw" datetime="2026-11-28">2026-11-28</time>。</p>
 
 <section aria-labelledby="why">
 <h2 id="why">为什么解压时要同时为压缩包和文件留出空间？</h2>
@@ -117,7 +117,7 @@
 <section aria-labelledby="in-place">
 <h2 id="in-place">能否解压时不再为压缩包本身留出空间？</h2>
 <p>可以，方法是就地解压。HatchZip 从压缩包的最后一个文件开始，依次解压到第一个文件；每一批文件安全写入后，就把压缩包文件末尾对应的那部分截掉。腾出的空间用来存放下一批文件，因此磁盘只需容纳解压出的文件再加一点余量，完成后只剩下解压出的文件。</p>
-<p>它支持 ZIP、7z、tar、<code>.tar.gz</code>、RAR 和分卷压缩包，可在 Windows、macOS 和 Linux 上运行，免费且开源。<a href="zh.html#download">下载 HatchZip</a>。</p>
+<p>它支持 ZIP、7z、tar、<code>.tar.gz</code>、<code>.tar.bz2</code>、<code>.tar.xz</code>、<code>.tar.zst</code>、RAR 和分卷压缩包，可在 Windows、macOS 和 Linux 上运行，免费且开源。<a href="zh.html#download">下载 HatchZip</a>。</p>
 <p>代价是压缩包会被用掉。如果需要保留压缩包，应该使用普通解压，而普通解压需要完整的空间。</p>
 </section>
 
@@ -166,7 +166,7 @@ game.zip  180.1 MB zip, 200.0 MB uncompressed in 22 entries
 <li>压缩包是固实 RAR。HatchZip 只能在保留压缩包的情况下解压它，因此需要完整的空间。</li>
 <li>问题出在 WinRAR 或 7-Zip 的临时文件夹，或者 FAT32 磁盘拒绝写入 4 GiB 或更大的文件。这些并不是磁盘空间不足；请参阅 <a href="zh-winrar-not-enough-space.html">WinRAR</a> 和 <a href="zh-7zip-not-enough-space.html">7-Zip</a> 的指南。</li>
 <li>你希望解压后保留压缩包。</li>
-<li>压缩包是 <code>.tar.zst</code>，目前还不支持这种格式。</li>
+<li>压缩包是用 <code>zstd</code> 命令创建的 <code>.tar.zst</code>，这种文件只有一个帧。HatchZip 只能在保留压缩包的情况下解压它，因此需要完整的空间。</li>
 </ul>
 <p>文件解压出来的同时，压缩包也会被用掉。如果下载的文件已损坏，损坏位置之前的文件能解压出来，但压缩包已经部分删除；对于无法重新下载的文件，可以使用 <code>--verify-first</code>，它会在删除任何内容之前先读取整个压缩包。</p>
 </section>

@@ -59,9 +59,11 @@ To keep the archive when there is room for both, choose **Extract here (keep arc
 
 Open them with **File > Settings…** (Ctrl+, or Cmd+, on macOS), or the gear at the top right of the window. Every change applies at once and is saved; the main window's own controls and the right-click menu's windows use the same settings.
 
+The app is in English, Spanish, Hindi, Simplified Chinese and Turkish. It follows the system language until another is chosen under **Language**.
+
 | Section | Setting | Default |
 |---|---|---|
-| General | **Language**: the system's, or any of the app's translations | The system language |
+| General | **Language**: the system's, or English, Spanish, Hindi, Simplified Chinese or Turkish | The system language |
 | General | **Appearance**: System, Light or Dark | System |
 | General | **After extracting**: do nothing, or open the destination folder | Do nothing |
 | General | **Close the progress window when extraction completes**, for the window the right-click menu opens | On |
@@ -223,6 +225,7 @@ HatchZip prints the same space plan, asks for confirmation, then extracts. When 
 | `--keep-free <size>` | Free space HatchZip never uses, such as `500MB` or `10GB`. Default `2GB`, so the disk never fills to zero. |
 | `--verify-first` | Read the whole archive and check every file's checksum before deleting anything. Takes extra time, recommended for downloads you can't easily get again. |
 | `-y, --yes` | Skip the confirmation prompt. Required when not run from a terminal, unless `--keep-archive` is given. |
+| `--nested` | After extracting, also extract the archives among the files it wrote, one level deep. See [Archives inside an archive](#archives-inside-an-archive). |
 | `-q, --quiet` | Print only errors and prompts. |
 
 ### Keep the archive
@@ -269,6 +272,16 @@ hatchzip extract a.zip b.7z c.tar.gz
 ```
 
 The archives are extracted one after another, each into its own folder, or all into the folder given with `-o`. The space for each one is checked just before it starts, so the space one archive frees is available to the next. The first archive that does not complete stops the run, and HatchZip lists which archives were extracted, which one stopped and whether its progress is saved, and which were not started; the exit status is that archive's. `check`, `test` and `list` also take several archives, go through all of them, and exit with the status of the first one that did not succeed. Naming every volume of a split archive, as a shell pattern like `game.7z.*` does, counts as that archive once.
+
+### Archives inside an archive
+
+```sh
+hatchzip extract bundle.zip --nested
+```
+
+With `--nested`, once the archives given are extracted, HatchZip looks among the files they wrote for archives and extracts those too, each into its own folder next to it. A file counts as an archive only when its name has an archive extension and its contents start with that format's signature, so a `.jar` or a `.docx` is left alone. It goes one level deep: archives inside those are not looked for. A split set counts once, by its first volume. Only files the run wrote are considered, never files that were already in the output folder.
+
+HatchZip lists the archives it found and asks once before extracting them, since each one is removed during its extraction; `--yes` skips the question. With `--keep-archive`, they are kept too and nothing is asked. As with several archives, the first one that does not complete stops the run. The desktop app does not have this option.
 
 ### Stop and resume
 
@@ -364,7 +377,7 @@ Fields that are unavailable are present as `null`, rather than omitted. For a re
 | `path` | Safe archive member path, using `/` separators |
 | `kind` | `file`, `directory`, `symlink` or `hard_link` |
 | `size_bytes` | The size recorded by HatchZip's archive model, in bytes |
-| `mode` | Raw file mode integer, including file-type bits, or `null` when unavailable |
+| `mode` | The mode as the archive stores it, as an integer, or `null` when unavailable. ZIP usually includes the file-type bits (`33188` for a plain file); tar usually stores only the permission bits (`420`) |
 | `modified_at` | Modification time in RFC 3339 UTC, or `null` |
 | `encrypted` | Whether the entry is encrypted |
 | `hard_link_target` | Target path for a hard link, otherwise `null` |
